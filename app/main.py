@@ -1,4 +1,4 @@
-# main.py — FastAPI: MCP + streaming orchestrator (chat completions + RAG)
+# main.py — FastAPI orchestrator (chat completions + RAG)
 import asyncio
 import contextlib
 import json
@@ -17,7 +17,6 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.requests import Request
 from .langsmith_feedback import FEEDBACK_TYPES, FeedbackBody, submit_langsmith_feedback
-from .mcp_server import mcp, mcp_app
 from .orchestrator import stream_answer_query
 
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
@@ -45,8 +44,7 @@ def _sse_stream_answer_gen(
 @contextlib.asynccontextmanager
 async def _lifespan(_app: FastAPI):
     try:
-        async with mcp.session_manager.run():
-            yield
+        yield
     finally:
         from .rag_http_tool import aclose_rag_http_client
 
@@ -55,8 +53,8 @@ async def _lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title=settings.mcp_name,
-    version=settings.app_version or "0.1.0",
+    title=settings.app_name,
+    version=settings.app_version,
     lifespan=_lifespan,
 )
 
@@ -162,11 +160,8 @@ def health() -> dict:
     return {
         "status": "ok",
         "app_version": settings.app_version,
-        "mcp_name": settings.mcp_name,
+        "app_name": settings.app_name,
         "langchain_project": settings.langchain_project,
         "langsmith_tracing": settings.langsmith_tracing,
         "langchain_endpoint": settings.langchain_endpoint,
     }
-
-
-app.mount("/mcp", mcp_app)

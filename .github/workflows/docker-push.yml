@@ -4,13 +4,19 @@
 # DOCKERHUB_USERNAME — Docker Hub username or org
 # DOCKERHUB_TOKEN — Access token (recommended), not your account password
 #
-# Images: /<user>/layer-orchestrator-v1:latest and /<user>/layer-orchestrator-v1:<git-sha>
+# Images: /<user>/layer-orchestrator-v1:latest, :<ci-version>, and :<git-sha>
 name: Push to Docker Hub
 
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional explicit version tag (for example: 0.1.0 or v0.1.0)"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -24,6 +30,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve version
+      id: version
+      shell: bash
+      run: |
+        set -euo pipefail
+        INPUT_VERSION="${{ github.event.inputs.version || '' }}"
+        if [ -n "${INPUT_VERSION}" ]; then
+          VERSION="${INPUT_VERSION}"
+        elif [ "${{ github.ref_type }}" = "tag" ]; then
+          VERSION="${{ github.ref_name }}"
+        else
+          VERSION="${GITHUB_SHA::12}"
+        fi
+        echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -40,8 +61,11 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.version }}
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/layer-orchestrator-v1:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/layer-orchestrator-v1:${{ steps.version.outputs.version }}
             ${{ secrets.DOCKERHUB_USERNAME }}/layer-orchestrator-v1:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

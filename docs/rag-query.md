@@ -1,6 +1,6 @@
 # RAG query (HTTP API)
 
-When **`RAG_HTTP_BASE_URL`** is set, the orchestrator uses a **REST** RAG service instead of MCP. The app calls:
+The orchestrator uses a **REST** RAG service and calls:
 
 ```http
 POST {RAG_HTTP_BASE_URL}/v1/rag/query
@@ -19,8 +19,6 @@ The LangGraph agent exposes this as the tool **`query_knowledge_base`** (see `ap
 | `RAG_K_MAX` | No | `40` | Upper cap `k_max` |
 | `RAG_INCLUDE_RETRIEVAL_HITS` | No | `true` | Whether to ask for hits in the response |
 | `TOOLS_TIMEOUT_S` | No | `60` | HTTP client timeout for this request (seconds) |
-
-If **`RAG_HTTP_BASE_URL`** is unset, you can point **`MCP_TOOL_RAG_URL`** at an MCP HTTP server instead (see [README.md](../README.md)); the HTTP path above is not used in that mode.
 
 ### Example `.env` snippet
 

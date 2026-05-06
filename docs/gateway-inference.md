@@ -25,7 +25,7 @@ Chat calls may include:
 - `X-Session-Id`
 - `X-Trace-Id` (defaults to the request id when not set separately)
 
-Values come from the HTTP/MCP request when provided (e.g. `/orchestrator/stream-answer`). The gateway may ignore or log them.
+Values come from the incoming HTTP request when provided (e.g. `/orchestrator/stream-answer`). The gateway may ignore or log them.
 
 ## Sanity check with `curl`
 

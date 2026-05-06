@@ -18,7 +18,7 @@ It emits **Server-Sent Events (SSE)** so clients can observe each reasoning stag
 This ID is propagated through:
 
 * LangGraph runs
-* MCP tool calls
+* RAG HTTP query requests
 * LangSmith traces
 * Feedback API
 
@@ -74,14 +74,13 @@ When RAG is configured, a single phase runs:
 RAG
 ```
 
-RAG enriches the answer with semantic context from the configured MCP tool.
+RAG enriches the answer with semantic context from the configured HTTP RAG service.
 
 ---
 
 ### 🧠 5. `run_graph()` — LangGraph Agent Execution
 
 The RAG phase invokes `run_graph()` which:
-
 
 #### a. Runs the reliability loop:
 
@@ -170,7 +169,7 @@ sequenceDiagram
   participant API
   participant Rewrite
   participant Graph as LangGraph (run_graph)
-  participant MCP as MCP Tool Server(s)
+  participant RAG as RAG HTTP Service
   participant Judge as AnswerJudge (agent_answer_judge)
   participant LangSmith
 
@@ -185,7 +184,7 @@ sequenceDiagram
 
   API->>Graph: run_graph(phase="RAG")
   loop retry until GOOD or MAX_RETRIES
-    Graph->>MCP: tool calls (RAG tools)
+    Graph->>RAG: POST /v1/rag/query
     Graph->>Judge: agent_answer_judge
     Judge-->>Graph: GOOD or NOT_GOOD(reason)
     alt NOT_GOOD

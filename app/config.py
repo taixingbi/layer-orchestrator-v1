@@ -6,6 +6,8 @@ from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
+from . import __version__
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(REPO_ROOT / ".env")
 load_dotenv()
@@ -18,8 +20,8 @@ class Settings:
     """Settings from env (and .env)."""
 
     # App
-    mcp_name: str = os.getenv("MCP_NAME", "layer-orchestrator-v1")
-    app_version: str = os.getenv("APP_VERSION", "0.1.0")
+    app_name: str = os.getenv("APP_NAME", os.getenv("MCP_NAME", "layer-orchestrator-v1"))
+    app_version: str = os.getenv("APP_VERSION") or __version__
 
     # LangChain / LangSmith
     langchain_project: Optional[str] = os.getenv("LANGCHAIN_PROJECT")
@@ -28,7 +30,7 @@ class Settings:
     langchain_endpoint: Optional[str] = os.getenv("LANGCHAIN_ENDPOINT")
     langsmith_tracing: bool = os.getenv("LANGSMITH_TRACING", "false").lower() == "true"
 
-    # RAG via HTTP: base URL only; code POSTs to /v1/rag/query (replaces MCP when set)
+    # RAG via HTTP: base URL only; code POSTs to /v1/rag/query
     rag_http_base_url: Optional[str] = os.getenv("RAG_HTTP_BASE_URL")
     rag_collection_base: str = os.getenv("RAG_COLLECTION_BASE", "taixing_knowledge")
     rag_k: int = int(os.getenv("RAG_K", "5"))
@@ -37,27 +39,13 @@ class Settings:
         os.getenv("RAG_INCLUDE_RETRIEVAL_HITS", "true").lower() == "true"
     )
 
-    # MCP tool URL (no trailing slash in env; used only if RAG_HTTP_BASE_URL is unset)
-    mcp_tool_rag_url: Optional[str] = os.getenv("MCP_TOOL_RAG_URL")
-
     # LLM: HTTP chat completions at {LLM_GATEWAY_BASE_URL}/v1/chat/completions
     llm_gateway_base_url: Optional[str] = os.getenv("LLM_GATEWAY_BASE_URL")
     llm_model: str = os.getenv("LLM_MODEL") or "Qwen/Qwen2.5-7B-Instruct"
 
-    # Default timeouts for MCP tool calls (seconds)
+    # Default timeouts (seconds)
     tools_timeout_s: float = float(os.getenv("TOOLS_TIMEOUT_S", "60"))
     invoke_timeout_s: float = float(os.getenv("INVOKE_TIMEOUT_S", "120"))
-
-    @staticmethod
-    def _server_dict(name: str, url: str) -> dict:
-        """Build a single-server config for MultiServerMCPClient."""
-        return {name: {"transport": "http", "url": url.rstrip("/") + "/"}} if url else {}
-
-    @property
-    def rag_server_config(self) -> dict:
-        """RAG MCP server config from env; empty dict if not set."""
-        url = (self.mcp_tool_rag_url or "").rstrip("/")
-        return self._server_dict("tool_rag", url)
 
 
 settings = Settings()
@@ -136,9 +124,9 @@ def get_langsmith_tags(
 ) -> List[str]:
     """Build tags for LangSmith traces (key:value format). Optionally include request_id and session_id."""
     tags = [
-        f"mcp_name:{settings.mcp_name}",
+        f"app_name:{settings.app_name}",
         f"agent_model:{settings.llm_model}",
-        f"agent_has_rag:{bool(settings.rag_http_base_url or settings.mcp_tool_rag_url)}",
+        f"agent_has_rag:{bool(settings.rag_http_base_url)}",
     ]
     if settings.langchain_project:
         tags.append(f"langchain_project:{settings.langchain_project}")

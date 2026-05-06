@@ -247,11 +247,7 @@ def setup_logging() -> None:
         _loki_queue_handler.setLevel(level)
         logger.addHandler(_loki_queue_handler)
 
-        env_label = (
-            os.environ.get("ORCHESTRATOR_ENV")
-            or os.environ.get("GATEWAY_ENV")
-            or os.environ.get("ENV", "dev")
-        )
+        env_label = os.environ.get("ENV", "dev")
         _loki_worker_handler = _SyncLokiHandler(
             labels={
                 "service": "layer-orchestrator",

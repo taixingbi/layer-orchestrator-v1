@@ -26,23 +26,15 @@ class _AgentRunIdCallback(AsyncCallbackHandler):
 
 async def run_graph(
     messages: list,
-    servers: Optional[dict],
     tools_timeout_s: float,
     invoke_timeout_s: float,
     *,
-    tools: Optional[list] = None,
-    rag_http_deterministic: bool = False,
     request_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> Tuple[List[Any], Optional[str]]:
     """Run one phase (RAG) and return (messages, agent_graph_run_id). agent_graph_run_id from LangSmith."""
-    if not servers and not tools and not rag_http_deterministic:
-        return messages, None
     agent = await build_graph_agent(
-        servers=servers if servers else None,
-        tools=tools,
         tools_timeout_s=tools_timeout_s,
-        rag_http_deterministic=rag_http_deterministic,
     )
     run_ids: List[str] = []
     callback = _AgentRunIdCallback(run_ids)
@@ -98,7 +90,6 @@ async def stream_answer_query(
     tools_s = tools_timeout_s if tools_timeout_s is not None else settings.tools_timeout_s
     invoke_s = invoke_timeout_s if invoke_timeout_s is not None else settings.invoke_timeout_s
     try:
-        rag_servers = settings.rag_server_config
         use_http_rag = bool(settings.rag_http_base_url)
         yield {"type": "request_id", "session_id": session_id, "request_id": request_id}
         # IntentGate (smalltalk?) — agent
@@ -116,27 +107,16 @@ async def stream_answer_query(
         yield {"type": "route", "route": "RAG"}
         messages = [{"role": "user", "content": rewritten}]
         agent_graph_run_id = None
-        if use_http_rag:
-            yield {"type": "state", "phase": "rag", "message": "Running RAG phase..."}
-            messages, agent_graph_run_id = await run_graph(
-                messages,
-                None,
-                tools_s,
-                invoke_s,
-                rag_http_deterministic=True,
-                request_id=request_id,
-                session_id=session_id,
-            )
-        elif rag_servers:
-            yield {"type": "state", "phase": "rag", "message": "Running RAG phase..."}
-            messages, agent_graph_run_id = await run_graph(
-                messages,
-                rag_servers,
-                tools_s,
-                invoke_s,
-                request_id=request_id,
-                session_id=session_id,
-            )
+        if not use_http_rag:
+            raise ValueError("RAG_HTTP_BASE_URL is required in FastAPI-only mode")
+        yield {"type": "state", "phase": "rag", "message": "Running RAG phase..."}
+        messages, agent_graph_run_id = await run_graph(
+            messages,
+            tools_s,
+            invoke_s,
+            request_id=request_id,
+            session_id=session_id,
+        )
         content = last_ai_content(messages)
         if content:
             event = {"type": "answer", "text": content}
