@@ -1,0 +1,19 @@
+fastapi
+uvicorn[standard]
+
+python-dotenv
+
+mcp
+
+langchain-community
+langchain-openai  # HTTP client for /v1/chat/completions (any compatible server)
+langsmith
+langchain-mcp-adapters
+langgraph
+
+httpx
+pytest
+pytest-asyncio
+
+# Optional: ship logs to Grafana Loki (same stack as layer-rag-query-v1)
+# tb-loki-central-logger
