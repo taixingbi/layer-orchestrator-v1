@@ -31,7 +31,7 @@ This document explains the runtime design of `layer-orchestrator-v1`: components
 - `app/agent_answer_judge.py`  
   Judge model for grounding/quality checks.
 - `app/logging_config.py` + `app/request_context.py`  
-  Structured JSON logging with request/session context and optional Loki shipping.
+  Structured JSON logging with request/session context; shipped by external collectors (for example Alloy).
 
 ## Primary Flow: `/orchestrator/stream-answer`
 
@@ -93,7 +93,7 @@ Accepts user rating + optional type/comment and forwards to LangSmith when crede
   - `request_id`, `session_id`, `method`, `path`, `status`
   - latency fields and error metadata when available
 - Request context propagated via middleware/contextvars.
-- Optional centralized Loki shipping if `tb-loki-central-logger` and Grafana auth are configured.
+- Logs are written as JSON to stderr and can be collected/shipped by Alloy.
 - LangSmith tags include model/project/request/session context.
 
 ## Configuration Strategy

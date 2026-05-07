@@ -43,9 +43,7 @@ Copy or create `.env` at the **project root** (loaded by `app/config.py`). Typic
 | `INVOKE_TIMEOUT_S` | LangGraph agent invoke timeout (seconds; default: `120`) |
 | `LOG_LEVEL` | Logging level (default: `INFO`) |
 | `LOG_TIMEZONE` | IANA timezone for log timestamps (default: `America/New_York`) |
-| `ENV` | Deployment label in logs / Loki (default `dev`) |
-| `GRAFANA_CLOUD_API_KEY` | Optional; with `tb-loki-central-logger` installed, enables shipping logs to Grafana Loki |
-| `LOKI_IGNORE_SYSTEM_PROXY` | `1` / `true` if Loki pushes must bypass `HTTP(S)_PROXY` |
+| `ENV` | Deployment label included in logs (default `dev`) |
 | `LANGCHAIN_PROJECT` | LangSmith project name (optional) |
 | `LANGCHAIN_API_KEY` or `LANGSMITH_API_KEY` | LangSmith API key (optional) |
 | `LANGCHAIN_ENDPOINT` | LangSmith API endpoint (optional) |
@@ -138,3 +136,5 @@ Version flow: `git tag/workflow input -> CI VERSION -> Docker build-arg APP_VERS
 Images: `YOUR_DOCKERHUB_USER/layer-orchestrator-v1:latest`, `YOUR_DOCKERHUB_USER/layer-orchestrator-v1:<ci-version>`, and `YOUR_DOCKERHUB_USER/layer-orchestrator-v1:<git-sha>`.
 
 Former Fly.io multi-environment URLs are no longer maintained. Run the container wherever you host services and use the same **Environment (.env)** variables as above. For a public HTTPS host, substitute your base URL for `http://127.0.0.1:8000` in the curl examples.
+
+Logging is emitted as structured JSON to stderr; use Alloy (or your platform collector) to ship logs to Loki.

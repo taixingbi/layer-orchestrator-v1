@@ -1,24 +1,15 @@
-"""Stderr JSON logging plus optional Grafana Loki via tb-loki-central-logger.
-
-Pattern aligned with layer-rag-query-v1 ``app/logging_config.py``:
-https://github.com/taixingbi/layer-rag-query-v1/blob/main/app/logging_config.py
-"""
+"""Stderr JSON logging for Alloy/Loki collection."""
 
 from __future__ import annotations
 
 import json
 import logging
-import logging.handlers
 import os
-import queue
 import sys
-import urllib.error
-import urllib.request
 import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from . import __version__
 from .request_context import (
     get_http_method,
     get_http_path,
@@ -28,63 +19,6 @@ from .request_context import (
 )
 
 logger = logging.getLogger("layer_orchestrator")
-
-_LOKI_PUSH_ERRORS_LOGGED = 0
-_LOKI_PUSH_ERROR_LOG_CAP = 5
-
-try:
-    from tb_loki_central_logger import LokiClient, basic_auth_from_env
-except ImportError:  # optional dependency
-    LokiClient = None  # type: ignore[misc, assignment]
-
-    def basic_auth_from_env():  # type: ignore[misc]
-        return None
-
-
-if LokiClient is not None:
-
-    class _LokiClientNoSystemProxy(LokiClient):
-        """Same as LokiClient but does not use HTTP(S)_PROXY (broken tunnels often return 403)."""
-
-        _opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-
-        def _send(self, body: bytes) -> None:
-            req = urllib.request.Request(
-                self.endpoint,
-                data=body,
-                headers=self._http_headers,
-                method="POST",
-            )
-            with self._lock:
-                try:
-                    with self._opener.open(req, timeout=self.timeout) as resp:
-                        resp.read()
-                except urllib.error.HTTPError as e:
-                    detail = e.read().decode("utf-8", errors="replace")
-                    raise RuntimeError(
-                        f"Loki push failed: HTTP {e.code} {e.reason}. Response: {detail}"
-                    ) from e
-                except urllib.error.URLError as e:
-                    raise RuntimeError(f"Loki push failed: {e}") from e
-
-    def _loki_client_cls() -> type:
-        v = os.getenv("LOKI_IGNORE_SYSTEM_PROXY", "").strip().lower()
-        if v in ("1", "true", "yes", "on"):
-            return _LokiClientNoSystemProxy
-        return LokiClient
-else:
-
-    def _loki_client_cls() -> type:  # type: ignore[misc]
-        raise RuntimeError("tb_loki_central_logger not installed")
-
-
-_LOKI_LEVEL = {
-    "DEBUG": "debug",
-    "INFO": "info",
-    "WARNING": "warn",
-    "ERROR": "error",
-    "CRITICAL": "critical",
-}
 
 
 def _log_tz() -> ZoneInfo:
@@ -119,48 +53,6 @@ _EXTRA_JSON_FIELDS = (
 )
 
 
-class _SyncLokiHandler(logging.Handler):
-    """Ship each record with LokiClient in emit(); used only from a QueueListener worker thread."""
-
-    def __init__(
-        self,
-        *,
-        labels: dict[str, str],
-        basic_auth: tuple[str, str],
-        timeout: int = 15,
-    ) -> None:
-        super().__init__()
-        if LokiClient is None:
-            raise RuntimeError("LokiClient unavailable")
-        self._client = _loki_client_cls()(
-            labels=labels,
-            timeout=timeout,
-            basic_auth=basic_auth,
-        )
-
-    def emit(self, record: logging.LogRecord) -> None:
-        global _LOKI_PUSH_ERRORS_LOGGED
-        try:
-            level = _LOKI_LEVEL.get(record.levelname, "info")
-            message = self.format(record)
-            self._client.push(message, level=level, labels={"logger": record.name})
-        except Exception as e:
-            _LOKI_PUSH_ERRORS_LOGGED += 1
-            n = _LOKI_PUSH_ERRORS_LOGGED
-            if n <= _LOKI_PUSH_ERROR_LOG_CAP:
-                print(
-                    f"layer_orchestrator: Loki push failed: {e}; "
-                    f"logs still go to stderr. "
-                    f"If you use a proxy, try LOKI_IGNORE_SYSTEM_PROXY=1 in `.env`.",
-                    file=sys.stderr,
-                )
-            elif n == _LOKI_PUSH_ERROR_LOG_CAP + 1:
-                print(
-                    "layer_orchestrator: further Loki push errors suppressed",
-                    file=sys.stderr,
-                )
-
-
 class _RequestContextFilter(logging.Filter):
     """Attach request/session IDs and HTTP method/path/status from context onto each LogRecord."""
 
@@ -180,7 +72,7 @@ class _RequestContextFilter(logging.Filter):
 
 
 class _JsonFormatter(logging.Formatter):
-    """One JSON object per line for stderr and Loki."""
+    """One JSON object per line for stderr."""
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, object] = {
@@ -204,10 +96,6 @@ class _JsonFormatter(logging.Formatter):
 
 _JSON_FORMATTER = _JsonFormatter()
 
-_loki_listener: logging.handlers.QueueListener | None = None
-_loki_queue_handler: logging.handlers.QueueHandler | None = None
-_loki_worker_handler: _SyncLokiHandler | None = None
-
 _setup_done = False
 
 
@@ -217,8 +105,8 @@ def _resolve_log_level() -> int:
 
 
 def setup_logging() -> None:
-    """Configure ``layer_orchestrator`` logger: stderr JSON, optional Loki queue + worker when Grafana env is set."""
-    global _loki_listener, _loki_queue_handler, _loki_worker_handler, _setup_done
+    """Configure ``layer_orchestrator`` logger with JSON logs to stderr."""
+    global _setup_done
     if _setup_done:
         return
     _setup_done = True
@@ -239,56 +127,12 @@ def setup_logging() -> None:
 
     for name in ("httpx", "httpcore"):
         logging.getLogger(name).setLevel(logging.WARNING)
-
-    auth = basic_auth_from_env() if LokiClient is not None else None
-    if auth is not None:
-        log_queue: queue.Queue[logging.LogRecord] = queue.Queue(-1)
-        _loki_queue_handler = logging.handlers.QueueHandler(log_queue)
-        _loki_queue_handler.setLevel(level)
-        logger.addHandler(_loki_queue_handler)
-
-        env_label = os.environ.get("ENV", "dev")
-        _loki_worker_handler = _SyncLokiHandler(
-            labels={
-                "service": "layer-orchestrator",
-                "component": "api",
-                "env": env_label,
-                "version": __version__,
-            },
-            basic_auth=auth,
-        )
-        _loki_worker_handler.setLevel(level)
-        _loki_worker_handler.setFormatter(_JSON_FORMATTER)
-        _loki_worker_handler.addFilter(_ctx_filter)
-        _loki_listener = logging.handlers.QueueListener(
-            log_queue,
-            _loki_worker_handler,
-            respect_handler_level=True,
-        )
-        _loki_listener.start()
-        logger.info("centralized Loki logging enabled")
-    else:
-        if LokiClient is None:
-            logger.info("Loki disabled (tb-loki-central-logger not installed)")
-        else:
-            logger.info(
-                "Loki disabled (set GRAFANA_CLOUD_API_KEY to ship logs to Grafana)"
-            )
+    logger.info("structured stderr logging enabled (collector: Alloy)")
 
 
 def shutdown_logging() -> None:
-    """Stop the Loki queue listener and detach Loki handlers."""
-    global _loki_listener, _loki_queue_handler, _loki_worker_handler, _setup_done
-    if _loki_listener is not None:
-        _loki_listener.stop()
-        _loki_listener = None
-    if _loki_queue_handler is not None:
-        logger.removeHandler(_loki_queue_handler)
-        _loki_queue_handler.close()
-        _loki_queue_handler = None
-    if _loki_worker_handler is not None:
-        _loki_worker_handler.close()
-        _loki_worker_handler = None
+    """Flush handlers and mark logging as not configured."""
+    global _setup_done
     for h in logger.handlers:
         if isinstance(h, logging.StreamHandler):
             h.flush()
