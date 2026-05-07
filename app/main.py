@@ -61,6 +61,10 @@ app = FastAPI(
 
 @app.middleware("http")
 async def _http_request_logging_middleware(request: Request, call_next):
+    # Keep health checks lightweight and out of request logs.
+    if request.url.path == "/health":
+        return await call_next(request)
+
     request_id = request.headers.get("x-request-id") or new_request_id()
     session_id = request.headers.get("x-session-id")
     trace_id = request.headers.get("x-trace-id") or request_id
