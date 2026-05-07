@@ -1,4 +1,6 @@
 """Build the FastAPI-only LangGraph agent (HTTP RAG + judge loop)."""
+import logging
+import time
 import uuid
 from typing import Any, Dict, List, Literal, Tuple
 
@@ -14,6 +16,7 @@ from .utils import extract_message_content, first_user_text, message_role
 
 MAX_RETRIES = 1
 _agent_cache: Dict[tuple, Any] = {}
+_graph_log = logging.getLogger("layer_orchestrator.agent_graph")
 
 
 class AgentState(MessagesState, total=False):
@@ -34,12 +37,21 @@ async def build_graph_agent(
     url = ((settings.rag_http_base_url or "").rstrip("/") + "/v1/rag/query").lower()
     cache_key: Tuple[Any, ...] = ("rag_http_det", url, tools_timeout_s)
     if cache_key in _agent_cache:
+        _graph_log.debug(
+            "agent_graph_cache_hit",
+            extra={"event": "agent_graph_cache_hit", "gateway_meta": {"cache_key": str(cache_key)}},
+        )
         return _agent_cache[cache_key]
 
     async def judge_node(state: AgentState, config: RunnableConfig):
+        _graph_log.debug("judge_started", extra={"event": "judge_started"})
         messages = state["messages"]
         retry_count = state.get("retry_count", 0)
         if retry_count >= MAX_RETRIES:
+            _graph_log.debug(
+                "judge_skipped_max_retries",
+                extra={"event": "judge_skipped_max_retries", "gateway_meta": {"retry_count": retry_count}},
+            )
             return {"judge_passed": True}
         question = ""
         answer = ""
@@ -61,6 +73,17 @@ async def build_graph_agent(
             request_id=cfg.get("request_id"),
             session_id=cfg.get("session_id"),
         )
+        _graph_log.debug(
+            "judge_evaluated",
+            extra={
+                "event": "judge_evaluated",
+                "gateway_meta": {
+                    "retry_count": retry_count,
+                    "passed": passed,
+                    "feedback_preview": (feedback or "")[:120] or None,
+                },
+            },
+        )
         if passed or retry_count >= MAX_RETRIES:
             return {"judge_passed": True}
         return {
@@ -72,12 +95,25 @@ async def build_graph_agent(
     base_llm = get_llm(temperature=0)
 
     async def retrieve_node(state: AgentState, config: RunnableConfig):
+        t0 = time.perf_counter()
         cfg = (config or {}).get("configurable") or {}
         question = first_user_text(state["messages"])
+        _graph_log.debug(
+            "retrieve_started",
+            extra={"event": "retrieve_started", "gateway_meta": {"question_len": len(question or "")}},
+        )
         evidence = await query_rag_http(
             question,
             str(cfg.get("request_id") or ""),
             str(cfg.get("session_id") or ""),
+        )
+        _graph_log.debug(
+            "retrieve_completed",
+            extra={
+                "event": "retrieve_completed",
+                "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
+                "gateway_meta": {"evidence_len": len(evidence or "")},
+            },
         )
         tid = f"call_rag_{uuid.uuid4().hex[:16]}"
         synthetic = AIMessage(
@@ -99,11 +135,24 @@ async def build_graph_agent(
         return {"messages": [synthetic, tool_msg]}
 
     async def llm_call(state: AgentState, config: RunnableConfig):
+        t0 = time.perf_counter()
         cfg = (config or {}).get("configurable") or {}
         invoke_kw = gateway_llm_invoke_kwargs(
             cfg.get("request_id"), cfg.get("session_id")
         )
+        _graph_log.debug(
+            "llm_call_started",
+            extra={"event": "llm_call_started", "gateway_meta": {"messages_count": len(state.get('messages', []))}},
+        )
         result = await base_llm.ainvoke(state["messages"], config=config, **invoke_kw)
+        _graph_log.debug(
+            "llm_call_completed",
+            extra={
+                "event": "llm_call_completed",
+                "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
+                "gateway_meta": {"response_len": len(extract_message_content(result) or "")},
+            },
+        )
         return {"messages": [result]}
 
     g = StateGraph(AgentState)
@@ -116,4 +165,8 @@ async def build_graph_agent(
     g.add_conditional_edges("judge", _judge_continue, ["__end__", "llm_call"])
     compiled = g.compile()
     _agent_cache[cache_key] = compiled
+    _graph_log.info(
+        "agent_graph_compiled",
+        extra={"event": "agent_graph_compiled", "gateway_meta": {"cache_key": str(cache_key)}},
+    )
     return compiled

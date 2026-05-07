@@ -1,5 +1,7 @@
 """EntityRewrite: Taixing third-person + LLM rewrite for retrieval."""
+import logging
 import re
+import time
 from typing import Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -7,6 +9,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from .config import gateway_llm_invoke_kwargs, get_langsmith_tags, get_llm
 
 CANDIDATE_NAME = "Taixing Bi"
+_rewrite_log = logging.getLogger("layer_orchestrator.agent_rewrite")
 
 
 def rewrite_to_third_person(question: str) -> str:
@@ -40,6 +43,11 @@ async def rewrite_query(
     """EntityRewrite: third-person (Taixing) + LLM rewrite for retrieval. Call after IntentGate (no smalltalk)."""
     if not query or not query.strip():
         return query
+    t0 = time.perf_counter()
+    _rewrite_log.debug(
+        "rewrite_invoke_started",
+        extra={"event": "rewrite_invoke_started", "gateway_meta": {"query_len": len(query or "")}},
+    )
     query = rewrite_to_third_person(query)
     llm = get_llm()
     invoke_kw = gateway_llm_invoke_kwargs(request_id, session_id)
@@ -52,4 +60,15 @@ async def rewrite_query(
         **invoke_kw,
     )
     rewritten = (msg.content or "").strip()
+    _rewrite_log.debug(
+        "rewrite_invoke_completed",
+        extra={
+            "event": "rewrite_invoke_completed",
+            "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
+            "gateway_meta": {
+                "rewritten_len": len(rewritten or ""),
+                "rewritten_preview": (rewritten or "")[:120] or None,
+            },
+        },
+    )
     return rewritten if rewritten else query
