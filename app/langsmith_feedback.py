@@ -24,7 +24,7 @@ FEEDBACK_TYPES = frozenset([
 class FeedbackBody(BaseModel):
     """Feedback on an agent response."""
 
-    request_id: Optional[str] = Field(None, description="request_id from first SSE event of stream-answer (optional)")
+    request_id: Optional[str] = Field(None, description="request_id from first SSE event of orchestrator/answer (stream=true) (optional)")
     agent_graph_run_id: Optional[str] = Field(None, description="agent_graph_run_id from answer event; use to attach feedback to agent_graph run")
     question: Optional[str] = Field(None, description="Original question (optional)")
     answer_snippet: Optional[str] = Field(None, description="Snippet of answer being rated (optional)")

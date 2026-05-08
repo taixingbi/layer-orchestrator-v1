@@ -1,4 +1,4 @@
-## 🔄 `/orchestrator/stream-answer` — SSE Execution Flow
+## 🔄 `/orchestrator/answer` (`stream=true`) — SSE Execution Flow
 
 This endpoint provides a **streaming, reliability-first orchestration pipeline** for answering questions using RAG tools.
 
@@ -173,7 +173,7 @@ sequenceDiagram
   participant Judge as AnswerJudge (agent_answer_judge)
   participant LangSmith
 
-  Client->>API: POST /orchestrator/stream-answer
+  Client->>API: POST /orchestrator/answer {"stream": true}
   API-->>Client: SSE {type:"request_id"}
 
   API->>Rewrite: normalize question

@@ -2,7 +2,7 @@
 
 ## FastAPI Orchestrator
 
-FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …/v1/chat/completions`), **HTTP RAG**, and **`/orchestrator/stream-answer`** (SSE). Chat calls send `X-Request-Id`, `X-Session-Id`, and `X-Trace-Id` when those ids are available.
+FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …/v1/chat/completions`), **HTTP RAG**, and unified **`/orchestrator/answer`** (`stream=true` for SSE). Chat calls send `X-Request-Id`, `X-Session-Id`, and `X-Trace-Id` when those ids are available.
 
 ## Layout
 
@@ -79,16 +79,17 @@ docker run -p 8000:8000 --env-file .env YOUR_DOCKERHUB_USER/layer-orchestrator-v
 curl http://127.0.0.1:8000/health
 ```
 
-## Orchestrator SSE
+## Orchestrator (SSE with `stream=true`)
 
 ```bash
-curl -N -s -X POST http://127.0.0.1:8000/orchestrator/stream-answer \
+curl -N -s -X POST http://127.0.0.1:8000/orchestrator/answer \
   -H "Content-Type: application/json" \
   -H "X-Session-Id: 123456" \
   -H "X-Request-Id: 12345678" \
   -H "X-Trace-Id: 12345678" \
   -d '{
-    "question": "what is taixing visa status?"
+    "question": "what is taixing visa status?",
+    "stream": true
   }'
 ```
 
@@ -111,7 +112,7 @@ To stream from the same endpoint, set `"stream": true` in the body.
 
 ## Feedback
 
-Submit feedback on an agent response. Use `agent_graph_run_id` from the **`answer`** SSE event of **`/orchestrator/stream-answer`** (or `request_id` from the first event) to attach feedback to the agent_graph run in LangSmith.
+Submit feedback on an agent response. Use `agent_graph_run_id` from the **`answer`** SSE event of **`/orchestrator/answer`** when `"stream": true` (or `request_id` from the first event) to attach feedback to the agent_graph run in LangSmith.
 
 **Thumbs up (with agent_graph_run_id):**
 

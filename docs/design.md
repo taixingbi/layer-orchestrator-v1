@@ -13,7 +13,7 @@ This document explains the runtime design of `layer-orchestrator-v1`: components
 
 - `app/main.py`  
   FastAPI entrypoint. Exposes:
-  - `POST /orchestrator/stream-answer` (SSE)
+  - `POST /orchestrator/answer` (set `stream=true` for SSE, default aggregated JSON)
   - `POST /feedback`
   - `GET /health`
 - `app/orchestrator.py`  
@@ -33,7 +33,7 @@ This document explains the runtime design of `layer-orchestrator-v1`: components
 - `app/logging_config.py` + `app/request_context.py`  
   Structured JSON logging with request/session context; shipped by external collectors (for example Alloy).
 
-## Primary Flow: `/orchestrator/stream-answer`
+## Primary Flow: `/orchestrator/answer`
 
 1. Initialize request ids and emit SSE `{type:"request_id"}`.
 2. Run intent gate:
@@ -62,7 +62,7 @@ Why this exists:
 
 ## Data Contracts
 
-### SSE events (`/orchestrator/stream-answer`)
+### SSE events (`/orchestrator/answer` with `stream=true`)
 
 Event types:
 - `request_id`

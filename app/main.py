@@ -33,7 +33,7 @@ def _sse_stream_answer_gen(
     request_id: Optional[str] = None,
     trace_id: Optional[str] = None,
 ) -> AsyncIterator[str]:
-    """Async generator for POST stream-answer. Yields SSE events from stream_answer_query."""
+    """Async generator for POST /orchestrator/answer with stream=true."""
     async def _gen():
         async for chunk in _answer_event_iter(
             question, session_id=session_id, request_id=request_id, trace_id=trace_id
@@ -205,32 +205,9 @@ async def _http_request_logging_middleware(request: Request, call_next):
         reset_request_context(ctx)
 
 
-class StreamAnswerBody(BaseModel):
-    question: str
-
-
 class AnswerBody(BaseModel):
     question: str
     stream: bool = False
-
-
-@app.post("/orchestrator/stream-answer")
-async def orchestrator_stream_answer_(body: StreamAnswerBody, request: Request):
-    """Stream the assistant's answer as Server-Sent Events. Body: {"question": "..."}.
-    Events: request_id, state, rewrite, route, answer, error."""
-    raw_body = await request.json()
-    _reject_body_correlation_fields(raw_body)
-    session_id, request_id, trace_id = _header_ids(request)
-    return StreamingResponse(
-        _sse_stream_answer_gen(
-            body.question,
-            session_id=session_id,
-            request_id=request_id,
-            trace_id=trace_id,
-        ),
-        media_type="text/event-stream",
-        headers=SSE_HEADERS,
-    )
 
 
 @app.post("/orchestrator/answer")
