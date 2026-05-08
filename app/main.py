@@ -1,6 +1,7 @@
 # main.py — FastAPI orchestrator (chat completions + RAG)
 import asyncio
 import contextlib
+from datetime import datetime
 import json
 import logging
 import time
@@ -107,22 +108,82 @@ def _merge_phase_states(existing: dict, incoming: dict) -> dict:
     return out
 
 
-def _build_latency_summary(states: List[dict]) -> dict:
-    summary: Dict[str, object] = {}
+def _parse_iso_ts(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _sum_phase_latencies(states: List[dict], prefix: str) -> Optional[float]:
+    total = 0.0
+    found = False
     for s in states:
         phase = s.get("phase")
-        if not phase:
-            continue
-        phase_latency = s.get("latency_ms")
-        if phase_latency is not None:
-            summary[phase] = phase_latency
-        if phase == "rag_query":
-            rag_latency = (s.get("metadata") or {}).get("rag_latency_ms")
-            if isinstance(rag_latency, dict):
-                rag_obj: Dict[str, object] = {"phase": phase_latency}
-                rag_obj.update(rag_latency)
-                summary["rag"] = rag_obj
-    return summary
+        if isinstance(phase, str) and phase.startswith(prefix):
+            lat = s.get("latency_ms")
+            if isinstance(lat, (int, float)):
+                total += float(lat)
+                found = True
+    return round(total, 2) if found else None
+
+
+def _compute_total_timing(states: List[dict]) -> Optional[float]:
+    starts = [_parse_iso_ts(s.get("started_at")) for s in states]
+    ends = [_parse_iso_ts(s.get("ended_at")) for s in states]
+    starts = [t for t in starts if t is not None]
+    ends = [t for t in ends if t is not None]
+    if starts and ends:
+        return round((max(ends) - min(starts)).total_seconds() * 1000, 2)
+    return None
+
+
+def _build_timings_summary(states: List[dict]) -> dict:
+    by_phase: Dict[str, dict] = {}
+    for s in states:
+        phase = s.get("phase")
+        if phase:
+            by_phase[phase] = s
+
+    timings: Dict[str, object] = {}
+    total = _compute_total_timing(states)
+    if total is not None:
+        timings["total"] = total
+
+    rewrite = by_phase.get("rewrite", {}).get("latency_ms")
+    if rewrite is not None:
+        timings["rewrite"] = rewrite
+
+    route = by_phase.get("route_decision", {}).get("latency_ms")
+    if route is not None:
+        timings["route_decision"] = route
+
+    rag_query_state = by_phase.get("rag_query", {})
+    rag_total = rag_query_state.get("latency_ms")
+    rag_service = (rag_query_state.get("metadata") or {}).get("rag_latency_ms")
+    if rag_total is not None or isinstance(rag_service, dict):
+        rag_obj: Dict[str, object] = {}
+        if rag_total is not None:
+            rag_obj["total"] = rag_total
+        if isinstance(rag_service, dict):
+            rag_obj["service"] = rag_service
+        timings["rag"] = rag_obj
+
+    llm_total = _sum_phase_latencies(states, "llm_call")
+    if llm_total is not None:
+        timings["llm_call"] = llm_total
+
+    judge_total = _sum_phase_latencies(states, "judge")
+    if judge_total is not None:
+        timings["judge"] = judge_total
+
+    req_complete = by_phase.get("request_complete", {}).get("latency_ms")
+    if req_complete is not None:
+        timings["request_complete"] = req_complete
+
+    return timings
 
 
 async def _answer_event_iter(
@@ -193,7 +254,7 @@ async def _answer_json(
                 for p in state_phase_order
                 if states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
             ]
-            final["latency_ms"] = _build_latency_summary(final["states"])
+            final["timings_ms"] = _build_timings_summary(final["states"])
             return {
                 **final,
                 "status": "error",
@@ -204,7 +265,7 @@ async def _answer_json(
         for p in state_phase_order
         if states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
     ]
-    final["latency_ms"] = _build_latency_summary(final["states"])
+    final["timings_ms"] = _build_timings_summary(final["states"])
     return {
         **final,
         "status": "ok",
