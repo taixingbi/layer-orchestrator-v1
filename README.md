@@ -92,6 +92,23 @@ curl -N -s -X POST http://127.0.0.1:8000/orchestrator/stream-answer \
   }'
 ```
 
+## Orchestrator Non-Stream (aggregated JSON)
+
+Uses the same internal streaming pipeline; the endpoint aggregates events into one JSON response.
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/orchestrator/answer \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: 123456" \
+  -H "X-Request-Id: 12345678" \
+  -H "X-Trace-Id: 12345678" \
+  -d '{
+    "question": "what is taixing visa status?"
+  }' | jq .
+```
+
+To stream from the same endpoint, set `"stream": true` in the body.
+
 ## Feedback
 
 Submit feedback on an agent response. Use `agent_graph_run_id` from the **`answer`** SSE event of **`/orchestrator/stream-answer`** (or `request_id` from the first event) to attach feedback to the agent_graph run in LangSmith.

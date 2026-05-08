@@ -13,7 +13,7 @@ curl -sS "http://192.168.86.179:30184/health" | jq .
 ## Orchestrator SSE (`stream-answer`)
 
 `-N` turns off curl buffering so Server-Sent Events stream line-by-line.  
-Set correlation IDs in headers so logs use the same values as the request.
+`request_id`, `session_id`, and `trace_id` must be passed in headers (not request body).
 
 ```bash
 curl -N -sS -X POST "http://192.168.86.179:30184/orchestrator/stream-answer" \
@@ -22,7 +22,28 @@ curl -N -sS -X POST "http://192.168.86.179:30184/orchestrator/stream-answer" \
   -H "X-Request-Id: req-123" \
   -H "X-Trace-Id: req-123" \
   -d '{
-    "question": "what is taixing visa status?"
+    "question": "what is taixing visa status in us?"
+  }'
+```
+
+## RAG query direct smoke test (SSE-capable)
+
+Use this to validate `layer-rag-query` directly. The orchestrator now calls this endpoint with
+the same correlation headers and accepts SSE responses.
+
+```bash
+curl -N -sS -X POST "http://192.168.86.179:30183/v1/rag/query" \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -H "X-Request-Id: req-abc123" \
+  -H "X-Session-Id: ses-xyz789" \
+  -H "X-Trace-Id: trc-001" \
+  -d '{
+    "question": "what is taixing visa",
+    "collection_base": "taixing_knowledge",
+    "k": 5,
+    "k_max": 40,
+    "include_retrieval_hits": true
   }'
 ```
 

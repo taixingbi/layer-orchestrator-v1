@@ -47,6 +47,43 @@ def _format_rag_response(data: Any) -> str:
     return "\n\n".join(parts)
 
 
+def _accumulate_sse_payload(raw_events: List[str]) -> Any:
+    """Best-effort SSE data aggregation into a JSON-like payload."""
+    text_chunks: List[str] = []
+    retrieval_hits: Any = None
+    last_obj: Any = None
+    for raw in raw_events:
+        item = raw.strip()
+        if not item or item == "[DONE]":
+            continue
+        try:
+            obj = json.loads(item)
+        except json.JSONDecodeError:
+            text_chunks.append(item)
+            continue
+        last_obj = obj
+        if isinstance(obj, dict):
+            for key in ("answer", "response", "generated_answer", "text"):
+                val = obj.get(key)
+                if isinstance(val, str) and val:
+                    text_chunks.append(val)
+            # Common chunk styles.
+            if obj.get("type") in ("token", "chunk", "delta"):
+                chunk_text = obj.get("text") or obj.get("delta") or obj.get("content")
+                if isinstance(chunk_text, str) and chunk_text:
+                    text_chunks.append(chunk_text)
+            if "retrieval_hits" in obj:
+                retrieval_hits = obj.get("retrieval_hits")
+            elif "hits" in obj:
+                retrieval_hits = obj.get("hits")
+    if text_chunks or retrieval_hits is not None:
+        return {
+            "text": "".join(text_chunks).strip(),
+            "retrieval_hits": retrieval_hits,
+        }
+    return last_obj if last_obj is not None else {"text": ""}
+
+
 async def query_rag_http(
     question: str,
     request_id: str = "",
@@ -66,15 +103,24 @@ async def query_rag_http(
     }
     url = f"{base}/v1/rag/query"
     headers = {
+        "Accept": "text/event-stream",
         "X-Request-Id": request_id or "",
         "X-Session-Id": session_id or "",
         "X-Trace-Id": trace_id or request_id or "",
     }
     headers = {k: v for k, v in headers.items() if v}
     client = _shared_http_client()
-    r = await client.post(url, json=payload, headers=headers)
-    r.raise_for_status()
-    data = r.json()
+    async with client.stream("POST", url, json=payload, headers=headers) as r:
+        r.raise_for_status()
+        ctype = (r.headers.get("content-type") or "").lower()
+        if "text/event-stream" in ctype:
+            events: List[str] = []
+            async for line in r.aiter_lines():
+                if line.startswith("data:"):
+                    events.append(line[5:].strip())
+            data = _accumulate_sse_payload(events)
+        else:
+            data = await r.json()
     return _format_rag_response(data)
 
 

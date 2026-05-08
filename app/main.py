@@ -13,7 +13,7 @@ from .request_context import bind_request_context, reset_request_context, set_ht
 setup_logging()
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from starlette.requests import Request
 from .langsmith_feedback import FEEDBACK_TYPES, FeedbackBody, submit_langsmith_feedback
@@ -35,11 +35,101 @@ def _sse_stream_answer_gen(
 ) -> AsyncIterator[str]:
     """Async generator for POST stream-answer. Yields SSE events from stream_answer_query."""
     async def _gen():
-        async for chunk in stream_answer_query(
+        async for chunk in _answer_event_iter(
             question, session_id=session_id, request_id=request_id, trace_id=trace_id
         ):
             yield f"data: {json.dumps(chunk)}\n\n"
     return _gen()
+
+
+def _reject_body_correlation_fields(raw_body: object) -> None:
+    forbidden_keys = [
+        key
+        for key in ("session_id", "request_id", "trace_id")
+        if isinstance(raw_body, dict) and key in raw_body
+    ]
+    if forbidden_keys:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{', '.join(forbidden_keys)} must be sent in headers only: "
+                "X-Session-Id, X-Request-Id, X-Trace-Id"
+            ),
+        )
+
+
+def _header_ids(request: Request) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    return (
+        getattr(request.state, "session_id", None),
+        getattr(request.state, "request_id", None),
+        getattr(request.state, "trace_id", None),
+    )
+
+
+async def _answer_event_iter(
+    question: str,
+    *,
+    session_id: Optional[str],
+    request_id: Optional[str],
+    trace_id: Optional[str],
+) -> AsyncIterator[dict]:
+    async for chunk in stream_answer_query(
+        question,
+        session_id=session_id,
+        request_id=request_id,
+        trace_id=trace_id,
+    ):
+        yield chunk
+
+
+async def _answer_json(
+    question: str,
+    *,
+    session_id: Optional[str],
+    request_id: Optional[str],
+    trace_id: Optional[str],
+) -> dict:
+    final: dict = {
+        "request_id": request_id,
+        "session_id": session_id,
+        "trace_id": trace_id,
+        "route": None,
+        "rewrite": None,
+        "answer": None,
+        "agent_graph_run_id": None,
+        "states": [],
+    }
+    async for event in _answer_event_iter(
+        question,
+        session_id=session_id,
+        request_id=request_id,
+        trace_id=trace_id,
+    ):
+        t = event.get("type")
+        if t == "request_id":
+            final["request_id"] = event.get("request_id")
+            final["session_id"] = event.get("session_id")
+        elif t == "rewrite":
+            final["rewrite"] = event.get("text")
+        elif t == "route":
+            final["route"] = event.get("route")
+        elif t == "answer":
+            final["answer"] = event.get("text")
+            final["agent_graph_run_id"] = event.get("agent_graph_run_id")
+        elif t == "state":
+            final["states"].append(
+                {"phase": event.get("phase"), "message": event.get("message")}
+            )
+        elif t == "error":
+            return {
+                **final,
+                "status": "error",
+                "error": event.get("text"),
+            }
+    return {
+        **final,
+        "status": "ok",
+    }
 
 
 @contextlib.asynccontextmanager
@@ -119,34 +209,55 @@ class StreamAnswerBody(BaseModel):
     question: str
 
 
+class AnswerBody(BaseModel):
+    question: str
+    stream: bool = False
+
+
 @app.post("/orchestrator/stream-answer")
 async def orchestrator_stream_answer_(body: StreamAnswerBody, request: Request):
     """Stream the assistant's answer as Server-Sent Events. Body: {"question": "..."}.
     Events: request_id, state, rewrite, route, answer, error."""
     raw_body = await request.json()
-    forbidden_keys = [
-        key
-        for key in ("session_id", "request_id", "trace_id")
-        if isinstance(raw_body, dict) and key in raw_body
-    ]
-    if forbidden_keys:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"{', '.join(forbidden_keys)} must be sent in headers only: "
-                "X-Session-Id, X-Request-Id, X-Trace-Id"
-            ),
-        )
+    _reject_body_correlation_fields(raw_body)
+    session_id, request_id, trace_id = _header_ids(request)
     return StreamingResponse(
         _sse_stream_answer_gen(
             body.question,
-            session_id=getattr(request.state, "session_id", None),
-            request_id=getattr(request.state, "request_id", None),
-            trace_id=getattr(request.state, "trace_id", None),
+            session_id=session_id,
+            request_id=request_id,
+            trace_id=trace_id,
         ),
         media_type="text/event-stream",
         headers=SSE_HEADERS,
     )
+
+
+@app.post("/orchestrator/answer")
+async def orchestrator_answer(body: AnswerBody, request: Request):
+    """Unified endpoint: stream=true returns SSE; stream=false returns aggregated JSON."""
+    raw_body = await request.json()
+    _reject_body_correlation_fields(raw_body)
+    session_id, request_id, trace_id = _header_ids(request)
+    if body.stream:
+        return StreamingResponse(
+            _sse_stream_answer_gen(
+                body.question,
+                session_id=session_id,
+                request_id=request_id,
+                trace_id=trace_id,
+            ),
+            media_type="text/event-stream",
+            headers=SSE_HEADERS,
+        )
+    result = await _answer_json(
+        body.question,
+        session_id=session_id,
+        request_id=request_id,
+        trace_id=trace_id,
+    )
+    status_code = 200 if result.get("status") == "ok" else 500
+    return JSONResponse(result, status_code=status_code)
 
 
 @app.post("/feedback")
