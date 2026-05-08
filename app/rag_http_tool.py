@@ -62,14 +62,19 @@ async def query_rag_http(
         "collection_base": settings.rag_collection_base,
         "request_id": request_id or "unknown",
         "session_id": session_id or "unknown",
-        "trace_id": trace_id or request_id or "unknown",
         "k": settings.rag_k,
         "k_max": settings.rag_k_max,
         "include_retrieval_hits": settings.rag_include_retrieval_hits,
     }
     url = f"{base}/v1/rag/query"
+    headers = {
+        "X-Request-Id": request_id or "",
+        "X-Session-Id": session_id or "",
+        "X-Trace-Id": trace_id or request_id or "",
+    }
+    headers = {k: v for k, v in headers.items() if v}
     client = _shared_http_client()
-    r = await client.post(url, json=payload)
+    r = await client.post(url, json=payload, headers=headers)
     r.raise_for_status()
     data = r.json()
     return _format_rag_response(data)
