@@ -4,7 +4,7 @@ import contextlib
 import json
 import logging
 import time
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator, Dict, List, Optional
 
 from .config import has_langsmith_credentials, settings
 from .logging_config import new_request_id, setup_logging, shutdown_logging
@@ -66,6 +66,47 @@ def _header_ids(request: Request) -> tuple[Optional[str], Optional[str], Optiona
     )
 
 
+_TERMINAL_STATE_STATUSES = frozenset({"completed", "failed", "skipped"})
+
+
+def _state_slice_from_event(event: dict) -> dict:
+    return {
+        "phase": event.get("phase"),
+        "status": event.get("status"),
+        "ui_message": event.get("ui_message") or event.get("message"),
+        "started_at": event.get("started_at"),
+        "ended_at": event.get("ended_at"),
+        "latency_ms": event.get("latency_ms"),
+        "metadata": dict(event.get("metadata") or {}),
+    }
+
+
+def _merge_phase_states(existing: dict, incoming: dict) -> dict:
+    """Merge two state records for the same phase (e.g. running then completed)."""
+    out = dict(existing)
+    ex_st = out.get("status")
+    in_st = incoming.get("status")
+    out["metadata"] = {**(out.get("metadata") or {}), **(incoming.get("metadata") or {})}
+    if ex_st in _TERMINAL_STATE_STATUSES:
+        if out.get("started_at") is None and incoming.get("started_at"):
+            out["started_at"] = incoming["started_at"]
+        return out
+    if in_st in _TERMINAL_STATE_STATUSES:
+        out["status"] = in_st
+        out["ui_message"] = incoming.get("ui_message") or out.get("ui_message")
+        if incoming.get("ended_at") is not None:
+            out["ended_at"] = incoming["ended_at"]
+        if incoming.get("latency_ms") is not None:
+            out["latency_ms"] = incoming["latency_ms"]
+        out["started_at"] = incoming.get("started_at") or out.get("started_at")
+        return out
+    out["status"] = in_st or ex_st
+    out["ui_message"] = incoming.get("ui_message") or out.get("ui_message")
+    if incoming.get("started_at"):
+        out["started_at"] = incoming["started_at"]
+    return out
+
+
 async def _answer_event_iter(
     question: str,
     *,
@@ -99,6 +140,8 @@ async def _answer_json(
         "agent_graph_run_id": None,
         "states": [],
     }
+    states_by_phase: Dict[str, dict] = {}
+    state_phase_order: List[str] = []
     async for event in _answer_event_iter(
         question,
         session_id=session_id,
@@ -117,33 +160,31 @@ async def _answer_json(
             final["answer"] = event.get("text")
             final["agent_graph_run_id"] = event.get("agent_graph_run_id")
         elif t == "state":
-            status = event.get("status")
-            # Non-stream response keeps only terminal phase states.
-            if status in {"completed", "failed", "skipped"}:
-                phase_state = {
-                    "phase": event.get("phase"),
-                    "status": status,
-                    "ui_message": event.get("ui_message") or event.get("message"),
-                    "started_at": event.get("started_at"),
-                    "ended_at": event.get("ended_at"),
-                    "latency_ms": event.get("latency_ms"),
-                    "metadata": event.get("metadata"),
-                }
-                phase = phase_state.get("phase")
-                existing_idx = next(
-                    (i for i, s in enumerate(final["states"]) if s.get("phase") == phase),
-                    None,
-                )
-                if existing_idx is None:
-                    final["states"].append(phase_state)
-                else:
-                    final["states"][existing_idx] = phase_state
+            phase = event.get("phase")
+            if not phase:
+                continue
+            incoming = _state_slice_from_event(event)
+            if phase not in states_by_phase:
+                state_phase_order.append(phase)
+                states_by_phase[phase] = incoming
+            else:
+                states_by_phase[phase] = _merge_phase_states(states_by_phase[phase], incoming)
         elif t == "error":
+            final["states"] = [
+                states_by_phase[p]
+                for p in state_phase_order
+                if states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
+            ]
             return {
                 **final,
                 "status": "error",
                 "error": event.get("text"),
             }
+    final["states"] = [
+        states_by_phase[p]
+        for p in state_phase_order
+        if states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
+    ]
     return {
         **final,
         "status": "ok",

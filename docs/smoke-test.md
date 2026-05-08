@@ -28,7 +28,8 @@ curl -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
 ## Orchestrator (SSE with `stream=true`)
 
 `-N` turns off curl buffering so Server-Sent Events stream line-by-line.  
-`request_id`, `session_id`, and `trace_id` must be passed in headers (not request body).
+`request_id`, `session_id`, and `trace_id` must be passed in headers (not request body).  
+Expect multiple `{"type":"state",...}` events during the RAG phase (`rag_query`, `llm_call`, `judge`, etc.); see [design.md](design.md) for phase names.
 
 ```bash
 curl -N -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \

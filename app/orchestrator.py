@@ -1,10 +1,10 @@
 import asyncio
+import contextlib
 import logging
 import time
 import uuid
 from builtins import BaseExceptionGroup
-from datetime import datetime, timezone
-from typing import Any, AsyncIterator, List, Optional, Tuple
+from typing import Any, AsyncIterator, Awaitable, Callable, List, Optional, Tuple
 
 from langchain_core.callbacks import AsyncCallbackHandler
 
@@ -12,42 +12,10 @@ from .agent_graph import build_graph_agent
 from .agent_rewrite import rewrite_query
 from .config import get_langsmith_tags, settings
 from .intent_gate import get_canned_answer
+from .pipeline_state import state_event, utc_now_iso
 from .utils import last_ai_content
 
 _pipeline_log = logging.getLogger("layer_orchestrator.pipeline")
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def _state_event(
-    *,
-    phase: str,
-    status: str,
-    ui_message: str,
-    started_at: Optional[str] = None,
-    ended_at: Optional[str] = None,
-    latency_ms: Optional[float] = None,
-    metadata: Optional[dict] = None,
-) -> dict:
-    event = {
-        "type": "state",
-        "phase": phase,
-        "status": status,
-        "ui_message": ui_message,
-        # Keep backward-compatible key for existing clients.
-        "message": ui_message,
-    }
-    if started_at is not None:
-        event["started_at"] = started_at
-    if ended_at is not None:
-        event["ended_at"] = ended_at
-    if latency_ms is not None:
-        event["latency_ms"] = round(latency_ms, 2)
-    if metadata:
-        event["metadata"] = metadata
-    return event
 
 
 class _AgentRunIdCallback(AsyncCallbackHandler):
@@ -69,6 +37,7 @@ async def run_graph(
     request_id: Optional[str] = None,
     session_id: Optional[str] = None,
     trace_id: Optional[str] = None,
+    emit_state: Optional[Callable[..., Awaitable[None]]] = None,
 ) -> Tuple[List[Any], Optional[str]]:
     """Run one phase (RAG) and return (messages, agent_graph_run_id). agent_graph_run_id from LangSmith."""
     t0 = time.perf_counter()
@@ -86,6 +55,8 @@ async def run_graph(
         for k, v in (("request_id", request_id), ("session_id", session_id), ("trace_id", trace_id))
         if v is not None
     }
+    if emit_state is not None:
+        configurable["emit_state"] = emit_state
     config = {
         "run_name": "agent_graph",
         "callbacks": [callback],
@@ -206,8 +177,8 @@ async def stream_answer_query(
                 },
             )
             yield {"type": "answer", "text": canned}
-            done_ts = _utc_now_iso()
-            yield _state_event(
+            done_ts = utc_now_iso()
+            yield state_event(
                 phase="request_complete",
                 status="completed",
                 ui_message="Complete",
@@ -227,8 +198,8 @@ async def stream_answer_query(
             return
         # no → EntityRewrite (Taixing?) → Router → Graph
         rewrite_started_perf = time.perf_counter()
-        rewrite_started_at = _utc_now_iso()
-        yield _state_event(
+        rewrite_started_at = utc_now_iso()
+        yield state_event(
             phase="rewrite",
             status="running",
             ui_message="Rewriting question...",
@@ -245,8 +216,8 @@ async def stream_answer_query(
             session_id=session_id,
             trace_id=trace_id,
         )
-        rewrite_ended_at = _utc_now_iso()
-        yield _state_event(
+        rewrite_ended_at = utc_now_iso()
+        yield state_event(
             phase="rewrite",
             status="completed",
             ui_message="Question rewritten",
@@ -288,8 +259,8 @@ async def stream_answer_query(
             },
         )
         yield {"type": "route", "route": "RAG"}
-        route_ts = _utc_now_iso()
-        yield _state_event(
+        route_ts = utc_now_iso()
+        yield state_event(
             phase="route_decision",
             status="completed",
             ui_message="Route selected",
@@ -301,8 +272,8 @@ async def stream_answer_query(
         messages = [{"role": "user", "content": rewritten}]
         agent_graph_run_id = None
         if not use_http_rag:
-            skipped_ts = _utc_now_iso()
-            yield _state_event(
+            skipped_ts = utc_now_iso()
+            yield state_event(
                 phase="rag",
                 status="skipped",
                 ui_message="RAG skipped: configuration missing",
@@ -312,8 +283,8 @@ async def stream_answer_query(
             )
             raise ValueError("RAG_HTTP_BASE_URL is required in FastAPI-only mode")
         rag_started_perf = time.perf_counter()
-        rag_started_at = _utc_now_iso()
-        yield _state_event(
+        rag_started_at = utc_now_iso()
+        yield state_event(
             phase="rag",
             status="running",
             ui_message="Running RAG phase...",
@@ -328,16 +299,55 @@ async def stream_answer_query(
             "rag_started",
             extra={"event": "rag_started", "request_id": request_id, "session_id": session_id or "-"},
         )
-        messages, agent_graph_run_id = await run_graph(
-            messages,
-            tools_s,
-            invoke_s,
-            request_id=request_id,
-            session_id=session_id,
-            trace_id=trace_id,
+        state_queue: asyncio.Queue = asyncio.Queue()
+
+        async def emit_graph_state(**kwargs):
+            await state_queue.put(state_event(**kwargs))
+
+        graph_task = asyncio.create_task(
+            run_graph(
+                messages,
+                tools_s,
+                invoke_s,
+                request_id=request_id,
+                session_id=session_id,
+                trace_id=trace_id,
+                emit_state=emit_graph_state,
+            )
         )
-        rag_ended_at = _utc_now_iso()
-        yield _state_event(
+        try:
+            while not graph_task.done():
+                get_task = asyncio.create_task(state_queue.get())
+                done, _ = await asyncio.wait(
+                    {graph_task, get_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if get_task in done:
+                    try:
+                        ev = get_task.result()
+                    except asyncio.CancelledError:
+                        continue
+                    yield ev
+                if graph_task in done:
+                    if not get_task.done():
+                        get_task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await get_task
+                    break
+            while True:
+                try:
+                    yield state_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+            messages, agent_graph_run_id = graph_task.result()
+        except BaseException:
+            if not graph_task.done():
+                graph_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await graph_task
+            raise
+        rag_ended_at = utc_now_iso()
+        yield state_event(
             phase="rag",
             status="completed",
             ui_message="RAG phase completed",
@@ -375,8 +385,8 @@ async def stream_answer_query(
             if agent_graph_run_id:
                 event["agent_graph_run_id"] = agent_graph_run_id
             yield event
-        done_ts = _utc_now_iso()
-        yield _state_event(
+        done_ts = utc_now_iso()
+        yield state_event(
             phase="request_complete",
             status="completed",
             ui_message="Complete",
@@ -395,8 +405,8 @@ async def stream_answer_query(
         )
     except Exception as e:
         err_text = format_error(e)
-        fail_ts = _utc_now_iso()
-        yield _state_event(
+        fail_ts = utc_now_iso()
+        yield state_event(
             phase="request_complete",
             status="failed",
             ui_message="Request failed",
