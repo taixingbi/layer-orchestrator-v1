@@ -51,6 +51,7 @@ def _accumulate_sse_payload(raw_events: List[str]) -> Any:
     """Best-effort SSE data aggregation into a JSON-like payload."""
     text_chunks: List[str] = []
     retrieval_hits: Any = None
+    latency_ms: Any = None
     last_obj: Any = None
     for raw in raw_events:
         item = raw.strip()
@@ -76,11 +77,16 @@ def _accumulate_sse_payload(raw_events: List[str]) -> Any:
                 retrieval_hits = obj.get("retrieval_hits")
             elif "hits" in obj:
                 retrieval_hits = obj.get("hits")
+            if "latency_ms" in obj:
+                latency_ms = obj.get("latency_ms")
     if text_chunks or retrieval_hits is not None:
-        return {
+        payload = {
             "text": "".join(text_chunks).strip(),
             "retrieval_hits": retrieval_hits,
         }
+        if latency_ms is not None:
+            payload["latency_ms"] = latency_ms
+        return payload
     return last_obj if last_obj is not None else {"text": ""}
 
 

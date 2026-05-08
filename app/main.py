@@ -217,7 +217,6 @@ async def _answer_json(
         "rewrite": None,
         "answer": None,
         "agent_graph_run_id": None,
-        "states": [],
     }
     states_by_phase: Dict[str, dict] = {}
     state_phase_order: List[str] = []
@@ -249,23 +248,23 @@ async def _answer_json(
             else:
                 states_by_phase[phase] = _merge_phase_states(states_by_phase[phase], incoming)
         elif t == "error":
-            final["states"] = [
+            terminal_states = [
                 states_by_phase[p]
                 for p in state_phase_order
                 if states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
             ]
-            final["timings_ms"] = _build_timings_summary(final["states"])
+            final["timings_ms"] = _build_timings_summary(terminal_states)
             return {
                 **final,
                 "status": "error",
                 "error": event.get("text"),
             }
-    final["states"] = [
+    terminal_states = [
         states_by_phase[p]
         for p in state_phase_order
         if states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
     ]
-    final["timings_ms"] = _build_timings_summary(final["states"])
+    final["timings_ms"] = _build_timings_summary(terminal_states)
     return {
         **final,
         "status": "ok",
