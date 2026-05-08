@@ -118,7 +118,15 @@ async def _answer_json(
             final["agent_graph_run_id"] = event.get("agent_graph_run_id")
         elif t == "state":
             final["states"].append(
-                {"phase": event.get("phase"), "message": event.get("message")}
+                {
+                    "phase": event.get("phase"),
+                    "status": event.get("status"),
+                    "ui_message": event.get("ui_message") or event.get("message"),
+                    "started_at": event.get("started_at"),
+                    "ended_at": event.get("ended_at"),
+                    "latency_ms": event.get("latency_ms"),
+                    "metadata": event.get("metadata"),
+                }
             )
         elif t == "error":
             return {

@@ -3,6 +3,7 @@ import logging
 import time
 import uuid
 from builtins import BaseExceptionGroup
+from datetime import datetime, timezone
 from typing import Any, AsyncIterator, List, Optional, Tuple
 
 from langchain_core.callbacks import AsyncCallbackHandler
@@ -14,6 +15,39 @@ from .intent_gate import get_canned_answer
 from .utils import last_ai_content
 
 _pipeline_log = logging.getLogger("layer_orchestrator.pipeline")
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _state_event(
+    *,
+    phase: str,
+    status: str,
+    ui_message: str,
+    started_at: Optional[str] = None,
+    ended_at: Optional[str] = None,
+    latency_ms: Optional[float] = None,
+    metadata: Optional[dict] = None,
+) -> dict:
+    event = {
+        "type": "state",
+        "phase": phase,
+        "status": status,
+        "ui_message": ui_message,
+        # Keep backward-compatible key for existing clients.
+        "message": ui_message,
+    }
+    if started_at is not None:
+        event["started_at"] = started_at
+    if ended_at is not None:
+        event["ended_at"] = ended_at
+    if latency_ms is not None:
+        event["latency_ms"] = round(latency_ms, 2)
+    if metadata:
+        event["metadata"] = metadata
+    return event
 
 
 class _AgentRunIdCallback(AsyncCallbackHandler):
@@ -172,7 +206,15 @@ async def stream_answer_query(
                 },
             )
             yield {"type": "answer", "text": canned}
-            yield {"type": "state", "phase": "done", "message": "Complete"}
+            done_ts = _utc_now_iso()
+            yield _state_event(
+                phase="request_complete",
+                status="completed",
+                ui_message="Complete",
+                started_at=done_ts,
+                ended_at=done_ts,
+                latency_ms=0,
+            )
             _pipeline_log.info(
                 "request_completed",
                 extra={
@@ -184,16 +226,34 @@ async def stream_answer_query(
             )
             return
         # no → EntityRewrite (Taixing?) → Router → Graph
+        rewrite_started_perf = time.perf_counter()
+        rewrite_started_at = _utc_now_iso()
+        yield _state_event(
+            phase="rewrite",
+            status="running",
+            ui_message="Rewriting question...",
+            started_at=rewrite_started_at,
+            metadata={"query_len": len(query or "")},
+        )
         _pipeline_log.info(
             "rewrite_started",
             extra={"event": "rewrite_started", "request_id": request_id, "session_id": session_id or "-"},
         )
-        yield {"type": "state", "phase": "rewrite", "message": "Rewriting question..."}
         rewritten = await rewrite_query(
             query,
             request_id=request_id,
             session_id=session_id,
             trace_id=trace_id,
+        )
+        rewrite_ended_at = _utc_now_iso()
+        yield _state_event(
+            phase="rewrite",
+            status="completed",
+            ui_message="Question rewritten",
+            started_at=rewrite_started_at,
+            ended_at=rewrite_ended_at,
+            latency_ms=(time.perf_counter() - rewrite_started_perf) * 1000,
+            metadata={"rewritten_len": len(rewritten or "")},
         )
         _pipeline_log.info(
             "rewrite_completed",
@@ -231,13 +291,33 @@ async def stream_answer_query(
         messages = [{"role": "user", "content": rewritten}]
         agent_graph_run_id = None
         if not use_http_rag:
+            skipped_ts = _utc_now_iso()
+            yield _state_event(
+                phase="rag",
+                status="skipped",
+                ui_message="RAG skipped: configuration missing",
+                started_at=skipped_ts,
+                ended_at=skipped_ts,
+                latency_ms=0,
+            )
             raise ValueError("RAG_HTTP_BASE_URL is required in FastAPI-only mode")
+        rag_started_perf = time.perf_counter()
+        rag_started_at = _utc_now_iso()
+        yield _state_event(
+            phase="rag_retrieve",
+            status="running",
+            ui_message="Searching knowledge base",
+            started_at=rag_started_at,
+            metadata={
+                "collection": settings.rag_collection_base,
+                "k": settings.rag_k,
+                "k_max": settings.rag_k_max,
+            },
+        )
         _pipeline_log.info(
             "rag_started",
             extra={"event": "rag_started", "request_id": request_id, "session_id": session_id or "-"},
         )
-        yield {"type": "state", "phase": "rag", "message": "Running RAG phase..."}
-        rag_t0 = time.perf_counter()
         messages, agent_graph_run_id = await run_graph(
             messages,
             tools_s,
@@ -246,13 +326,27 @@ async def stream_answer_query(
             session_id=session_id,
             trace_id=trace_id,
         )
+        rag_ended_at = _utc_now_iso()
+        yield _state_event(
+            phase="rag_retrieve",
+            status="completed",
+            ui_message="Knowledge base search completed",
+            started_at=rag_started_at,
+            ended_at=rag_ended_at,
+            latency_ms=(time.perf_counter() - rag_started_perf) * 1000,
+            metadata={
+                "collection": settings.rag_collection_base,
+                "k": settings.rag_k,
+                "k_max": settings.rag_k_max,
+            },
+        )
         _pipeline_log.info(
             "rag_completed",
             extra={
                 "event": "rag_completed",
                 "request_id": request_id,
                 "session_id": session_id or "-",
-                "latency_ms": round((time.perf_counter() - rag_t0) * 1000, 2),
+                "latency_ms": round((time.perf_counter() - rag_started_perf) * 1000, 2),
                 "gateway_meta": {"has_agent_graph_run_id": bool(agent_graph_run_id)},
             },
         )
@@ -271,7 +365,15 @@ async def stream_answer_query(
             if agent_graph_run_id:
                 event["agent_graph_run_id"] = agent_graph_run_id
             yield event
-        yield {"type": "state", "phase": "done", "message": "Complete"}
+        done_ts = _utc_now_iso()
+        yield _state_event(
+            phase="request_complete",
+            status="completed",
+            ui_message="Complete",
+            started_at=done_ts,
+            ended_at=done_ts,
+            latency_ms=0,
+        )
         _pipeline_log.info(
             "request_completed",
             extra={
@@ -283,6 +385,16 @@ async def stream_answer_query(
         )
     except Exception as e:
         err_text = format_error(e)
+        fail_ts = _utc_now_iso()
+        yield _state_event(
+            phase="request_complete",
+            status="failed",
+            ui_message="Request failed",
+            started_at=fail_ts,
+            ended_at=fail_ts,
+            latency_ms=0,
+            metadata={"error_type": type(e).__name__},
+        )
         if not getattr(e, "_pipeline_logged", False):
             _pipeline_log.error(
                 "stream_answer_error",
