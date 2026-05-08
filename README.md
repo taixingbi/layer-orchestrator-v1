@@ -84,9 +84,10 @@ curl http://127.0.0.1:8000/health
 ```bash
 curl -N -s -X POST http://127.0.0.1:8000/orchestrator/stream-answer \
   -H "Content-Type: application/json" \
+  -H "X-Session-Id: 123456" \
+  -H "X-Request-Id: 12345678" \
+  -H "X-Trace-Id: 12345678" \
   -d '{
-    "session_id": "123456",
-    "request_id": "12345678",
     "question": "what is taixing visa status?"
   }'
 ```

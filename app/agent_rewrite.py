@@ -39,6 +39,7 @@ async def rewrite_query(
     *,
     request_id: Optional[str] = None,
     session_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
 ) -> str:
     """EntityRewrite: third-person (Taixing) + LLM rewrite for retrieval. Call after IntentGate (no smalltalk)."""
     if not query or not query.strip():
@@ -50,7 +51,7 @@ async def rewrite_query(
     )
     query = rewrite_to_third_person(query)
     llm = get_llm()
-    invoke_kw = gateway_llm_invoke_kwargs(request_id, session_id)
+    invoke_kw = gateway_llm_invoke_kwargs(request_id, session_id, trace_id)
     msg = await llm.ainvoke(
         [SystemMessage(content=_SYSTEM), HumanMessage(content=query)],
         config={

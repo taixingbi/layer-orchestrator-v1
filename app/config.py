@@ -83,11 +83,12 @@ def gateway_extra_headers(
 def gateway_llm_invoke_kwargs(
     request_id: Optional[str] = None,
     session_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Extra kwargs for chat model ainvoke when using the configured gateway."""
     if not normalized_llm_base_url():
         return {}
-    hdrs = gateway_extra_headers(request_id, session_id)
+    hdrs = gateway_extra_headers(request_id, session_id, trace_id)
     return {"extra_headers": hdrs} if hdrs else {}
 
 

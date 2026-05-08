@@ -34,6 +34,7 @@ async def run_graph(
     *,
     request_id: Optional[str] = None,
     session_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
 ) -> Tuple[List[Any], Optional[str]]:
     """Run one phase (RAG) and return (messages, agent_graph_run_id). agent_graph_run_id from LangSmith."""
     t0 = time.perf_counter()
@@ -46,7 +47,11 @@ async def run_graph(
     )
     run_ids: List[str] = []
     callback = _AgentRunIdCallback(run_ids)
-    configurable = {k: v for k, v in (("request_id", request_id), ("session_id", session_id)) if v is not None}
+    configurable = {
+        k: v
+        for k, v in (("request_id", request_id), ("session_id", session_id), ("trace_id", trace_id))
+        if v is not None
+    }
     config = {
         "run_name": "agent_graph",
         "callbacks": [callback],
@@ -94,6 +99,7 @@ async def answer_query_sync(
     invoke_timeout_s: Optional[float] = None,
     request_id: Optional[str] = None,
     session_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
 ) -> str:
     """Run agent and return the final answer. Consumes stream_answer_query for single code path."""
     answer = ""
@@ -101,6 +107,7 @@ async def answer_query_sync(
         query,
         request_id=request_id,
         session_id=session_id,
+        trace_id=trace_id,
         tools_timeout_s=tools_timeout_s,
         invoke_timeout_s=invoke_timeout_s,
     ):
@@ -116,6 +123,7 @@ async def stream_answer_query(
     *,
     session_id: Optional[str] = None,
     request_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
     tools_timeout_s: Optional[float] = None,
     invoke_timeout_s: Optional[float] = None,
 ) -> AsyncIterator[dict]:
@@ -151,7 +159,7 @@ async def stream_answer_query(
         yield {"type": "request_id", "session_id": session_id, "request_id": request_id}
         # IntentGate (smalltalk?) — agent
         canned = await get_canned_answer(
-            query, request_id=request_id, session_id=session_id
+            query, request_id=request_id, session_id=session_id, trace_id=trace_id
         )
         if canned is not None:
             _pipeline_log.info(
@@ -181,7 +189,12 @@ async def stream_answer_query(
             extra={"event": "rewrite_started", "request_id": request_id, "session_id": session_id or "-"},
         )
         yield {"type": "state", "phase": "rewrite", "message": "Rewriting question..."}
-        rewritten = await rewrite_query(query, request_id=request_id, session_id=session_id)
+        rewritten = await rewrite_query(
+            query,
+            request_id=request_id,
+            session_id=session_id,
+            trace_id=trace_id,
+        )
         _pipeline_log.info(
             "rewrite_completed",
             extra={
@@ -231,6 +244,7 @@ async def stream_answer_query(
             invoke_s,
             request_id=request_id,
             session_id=session_id,
+            trace_id=trace_id,
         )
         _pipeline_log.info(
             "rag_completed",

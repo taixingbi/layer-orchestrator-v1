@@ -51,6 +51,7 @@ async def query_rag_http(
     question: str,
     request_id: str = "",
     session_id: str = "",
+    trace_id: str = "",
 ) -> str:
     """POST /v1/rag/query and return formatted text for the LLM."""
     base = (settings.rag_http_base_url or "").rstrip("/")
@@ -61,6 +62,7 @@ async def query_rag_http(
         "collection_base": settings.rag_collection_base,
         "request_id": request_id or "unknown",
         "session_id": session_id or "unknown",
+        "trace_id": trace_id or request_id or "unknown",
         "k": settings.rag_k,
         "k_max": settings.rag_k_max,
         "include_retrieval_hits": settings.rag_include_retrieval_hits,
@@ -81,8 +83,9 @@ def create_rag_http_tools():
         question: str,
         request_id: str = "",
         session_id: str = "",
+        trace_id: str = "",
     ) -> str:
         """Retrieve relevant knowledge from the configured vector collection (RAG). Use for questions that need factual or policy information from the knowledge base."""
-        return await query_rag_http(question, request_id, session_id)
+        return await query_rag_http(question, request_id, session_id, trace_id)
 
     return [query_knowledge_base]

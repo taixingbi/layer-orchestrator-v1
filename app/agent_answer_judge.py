@@ -31,6 +31,7 @@ async def evaluate_answer(
     evidence: Optional[str] = None,
     request_id: Optional[str] = None,
     session_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
     """Evaluate answer quality. Returns (passed, feedback). If passed, feedback is None.
     evidence: optional tool outputs, e.g. '[E1] ... [E2] ...' for citation checking."""
@@ -50,7 +51,7 @@ async def evaluate_answer(
     )
     llm = get_llm()
     tags = get_langsmith_tags(request_id=request_id, session_id=session_id)
-    invoke_kw = gateway_llm_invoke_kwargs(request_id, session_id)
+    invoke_kw = gateway_llm_invoke_kwargs(request_id, session_id, trace_id)
     evidence_block = f"\n\nEvidence (tool outputs), numbered as [E1], [E2], ...:\n{evidence}" if evidence else "\n\nEvidence: (none)"
     resp = await llm.ainvoke(
         JUDGE_PROMPT + f"\nQuestion: {question}\n\nAnswer: {answer}" + evidence_block,

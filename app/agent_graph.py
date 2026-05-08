@@ -72,6 +72,7 @@ async def build_graph_agent(
             evidence=evidence,
             request_id=cfg.get("request_id"),
             session_id=cfg.get("session_id"),
+            trace_id=cfg.get("trace_id"),
         )
         _graph_log.debug(
             "judge_evaluated",
@@ -106,6 +107,7 @@ async def build_graph_agent(
             question,
             str(cfg.get("request_id") or ""),
             str(cfg.get("session_id") or ""),
+            str(cfg.get("trace_id") or ""),
         )
         _graph_log.debug(
             "retrieve_completed",
@@ -138,7 +140,7 @@ async def build_graph_agent(
         t0 = time.perf_counter()
         cfg = (config or {}).get("configurable") or {}
         invoke_kw = gateway_llm_invoke_kwargs(
-            cfg.get("request_id"), cfg.get("session_id")
+            cfg.get("request_id"), cfg.get("session_id"), cfg.get("trace_id")
         )
         _graph_log.debug(
             "llm_call_started",

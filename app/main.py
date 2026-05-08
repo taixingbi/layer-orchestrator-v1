@@ -12,9 +12,9 @@ from .request_context import bind_request_context, reset_request_context, set_ht
 
 setup_logging()
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from starlette.requests import Request
 from .langsmith_feedback import FEEDBACK_TYPES, FeedbackBody, submit_langsmith_feedback
 from .orchestrator import stream_answer_query
@@ -31,11 +31,12 @@ def _sse_stream_answer_gen(
     question: str,
     session_id: Optional[str] = None,
     request_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
 ) -> AsyncIterator[str]:
     """Async generator for POST stream-answer. Yields SSE events from stream_answer_query."""
     async def _gen():
         async for chunk in stream_answer_query(
-            question, session_id=session_id, request_id=request_id
+            question, session_id=session_id, request_id=request_id, trace_id=trace_id
         ):
             yield f"data: {json.dumps(chunk)}\n\n"
     return _gen()
@@ -68,6 +69,9 @@ async def _http_request_logging_middleware(request: Request, call_next):
     request_id = request.headers.get("x-request-id") or new_request_id()
     session_id = request.headers.get("x-session-id")
     trace_id = request.headers.get("x-trace-id") or request_id
+    request.state.request_id = request_id
+    request.state.session_id = session_id
+    request.state.trace_id = trace_id
     path = request.url.path
     method = request.method
     ctx = bind_request_context(
@@ -113,17 +117,32 @@ async def _http_request_logging_middleware(request: Request, call_next):
 
 class StreamAnswerBody(BaseModel):
     question: str
-    session_id: Optional[str] = Field(None, description="Optional session id for LangSmith tags")
-    request_id: Optional[str] = Field(None, description="Optional request id; if provided, used as stream request_id")
 
 
 @app.post("/orchestrator/stream-answer")
-async def orchestrator_stream_answer_(body: StreamAnswerBody):
+async def orchestrator_stream_answer_(body: StreamAnswerBody, request: Request):
     """Stream the assistant's answer as Server-Sent Events. Body: {"question": "..."}.
     Events: request_id, state, rewrite, route, answer, error."""
+    raw_body = await request.json()
+    forbidden_keys = [
+        key
+        for key in ("session_id", "request_id", "trace_id")
+        if isinstance(raw_body, dict) and key in raw_body
+    ]
+    if forbidden_keys:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{', '.join(forbidden_keys)} must be sent in headers only: "
+                "X-Session-Id, X-Request-Id, X-Trace-Id"
+            ),
+        )
     return StreamingResponse(
         _sse_stream_answer_gen(
-            body.question, session_id=body.session_id, request_id=body.request_id
+            body.question,
+            session_id=getattr(request.state, "session_id", None),
+            request_id=getattr(request.state, "request_id", None),
+            trace_id=getattr(request.state, "trace_id", None),
         ),
         media_type="text/event-stream",
         headers=SSE_HEADERS,

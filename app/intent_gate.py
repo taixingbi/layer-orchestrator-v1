@@ -18,12 +18,13 @@ async def get_canned_answer(
     *,
     request_id: Optional[str] = None,
     session_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
 ) -> Optional[str]:
     """If the agent classifies query as smalltalk, return its free reply; else None."""
     if not query or not query.strip():
         return None
     llm = get_llm()
-    invoke_kw = gateway_llm_invoke_kwargs(request_id, session_id)
+    invoke_kw = gateway_llm_invoke_kwargs(request_id, session_id, trace_id)
     resp = await llm.ainvoke(
         INTENT_GATE_PROMPT + query.strip(),
         config={
