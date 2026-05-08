@@ -60,8 +60,6 @@ async def query_rag_http(
     payload = {
         "question": question,
         "collection_base": settings.rag_collection_base,
-        "request_id": request_id or "unknown",
-        "session_id": session_id or "unknown",
         "k": settings.rag_k,
         "k_max": settings.rag_k_max,
         "include_retrieval_hits": settings.rag_include_retrieval_hits,
