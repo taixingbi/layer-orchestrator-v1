@@ -1,7 +1,7 @@
 """LangChain tool that calls the RAG HTTP API (POST /v1/rag/query)."""
 
 import json
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 from langchain_core.tools import tool
@@ -84,6 +84,17 @@ def _accumulate_sse_payload(raw_events: List[str]) -> Any:
     return last_obj if last_obj is not None else {"text": ""}
 
 
+def _extract_rag_latency_ms(data: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(data, dict):
+        return None
+    latency = data.get("latency_ms")
+    if isinstance(latency, dict):
+        return latency
+    if isinstance(latency, (int, float)):
+        return {"total": latency}
+    return None
+
+
 async def query_rag_http(
     question: str,
     request_id: str = "",
@@ -91,6 +102,17 @@ async def query_rag_http(
     trace_id: str = "",
 ) -> str:
     """POST /v1/rag/query and return formatted text for the LLM."""
+    text, _ = await query_rag_http_with_meta(question, request_id, session_id, trace_id)
+    return text
+
+
+async def query_rag_http_with_meta(
+    question: str,
+    request_id: str = "",
+    session_id: str = "",
+    trace_id: str = "",
+) -> Tuple[str, Dict[str, Any]]:
+    """POST /v1/rag/query and return (formatted_text, metadata)."""
     base = (settings.rag_http_base_url or "").rstrip("/")
     if not base:
         raise ValueError("RAG_HTTP_BASE_URL is not set")
@@ -121,7 +143,11 @@ async def query_rag_http(
             data = _accumulate_sse_payload(events)
         else:
             data = await r.json()
-    return _format_rag_response(data)
+    metadata: Dict[str, Any] = {}
+    rag_latency_ms = _extract_rag_latency_ms(data)
+    if rag_latency_ms is not None:
+        metadata["rag_latency_ms"] = rag_latency_ms
+    return _format_rag_response(data), metadata
 
 
 def create_rag_http_tools():

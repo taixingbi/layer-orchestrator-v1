@@ -107,6 +107,24 @@ def _merge_phase_states(existing: dict, incoming: dict) -> dict:
     return out
 
 
+def _build_latency_summary(states: List[dict]) -> dict:
+    summary: Dict[str, object] = {}
+    for s in states:
+        phase = s.get("phase")
+        if not phase:
+            continue
+        phase_latency = s.get("latency_ms")
+        if phase_latency is not None:
+            summary[phase] = phase_latency
+        if phase == "rag_query":
+            rag_latency = (s.get("metadata") or {}).get("rag_latency_ms")
+            if isinstance(rag_latency, dict):
+                rag_obj: Dict[str, object] = {"phase": phase_latency}
+                rag_obj.update(rag_latency)
+                summary["rag"] = rag_obj
+    return summary
+
+
 async def _answer_event_iter(
     question: str,
     *,
@@ -175,6 +193,7 @@ async def _answer_json(
                 for p in state_phase_order
                 if states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
             ]
+            final["latency_ms"] = _build_latency_summary(final["states"])
             return {
                 **final,
                 "status": "error",
@@ -185,6 +204,7 @@ async def _answer_json(
         for p in state_phase_order
         if states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
     ]
+    final["latency_ms"] = _build_latency_summary(final["states"])
     return {
         **final,
         "status": "ok",

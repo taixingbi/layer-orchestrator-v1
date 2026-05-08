@@ -12,7 +12,7 @@ from langgraph.graph.message import MessagesState
 from .agent_answer_judge import evaluate_answer
 from .config import gateway_llm_invoke_kwargs, get_llm, settings
 from .pipeline_state import utc_now_iso
-from .rag_http_tool import query_rag_http
+from .rag_http_tool import query_rag_http_with_meta
 from .utils import extract_message_content, first_user_text, message_role
 
 MAX_RETRIES = 1
@@ -156,7 +156,7 @@ async def build_graph_agent(
             "retrieve_started",
             extra={"event": "retrieve_started", "gateway_meta": {"question_len": len(question or "")}},
         )
-        evidence = await query_rag_http(
+        evidence, rag_meta = await query_rag_http_with_meta(
             question,
             str(cfg.get("request_id") or ""),
             str(cfg.get("session_id") or ""),
@@ -178,7 +178,10 @@ async def build_graph_agent(
             started_at=rag_started_at,
             ended_at=utc_now_iso(),
             latency_ms=(time.perf_counter() - t0) * 1000,
-            metadata={"evidence_len": len(evidence or "")},
+            metadata={
+                "evidence_len": len(evidence or ""),
+                **rag_meta,
+            },
         )
         tid = f"call_rag_{uuid.uuid4().hex[:16]}"
         synthetic = AIMessage(
