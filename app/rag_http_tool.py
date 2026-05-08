@@ -130,25 +130,27 @@ async def query_rag_http_with_meta(
         "include_retrieval_hits": settings.rag_include_retrieval_hits,
     }
     url = f"{base}/v1/rag/query"
+    # Prefer JSON (same as typical curl without Accept: event-stream) so the body
+    # includes full `latency_ms` breakdown. SSE streams often omit or split metrics.
     headers = {
-        "Accept": "text/event-stream",
+        "Accept": "application/json",
         "X-Request-Id": request_id or "",
         "X-Session-Id": session_id or "",
         "X-Trace-Id": trace_id or request_id or "",
     }
     headers = {k: v for k, v in headers.items() if v}
     client = _shared_http_client()
-    async with client.stream("POST", url, json=payload, headers=headers) as r:
-        r.raise_for_status()
-        ctype = (r.headers.get("content-type") or "").lower()
-        if "text/event-stream" in ctype:
-            events: List[str] = []
-            async for line in r.aiter_lines():
-                if line.startswith("data:"):
-                    events.append(line[5:].strip())
-            data = _accumulate_sse_payload(events)
-        else:
-            data = await r.json()
+    response = await client.post(url, json=payload, headers=headers)
+    response.raise_for_status()
+    ctype = (response.headers.get("content-type") or "").lower()
+    if "text/event-stream" in ctype:
+        events: List[str] = []
+        for line in response.text.splitlines():
+            if line.startswith("data:"):
+                events.append(line[5:].strip())
+        data = _accumulate_sse_payload(events)
+    else:
+        data = response.json()
     metadata: Dict[str, Any] = {}
     rag_latency_ms = _extract_rag_latency_ms(data)
     if rag_latency_ms is not None:
