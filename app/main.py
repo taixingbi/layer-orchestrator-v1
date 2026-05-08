@@ -117,17 +117,27 @@ async def _answer_json(
             final["answer"] = event.get("text")
             final["agent_graph_run_id"] = event.get("agent_graph_run_id")
         elif t == "state":
-            final["states"].append(
-                {
+            status = event.get("status")
+            # Non-stream response keeps only terminal phase states.
+            if status in {"completed", "failed", "skipped"}:
+                phase_state = {
                     "phase": event.get("phase"),
-                    "status": event.get("status"),
+                    "status": status,
                     "ui_message": event.get("ui_message") or event.get("message"),
                     "started_at": event.get("started_at"),
                     "ended_at": event.get("ended_at"),
                     "latency_ms": event.get("latency_ms"),
                     "metadata": event.get("metadata"),
                 }
-            )
+                phase = phase_state.get("phase")
+                existing_idx = next(
+                    (i for i, s in enumerate(final["states"]) if s.get("phase") == phase),
+                    None,
+                )
+                if existing_idx is None:
+                    final["states"].append(phase_state)
+                else:
+                    final["states"][existing_idx] = phase_state
         elif t == "error":
             return {
                 **final,

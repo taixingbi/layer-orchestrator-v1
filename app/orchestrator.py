@@ -288,6 +288,16 @@ async def stream_answer_query(
             },
         )
         yield {"type": "route", "route": "RAG"}
+        route_ts = _utc_now_iso()
+        yield _state_event(
+            phase="route_decision",
+            status="completed",
+            ui_message="Route selected",
+            started_at=route_ts,
+            ended_at=route_ts,
+            latency_ms=0,
+            metadata={"route": "RAG"},
+        )
         messages = [{"role": "user", "content": rewritten}]
         agent_graph_run_id = None
         if not use_http_rag:
@@ -304,9 +314,9 @@ async def stream_answer_query(
         rag_started_perf = time.perf_counter()
         rag_started_at = _utc_now_iso()
         yield _state_event(
-            phase="rag_retrieve",
+            phase="rag",
             status="running",
-            ui_message="Searching knowledge base",
+            ui_message="Running RAG phase...",
             started_at=rag_started_at,
             metadata={
                 "collection": settings.rag_collection_base,
@@ -328,9 +338,9 @@ async def stream_answer_query(
         )
         rag_ended_at = _utc_now_iso()
         yield _state_event(
-            phase="rag_retrieve",
+            phase="rag",
             status="completed",
-            ui_message="Knowledge base search completed",
+            ui_message="RAG phase completed",
             started_at=rag_started_at,
             ended_at=rag_ended_at,
             latency_ms=(time.perf_counter() - rag_started_perf) * 1000,
