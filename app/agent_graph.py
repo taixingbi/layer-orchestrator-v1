@@ -165,6 +165,18 @@ async def build_graph_agent(
                 str(cfg.get("session_id") or ""),
                 str(cfg.get("trace_id") or ""),
             )
+            _graph_log.info(
+                "rag_query_api_response",
+                extra={
+                    "event": "rag_query_api_response",
+                    "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
+                    "gateway_meta": {
+                        "evidence_len": len(evidence or ""),
+                        "http_status_code": rag_meta.get("http_status_code"),
+                        "rag_api_response": rag_meta.get("rag_api_response"),
+                    },
+                },
+            )
             _graph_log.debug(
                 "retrieve_completed",
                 extra={
@@ -173,6 +185,10 @@ async def build_graph_agent(
                     "gateway_meta": {"evidence_len": len(evidence or "")},
                 },
             )
+            state_meta = {
+                "evidence_len": len(evidence or ""),
+                **{k: v for k, v in rag_meta.items() if k != "rag_api_response"},
+            }
             await _emit_state(
                 config,
                 phase="rag_query",
@@ -181,10 +197,7 @@ async def build_graph_agent(
                 started_at=rag_started_at,
                 ended_at=utc_now_iso(),
                 latency_ms=(time.perf_counter() - t0) * 1000,
-                metadata={
-                    "evidence_len": len(evidence or ""),
-                    **rag_meta,
-                },
+                metadata=state_meta,
             )
             tid = f"call_rag_{uuid.uuid4().hex[:16]}"
             synthetic = AIMessage(

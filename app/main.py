@@ -310,36 +310,37 @@ async def _http_request_logging_middleware(request: Request, call_next):
         path=path,
     )
     try:
-        _http_log.info(
-            "http_request_start",
-            extra={"trace_id": trace_id},
-        )
-        t0 = time.perf_counter()
-        try:
-            response = await call_next(request)
-        except Exception:
+        async with bind_pipeline_phase("http"):
+            _http_log.info(
+                "http_request_start",
+                extra={"trace_id": trace_id},
+            )
+            t0 = time.perf_counter()
+            try:
+                response = await call_next(request)
+            except Exception:
+                latency_ms = _latency_ms(t0)
+                _http_log.error(
+                    "http_request_error",
+                    extra={
+                        "latency_ms": latency_ms,
+                        "trace_id": trace_id,
+                        "error_type": "unhandled_exception",
+                    },
+                )
+                raise
             latency_ms = _latency_ms(t0)
-            _http_log.error(
-                "http_request_error",
+            response.headers["X-Request-Id"] = request_id
+            set_http_status(str(response.status_code))
+            _http_log.info(
+                "http_request_complete",
                 extra={
                     "latency_ms": latency_ms,
+                    "status_code": response.status_code,
                     "trace_id": trace_id,
-                    "error_type": "unhandled_exception",
                 },
             )
-            raise
-        latency_ms = _latency_ms(t0)
-        response.headers["X-Request-Id"] = request_id
-        set_http_status(str(response.status_code))
-        _http_log.info(
-            "http_request_complete",
-            extra={
-                "latency_ms": latency_ms,
-                "status_code": response.status_code,
-                "trace_id": trace_id,
-            },
-        )
-        return response
+            return response
     finally:
         reset_request_context(ctx)
 

@@ -92,8 +92,9 @@ Accepts user rating + optional type/comment and forwards to LangSmith when crede
 ## Observability
 
 - Structured JSON logs with:
-  - `request_id`, `session_id`, `method`, `path`, `status`
+  - `request_id`, `session_id`, `method`, `path`, `status`, `phase` (pipeline step such as `rewrite`, `rag`, `rag_query`, `llm_call`, `judge`, `http`, or `-` when unset)
   - latency fields and error metadata when available
+  - After each RAG HTTP call, INFO `rag_query_api_response` with `gateway_meta.rag_api_response` (answer preview, counts, response keys, service `latency_ms` when present) and `http_status_code`
 - Request context propagated via middleware/contextvars.
 - Logs are written as JSON to stderr and can be collected/shipped by Alloy.
 - LangSmith tags include model/project/request/session context.

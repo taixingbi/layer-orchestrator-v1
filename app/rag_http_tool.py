@@ -101,6 +101,41 @@ def _extract_rag_latency_ms(data: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _summarize_rag_api_response(data: Any) -> Dict[str, Any]:
+    """Compact shape for logs (no full document text)."""
+    if not isinstance(data, dict):
+        return {"shape": type(data).__name__}
+    out: Dict[str, Any] = {"keys": sorted(data.keys())}
+    text = None
+    for key in ("answer", "response", "generated_answer", "text"):
+        val = data.get(key)
+        if isinstance(val, str) and val.strip():
+            text = val.strip()
+            out["answer_field"] = key
+            break
+    if text is None and isinstance(data.get("text"), str):
+        text = (data.get("text") or "").strip()
+        out["answer_field"] = "text"
+    if text:
+        out["answer_preview"] = text[:240] + ("…" if len(text) > 240 else "")
+        out["answer_len"] = len(text)
+    cites = data.get("citations")
+    if isinstance(cites, list):
+        out["citations_count"] = len(cites)
+    fuq = data.get("follow_up_questions")
+    if isinstance(fuq, list):
+        out["follow_up_questions_count"] = len(fuq)
+    hits = data.get("retrieval_hits") if "retrieval_hits" in data else data.get("hits")
+    if isinstance(hits, list):
+        out["hits_count"] = len(hits)
+    elif hits is not None:
+        out["has_hits"] = True
+    lat = _extract_rag_latency_ms(data)
+    if lat is not None:
+        out["latency_ms"] = lat
+    return out
+
+
 async def query_rag_http(
     question: str,
     request_id: str = "",
@@ -141,6 +176,7 @@ async def query_rag_http_with_meta(
     headers = {k: v for k, v in headers.items() if v}
     client = _shared_http_client()
     response = await client.post(url, json=payload, headers=headers)
+    http_status = response.status_code
     response.raise_for_status()
     ctype = (response.headers.get("content-type") or "").lower()
     if "text/event-stream" in ctype:
@@ -151,10 +187,11 @@ async def query_rag_http_with_meta(
         data = _accumulate_sse_payload(events)
     else:
         data = response.json()
-    metadata: Dict[str, Any] = {}
+    metadata: Dict[str, Any] = {"http_status_code": http_status}
     rag_latency_ms = _extract_rag_latency_ms(data)
     if rag_latency_ms is not None:
         metadata["rag_latency_ms"] = rag_latency_ms
+    metadata["rag_api_response"] = _summarize_rag_api_response(data)
     return _format_rag_response(data), metadata
 
 
