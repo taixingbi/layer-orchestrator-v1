@@ -75,6 +75,9 @@ Event types:
 - `route`
 - `answer`
 - `error`
+- `done` (success only; emitted after the final `request_complete` state)
+
+After LangGraph returns, `answer` (with optional `agent_graph_run_id`) is emitted immediately, then the orchestrator emits the `rag` phase `completed` state and remaining lifecycle events.
 
 `state` events include `phase`, `status` (`running`, `completed`, `failed`, `skipped`), `ui_message`, optional timestamps, `latency_ms`, and `metadata`. High-level phases from the orchestrator include `rewrite`, `route_decision`, `rag`, and `request_complete`. During the LangGraph RAG phase, granular phases are also emitted (in order): `rag_query` (HTTP RAG retrieve), `llm_call` / `llm_call_retry` (second attempt when the judge requests a rewrite), `judge` / `judge_retry`, and `judge_retry` with `skipped` when the judge short-circuits after max retries. Non-stream JSON includes one entry per `phase` with a **terminal** status (`completed`, `failed`, `skipped`). A prior `running` event for the same phase is **merged** into that entry (e.g. `started_at` from `running`, `ended_at` / `latency_ms` / `ui_message` from the terminal event, `metadata` shallow-merged). Pure `running` phases are omitted. Retry steps still use distinct phase names (`llm_call_retry`, `judge_retry`) where both attempts should appear. Non-stream JSON includes a top-level `timings_ms` object with end-to-end `total`, phase timings (`rewrite`, `route_decision`, `llm_call`, `judge`, `request_complete`), and nested `rag` timing where `rag.total` is the orchestrator wall timing for `rag_query` and `rag.service` is the RAG service breakdown from `rag_query.metadata.rag_latency_ms`.
 

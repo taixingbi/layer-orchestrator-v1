@@ -40,7 +40,7 @@ curl -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
   -H "X-Request-Id: req-124" \
   -H "X-Trace-Id: req-124" \
   -d '{
-    "question": "What about location?",
+    "question": "What does he location?",
     "history": [
       {"role": "user", "content": "What is Taixing Bi US visa status?"},
       {"role": "assistant", "content": "Taixing has H4 EAD and does not need sponsorship."}
@@ -53,7 +53,7 @@ curl -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
 `-N` turns off curl buffering so Server-Sent Events stream line-by-line.  
 `request_id`, `session_id`, and `trace_id` must be passed in headers (not request body).  
 Optional user context (`X-User-Id`, `X-User-Roles`, `X-User-Groups`, `X-User-Teams`) is forwarded to the RAG service on `POST /v1/rag/query`.  
-Expect multiple `{"type":"state",...}` events during the RAG phase (`rag_query`, `llm_call`, `judge`, etc.); see [design.md](design.md) for phase names.
+Expect multiple `{"type":"state",...}` events during the RAG phase (`rag_query`, `llm_call`, `judge`, etc.); see [design.md](design.md) for phase names. Successful streams end with `{"type":"answer",...}` (as soon as the graph returns), then phase states, then `{"type":"done"}`.
 
 ```bash
 curl -N -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \

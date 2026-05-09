@@ -222,6 +222,7 @@ async def stream_answer_query(
                             "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
                         },
                     )
+                    yield {"type": "done"}
                 return
         # no → EntityRewrite (Taixing?) → Router → Graph
         async with bind_pipeline_phase("rewrite"):
@@ -382,6 +383,21 @@ async def stream_answer_query(
                     with contextlib.suppress(asyncio.CancelledError):
                         await graph_task
                 raise
+            graph_answer = last_ai_content(messages)
+            if graph_answer:
+                _pipeline_log.info(
+                    "answer_emitted",
+                    extra={
+                        "event": "answer_emitted",
+                        "request_id": request_id,
+                        "session_id": session_id or "-",
+                        "gateway_meta": {"answer_len": len(graph_answer)},
+                    },
+                )
+                ans_event: Dict[str, Any] = {"type": "answer", "text": graph_answer}
+                if agent_graph_run_id:
+                    ans_event["agent_graph_run_id"] = agent_graph_run_id
+                yield ans_event
             rag_ended_at = utc_now_iso()
             yield state_event(
                 phase="rag",
@@ -407,21 +423,6 @@ async def stream_answer_query(
                 },
             )
         async with bind_pipeline_phase("request_complete"):
-            content = last_ai_content(messages)
-            if content:
-                _pipeline_log.info(
-                    "answer_emitted",
-                    extra={
-                        "event": "answer_emitted",
-                        "request_id": request_id,
-                        "session_id": session_id or "-",
-                        "gateway_meta": {"answer_len": len(content)},
-                    },
-                )
-                event = {"type": "answer", "text": content}
-                if agent_graph_run_id:
-                    event["agent_graph_run_id"] = agent_graph_run_id
-                yield event
             done_ts = utc_now_iso()
             yield state_event(
                 phase="request_complete",
@@ -440,6 +441,7 @@ async def stream_answer_query(
                     "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
                 },
             )
+            yield {"type": "done"}
     except Exception as e:
         err_text = format_error(e)
         async with bind_pipeline_phase("error"):
