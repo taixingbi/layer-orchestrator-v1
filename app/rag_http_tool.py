@@ -30,6 +30,28 @@ async def aclose_rag_http_client() -> None:
         _http_client = None
 
 
+def rag_primary_answer_text(data: Any) -> str:
+    """Prefer the RAG JSON `answer` field (verbatim user-facing string)."""
+    if isinstance(data, dict):
+        for key in ("answer", "response", "generated_answer", "text"):
+            val = data.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+    return _format_rag_response(data)
+
+
+def rag_tool_sidecar(data: Any) -> Dict[str, Any]:
+    """Citations and follow-ups from RAG JSON for the orchestrator response body."""
+    if not isinstance(data, dict):
+        return {}
+    out: Dict[str, Any] = {}
+    if "citations" in data:
+        out["citations"] = data["citations"]
+    if "follow_up_questions" in data:
+        out["follow_up_questions"] = data["follow_up_questions"]
+    return out
+
+
 def _format_rag_response(data: Any) -> str:
     """Turn JSON into a concise string for the LLM."""
     if not isinstance(data, dict):
@@ -196,7 +218,10 @@ async def query_rag_http_with_meta(
     if rag_latency_ms is not None:
         metadata["rag_latency_ms"] = rag_latency_ms
     metadata["rag_api_response"] = _rag_api_body_for_log(data)
-    return _format_rag_response(data), metadata
+    sidecar = rag_tool_sidecar(data)
+    if sidecar:
+        metadata["rag_tool_sidecar"] = sidecar
+    return rag_primary_answer_text(data), metadata
 
 
 def create_rag_http_tools():

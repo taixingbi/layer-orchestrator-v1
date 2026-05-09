@@ -17,7 +17,7 @@ from .intent_rewrite_router import (
 )
 from .pipeline_state import state_event, utc_now_iso
 from .request_context import bind_pipeline_phase
-from .utils import last_rag_tool_evidence
+from .utils import last_rag_tool_envelope, last_rag_tool_evidence
 
 _pipeline_log = logging.getLogger("layer_orchestrator.pipeline")
 
@@ -376,6 +376,11 @@ async def stream_answer_query(
                 ans_event: Dict[str, Any] = {"type": "answer", "text": graph_answer}
                 if agent_graph_run_id:
                     ans_event["agent_graph_run_id"] = agent_graph_run_id
+                env = last_rag_tool_envelope(messages)
+                if env.get("citations") is not None:
+                    ans_event["citations"] = env["citations"]
+                if env.get("follow_up_questions") is not None:
+                    ans_event["follow_up_questions"] = env["follow_up_questions"]
                 yield ans_event
             rag_ended_at = utc_now_iso()
             yield state_event(

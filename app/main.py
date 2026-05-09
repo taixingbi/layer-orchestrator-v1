@@ -244,6 +244,10 @@ async def _answer_json(
         elif t == "answer":
             final["answer"] = event.get("text")
             final["agent_graph_run_id"] = event.get("agent_graph_run_id")
+            if "citations" in event:
+                final["citations"] = event["citations"]
+            if "follow_up_questions" in event:
+                final["follow_up_questions"] = event["follow_up_questions"]
         elif t == "state":
             phase = event.get("phase")
             if not phase:

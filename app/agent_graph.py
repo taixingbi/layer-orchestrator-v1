@@ -109,11 +109,15 @@ async def build_graph_agent(
                     }
                 ],
             )
-            tool_msg = ToolMessage(
-                content=evidence,
-                tool_call_id=tid,
-                name="query_knowledge_base",
-            )
+            sidecar = (rag_meta or {}).get("rag_tool_sidecar") or {}
+            tool_kw: Dict[str, Any] = {
+                "content": evidence,
+                "tool_call_id": tid,
+                "name": "query_knowledge_base",
+            }
+            if sidecar:
+                tool_kw["additional_kwargs"] = {"rag_envelope": sidecar}
+            tool_msg = ToolMessage(**tool_kw)
             return {"messages": [synthetic, tool_msg]}
 
     g = StateGraph(AgentState)

@@ -1,5 +1,5 @@
 """Shared utilities for message/content extraction."""
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 def message_role(msg: Any) -> Optional[str]:
@@ -41,6 +41,22 @@ def last_rag_tool_evidence(messages: List[Any]) -> str:
         if text:
             return text
     return ""
+
+
+def last_rag_tool_envelope(messages: List[Any]) -> Dict[str, Any]:
+    """Extra RAG fields (citations, follow_up_questions) from ToolMessage.additional_kwargs."""
+    for msg in reversed(messages):
+        if message_role(msg) != "tool":
+            continue
+        ak = getattr(msg, "additional_kwargs", None)
+        if not isinstance(ak, dict) and isinstance(msg, dict):
+            ak = msg.get("additional_kwargs")
+        if not isinstance(ak, dict):
+            continue
+        env = ak.get("rag_envelope")
+        if isinstance(env, dict):
+            return env
+    return {}
 
 
 def last_ai_content(messages: List[Any]) -> str:
