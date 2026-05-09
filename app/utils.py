@@ -32,6 +32,17 @@ def first_user_text(messages: List[Any]) -> str:
     return ""
 
 
+def last_rag_tool_evidence(messages: List[Any]) -> str:
+    """Last RAG tool message body (used when the graph is retrieve-only, no answer LLM)."""
+    for msg in reversed(messages):
+        if message_role(msg) != "tool":
+            continue
+        text = (extract_message_content(msg) or "").strip()
+        if text:
+            return text
+    return ""
+
+
 def last_ai_content(messages: List[Any]) -> str:
     """Return the text content of the last substantive AI message (skip empty/tool-call stubs)."""
     for msg in reversed(messages):

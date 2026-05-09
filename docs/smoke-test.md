@@ -12,7 +12,7 @@ curl -sS "http://192.168.86.179:30184/health" | jq .
 
 ## Orchestrator (non-stream JSON)
 
-Returns one aggregated JSON object.
+Returns one aggregated JSON object. The pipeline uses a single **intent/rewrite router** LLM (`timings_ms.intent_router`), then either returns an immediate `answer` (routes `direct_reply`, `clarify`, `reject`) or runs RAG when `route` is `rag`. The `route` field is lowercase (`rag`, not `RAG`).
 
 ```bash
 curl -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
@@ -31,7 +31,7 @@ curl -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
 
 ## Orchestrator with conversation `history` (follow-up question)
 
-Prior turns are `user` / `assistant` pairs; the latest user message is `question`. Rewrite uses history to expand elliptical questions; RAG runs on the standalone rewrite.
+Prior turns are `user` / `assistant` pairs; the latest user message is `question`. The router uses history in one LLM call to produce a standalone `rewritten_question` and `route`; RAG runs only when `route` is `rag`.
 
 ```bash
 curl -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
@@ -53,7 +53,7 @@ curl -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
 `-N` turns off curl buffering so Server-Sent Events stream line-by-line.  
 `request_id`, `session_id`, and `trace_id` must be passed in headers (not request body).  
 Optional user context (`X-User-Id`, `X-User-Roles`, `X-User-Groups`, `X-User-Teams`) is forwarded to the RAG service on `POST /v1/rag/query`.  
-Expect multiple `{"type":"state",...}` events during the RAG phase (`rag_query`, `llm_call`, `judge`, etc.); see [design.md](design.md) for phase names. Successful streams end with `{"type":"answer",...}` (as soon as the graph returns), then phase states, then `{"type":"done"}`.
+Expect `{"type":"state",...}` events during the RAG phase (`rag_query` only inside LangGraph); see [design.md](design.md). Successful streams end with `{"type":"answer",...}` (as soon as the graph returns), then phase states, then `{"type":"done"}`.
 
 ```bash
 curl -N -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \

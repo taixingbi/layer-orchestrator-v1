@@ -9,14 +9,45 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional
 from langchain_core.callbacks import AsyncCallbackHandler
 
 from .agent_graph import build_graph_agent
-from .agent_rewrite import history_snippet_for_answer, rewrite_query_with_context
 from .config import get_langsmith_tags, settings
-from .intent_gate import get_canned_answer
+from .intent_rewrite_router import (
+    apply_direct_reply_guard,
+    normalize_post_router,
+    run_intent_rewrite_router,
+)
 from .pipeline_state import state_event, utc_now_iso
 from .request_context import bind_pipeline_phase
-from .utils import last_ai_content
+from .utils import last_rag_tool_evidence
 
 _pipeline_log = logging.getLogger("layer_orchestrator.pipeline")
+
+
+async def _yield_request_complete_done(
+    t0: float,
+    request_id: str,
+    session_id: Optional[str],
+) -> AsyncIterator[dict]:
+    """Terminal success: request_complete state + log + done event."""
+    async with bind_pipeline_phase("request_complete"):
+        done_ts = utc_now_iso()
+        yield state_event(
+            phase="request_complete",
+            status="completed",
+            ui_message="Complete",
+            started_at=done_ts,
+            ended_at=done_ts,
+            latency_ms=0,
+        )
+        _pipeline_log.info(
+            "request_completed",
+            extra={
+                "event": "request_completed",
+                "request_id": request_id,
+                "session_id": session_id or "-",
+                "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
+            },
+        )
+        yield {"type": "done"}
 
 
 class _AgentRunIdCallback(AsyncCallbackHandler):
@@ -39,9 +70,7 @@ async def run_graph(
     session_id: Optional[str] = None,
     trace_id: Optional[str] = None,
     rag_user: Optional[Dict[str, str]] = None,
-    original_question: Optional[str] = None,
     standalone_question: Optional[str] = None,
-    history_snippet: Optional[str] = None,
     emit_state: Optional[Callable[..., Awaitable[None]]] = None,
 ) -> Tuple[List[Any], Optional[str]]:
     """Run one phase (RAG) and return (messages, agent_graph_run_id). agent_graph_run_id from LangSmith."""
@@ -66,12 +95,8 @@ async def run_graph(
                 v = rag_user.get(key)
                 if v:
                     configurable[key] = v
-        if original_question:
-            configurable["original_question"] = original_question
         if standalone_question:
             configurable["standalone_question"] = standalone_question
-        if history_snippet:
-            configurable["history_snippet"] = history_snippet
         if emit_state is not None:
             configurable["emit_state"] = emit_state
         config = {
@@ -155,7 +180,7 @@ async def stream_answer_query(
     tools_timeout_s: Optional[float] = None,
     invoke_timeout_s: Optional[float] = None,
 ) -> AsyncIterator[dict]:
-    """Stream the assistant reply. IntentGate (smalltalk) → canned answer; else EntityRewrite → Router → Graph (RAG)."""
+    """Stream the assistant reply. Intent/rewrite router (one LLM) → rag | direct_reply | clarify | reject."""
     request_id = request_id or str(uuid.uuid4())
     tools_s = tools_timeout_s if tools_timeout_s is not None else settings.tools_timeout_s
     invoke_s = invoke_timeout_s if invoke_timeout_s is not None else settings.invoke_timeout_s
@@ -187,121 +212,77 @@ async def stream_answer_query(
                 },
             )
         yield {"type": "request_id", "session_id": session_id, "request_id": request_id}
-        # IntentGate (smalltalk?) — agent
-        async with bind_pipeline_phase("intent_gate"):
-            canned = await get_canned_answer(
-                query, request_id=request_id, session_id=session_id, trace_id=trace_id
-            )
-            if canned is not None:
-                _pipeline_log.info(
-                    "intent_gate_canned",
-                    extra={
-                        "event": "intent_gate_canned",
-                        "request_id": request_id,
-                        "session_id": session_id or "-",
-                        "gateway_meta": {"answer_len": len(canned)},
-                    },
-                )
-                yield {"type": "answer", "text": canned}
-                async with bind_pipeline_phase("request_complete"):
-                    done_ts = utc_now_iso()
-                    yield state_event(
-                        phase="request_complete",
-                        status="completed",
-                        ui_message="Complete",
-                        started_at=done_ts,
-                        ended_at=done_ts,
-                        latency_ms=0,
-                    )
-                    _pipeline_log.info(
-                        "request_completed",
-                        extra={
-                            "event": "request_completed",
-                            "request_id": request_id,
-                            "session_id": session_id or "-",
-                            "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
-                        },
-                    )
-                    yield {"type": "done"}
-                return
-        # no → EntityRewrite (Taixing?) → Router → Graph
-        async with bind_pipeline_phase("rewrite"):
-            rewrite_started_perf = time.perf_counter()
-            rewrite_started_at = utc_now_iso()
+        async with bind_pipeline_phase("intent_router"):
+            router_started_perf = time.perf_counter()
+            router_started_at = utc_now_iso()
             yield state_event(
-                phase="rewrite",
+                phase="intent_router",
                 status="running",
-                ui_message="Rewriting question...",
-                started_at=rewrite_started_at,
+                ui_message="Routing request...",
+                started_at=router_started_at,
                 metadata={"query_len": len(query or "")},
             )
-            _pipeline_log.info(
-                "rewrite_started",
-                extra={"event": "rewrite_started", "request_id": request_id, "session_id": session_id or "-"},
-            )
-            rewritten = await rewrite_query_with_context(
+            decision = await run_intent_rewrite_router(
                 query,
                 hist,
                 request_id=request_id,
                 session_id=session_id,
                 trace_id=trace_id,
             )
-            rewrite_ended_at = utc_now_iso()
+            decision = apply_direct_reply_guard(decision, query.strip())
+            decision = normalize_post_router(decision)
+            router_ended_at = utc_now_iso()
             yield state_event(
-                phase="rewrite",
+                phase="intent_router",
                 status="completed",
-                ui_message="Question rewritten",
-                started_at=rewrite_started_at,
-                ended_at=rewrite_ended_at,
-                latency_ms=(time.perf_counter() - rewrite_started_perf) * 1000,
-                metadata={"rewritten_len": len(rewritten or "")},
-            )
-            _pipeline_log.info(
-                "rewrite_completed",
-                extra={
-                    "event": "rewrite_completed",
-                    "request_id": request_id,
-                    "session_id": session_id or "-",
-                    "gateway_meta": {"rewritten_len": len(rewritten or "")},
+                ui_message="Route selected",
+                started_at=router_started_at,
+                ended_at=router_ended_at,
+                latency_ms=(time.perf_counter() - router_started_perf) * 1000,
+                metadata={
+                    "route": decision.route,
+                    "reason": (decision.reason or "")[:500] or None,
+                    "rewritten_len": len(decision.rewritten_question or ""),
                 },
             )
-            _pipeline_log.debug(
-                "rewrite_diagnostics",
+            _pipeline_log.info(
+                "intent_router_phase_completed",
                 extra={
-                    "event": "rewrite_diagnostics",
+                    "event": "intent_router_phase_completed",
                     "request_id": request_id,
                     "session_id": session_id or "-",
                     "gateway_meta": {
-                        "original_len": len(query or ""),
-                        "rewritten_len": len(rewritten or ""),
-                        "rewritten_preview": (rewritten or "")[:120] or None,
+                        "route": decision.route,
+                        "rewritten_preview": (decision.rewritten_question or "")[:120] or None,
                     },
                 },
             )
-            yield {"type": "rewrite", "text": rewritten}
-        async with bind_pipeline_phase("route_decision"):
+            yield {"type": "rewrite", "text": decision.rewritten_question}
+            yield {"type": "route", "route": decision.route}
+
+        if decision.route != "rag":
+            if decision.route == "direct_reply":
+                answer_text = (decision.direct_answer or "").strip()
+            elif decision.route == "clarify":
+                answer_text = (decision.direct_answer or "").strip() or "Please clarify your question."
+            else:
+                answer_text = (decision.direct_answer or "").strip() or "I can't help with that request."
             _pipeline_log.info(
-                "route_selected",
+                "router_terminal_answer",
                 extra={
-                    "event": "route_selected",
+                    "event": "router_terminal_answer",
                     "request_id": request_id,
                     "session_id": session_id or "-",
-                    "gateway_meta": {"route": "RAG"},
+                    "gateway_meta": {"route": decision.route, "answer_len": len(answer_text)},
                 },
             )
-            yield {"type": "route", "route": "RAG"}
-            route_ts = utc_now_iso()
-            yield state_event(
-                phase="route_decision",
-                status="completed",
-                ui_message="Route selected",
-                started_at=route_ts,
-                ended_at=route_ts,
-                latency_ms=0,
-                metadata={"route": "RAG"},
-            )
+            yield {"type": "answer", "text": answer_text}
+            async for ev in _yield_request_complete_done(t0, request_id, session_id):
+                yield ev
+            return
+
+        rewritten = (decision.rewritten_question or "").strip()
         messages = [{"role": "user", "content": rewritten}]
-        hist_snip = history_snippet_for_answer(hist, query) if hist else ""
         async with bind_pipeline_phase("rag"):
             agent_graph_run_id = None
             if not use_http_rag:
@@ -346,9 +327,7 @@ async def stream_answer_query(
                     session_id=session_id,
                     trace_id=trace_id,
                     rag_user=rag_user,
-                    original_question=query.strip(),
                     standalone_question=rewritten.strip(),
-                    history_snippet=hist_snip or None,
                     emit_state=emit_graph_state,
                 )
             )
@@ -383,7 +362,7 @@ async def stream_answer_query(
                     with contextlib.suppress(asyncio.CancelledError):
                         await graph_task
                 raise
-            graph_answer = last_ai_content(messages)
+            graph_answer = last_rag_tool_evidence(messages)
             if graph_answer:
                 _pipeline_log.info(
                     "answer_emitted",
@@ -422,26 +401,8 @@ async def stream_answer_query(
                     "gateway_meta": {"has_agent_graph_run_id": bool(agent_graph_run_id)},
                 },
             )
-        async with bind_pipeline_phase("request_complete"):
-            done_ts = utc_now_iso()
-            yield state_event(
-                phase="request_complete",
-                status="completed",
-                ui_message="Complete",
-                started_at=done_ts,
-                ended_at=done_ts,
-                latency_ms=0,
-            )
-            _pipeline_log.info(
-                "request_completed",
-                extra={
-                    "event": "request_completed",
-                    "request_id": request_id,
-                    "session_id": session_id or "-",
-                    "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
-                },
-            )
-            yield {"type": "done"}
+        async for ev in _yield_request_complete_done(t0, request_id, session_id):
+            yield ev
     except Exception as e:
         err_text = format_error(e)
         async with bind_pipeline_phase("error"):

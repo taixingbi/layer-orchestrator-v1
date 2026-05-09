@@ -24,68 +24,35 @@ This ID is propagated through:
 
 ---
 
-### ✍️ 2. Rewrite Phase (Query Normalization)
+### ✍️ 2–3. Intent / rewrite router (one LLM)
 
-Two-step rewrite ensures consistent retrieval and evaluation:
+One gateway call returns **JSON only**: `rewritten_question`, `route` (`rag` \| `direct_reply` \| `clarify` \| `reject`), `can_answer_directly`, `direct_answer`, `reason`. Optional conversation `history` in the request body is included in the router prompt. A small server-side guard can force `rag` when the model chose `direct_reply` but the topic matches sensitive/private patterns (visa, sponsorship, compensation, etc.).
 
-#### a. Deterministic rewrite
-
-`rewrite_to_third_person()` converts:
-
-```
-"your experience" → "Taixing Bi’s experience"
-"you" → "Taixing Bi"
-```
-
-This prevents ambiguity when querying personal knowledge collections.
-
-#### b. LLM semantic rewrite
-
-A lightweight LLM pass makes the query:
-
-* clearer
-* more specific
-* retrieval-friendly
-* evaluation-safe
-
-SSE emission:
+SSE emissions (after the router completes):
 
 ```json
 { "type": "rewrite", "text": "<rewritten question>" }
+{ "type": "route", "route": "rag" }
 ```
+
+`route` is lowercase. For `direct_reply`, `clarify`, or `reject`, the pipeline returns `direct_answer` (or a default) as the final `answer` and skips LangGraph.
 
 ---
 
-### 🧭 3. Route
+### ⚙️ 4. RAG execution (when `route` is `rag`)
 
-The pipeline always runs the RAG phase when configured. SSE emission:
-
-```json
-{ "type": "route", "route": "RAG" }
-```
-
----
-
-### ⚙️ 4. Execution Phase
-
-When RAG is configured, a single phase runs:
-
-```
-RAG
-```
-
-RAG enriches the answer with semantic context from the configured HTTP RAG service.
+When `RAG_HTTP_BASE_URL` is set and the router chose `rag`, the orchestrator runs LangGraph once.
 
 ---
 
 ### 🧠 5. `run_graph()` — LangGraph Agent Execution
 
-The RAG phase invokes `run_graph()` which:
+The RAG phase invokes `run_graph()` only on the `rag` path:
 
-#### a. Runs the reliability loop:
+#### a. Runs HTTP RAG once inside LangGraph
 
 ```
-LLM → Tool Calls → Evidence → Judge → Retry (if needed)
+retrieve → POST /v1/rag/query → evidence as answer payload
 ```
 
 #### b. Captures the **root LangSmith run_id**
@@ -142,7 +109,7 @@ request_id  → trace identity established
 rewrite     → normalized query
 route       → execution plan chosen
 state       → phase progress updates
-answer      → final grounded response
+answer      → RAG-formatted retrieval text, or router `direct_reply` / `clarify` / `reject` text
 done        → stream completed
 ```
 
@@ -154,10 +121,10 @@ This flow is intentionally designed to solve common LLM production failures:
 
 | Problem                    | Solution in This Pipeline                       |
 | -------------------------- | ----------------------------------------------- |
-| Hallucination              | Tool-grounded LangGraph loop + judge validation |
+| Hallucination              | Single RAG hop; user-visible text is RAG output (no extra answer LLM in graph) |
 | Wrong data source          | Single RAG tool (no routing)                    |
 | Unobservable failures      | SSE phase visibility                            |
-| Weak retrieval queries     | Dual-stage rewrite                              |
+| Weak retrieval queries     | Router rewrites to a standalone search query   |
 | User feedback disconnected | `agent_graph_run_id` links feedback → trace     |
 
 ---
@@ -167,29 +134,22 @@ This flow is intentionally designed to solve common LLM production failures:
 sequenceDiagram
   participant Client
   participant API
-  participant Rewrite
+  participant Router as IntentRewriteRouter
   participant Graph as LangGraph (run_graph)
   participant RAG as RAG HTTP Service
-  participant Judge as AnswerJudge (agent_answer_judge)
   participant LangSmith
 
   Client->>API: POST /orchestrator/answer {"stream": true}
   API-->>Client: SSE {type:"request_id"}
 
-  API->>Rewrite: normalize question
-  Rewrite-->>API: rewritten question
+  API->>Router: one LLM JSON rewrite plus route
+  Router-->>API: rewritten_question route
   API-->>Client: SSE {type:"rewrite"}
+  API-->>Client: SSE {type:"route"}
 
-  API-->>Client: SSE {type:"route", route:"RAG"}
-
-  API->>Graph: run_graph(phase="RAG")
-  loop retry until GOOD or MAX_RETRIES
+  alt route is rag
+    API->>Graph: run_graph
     Graph->>RAG: POST /v1/rag/query
-    Graph->>Judge: agent_answer_judge
-    Judge-->>Graph: GOOD or NOT_GOOD(reason)
-    alt NOT_GOOD
-      Graph-->>Graph: inject judge reason\nretry
-    end
   end
 
   API-->>Client: SSE {type:"answer", agent_graph_run_id}

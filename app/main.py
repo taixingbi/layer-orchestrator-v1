@@ -141,19 +141,6 @@ def _parse_iso_ts(value: Optional[str]) -> Optional[datetime]:
         return None
 
 
-def _sum_phase_latencies(states: List[dict], prefix: str) -> Optional[float]:
-    total = 0.0
-    found = False
-    for s in states:
-        phase = s.get("phase")
-        if isinstance(phase, str) and phase.startswith(prefix):
-            lat = s.get("latency_ms")
-            if isinstance(lat, (int, float)):
-                total += float(lat)
-                found = True
-    return round(total, 2) if found else None
-
-
 def _compute_total_timing(states: List[dict]) -> Optional[float]:
     starts = [_parse_iso_ts(s.get("started_at")) for s in states]
     ends = [_parse_iso_ts(s.get("ended_at")) for s in states]
@@ -176,13 +163,9 @@ def _build_timings_summary(states: List[dict]) -> dict:
     if total is not None:
         timings["total"] = total
 
-    rewrite = by_phase.get("rewrite", {}).get("latency_ms")
-    if rewrite is not None:
-        timings["rewrite"] = rewrite
-
-    route = by_phase.get("route_decision", {}).get("latency_ms")
-    if route is not None:
-        timings["route_decision"] = route
+    intent_router = by_phase.get("intent_router", {}).get("latency_ms")
+    if intent_router is not None:
+        timings["intent_router"] = intent_router
 
     rag_query_state = by_phase.get("rag_query", {})
     rag_total = rag_query_state.get("latency_ms")
@@ -194,14 +177,6 @@ def _build_timings_summary(states: List[dict]) -> dict:
         if isinstance(rag_service, dict):
             rag_obj["service"] = rag_service
         timings["rag"] = rag_obj
-
-    llm_total = _sum_phase_latencies(states, "llm_call")
-    if llm_total is not None:
-        timings["llm_call"] = llm_total
-
-    judge_total = _sum_phase_latencies(states, "judge")
-    if judge_total is not None:
-        timings["judge"] = judge_total
 
     req_complete = by_phase.get("request_complete", {}).get("latency_ms")
     if req_complete is not None:
