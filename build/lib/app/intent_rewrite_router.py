@@ -42,7 +42,6 @@ Rules:
 
 # Substrings (on latest question + rewritten) that force RAG if model chose direct_reply (defense in depth).
 _SENSITIVE_HINTS: frozenset[str] = frozenset(
-    (
     "visa",
     "h-1b",
     "h1b",
@@ -67,7 +66,6 @@ _SENSITIVE_HINTS: frozenset[str] = frozenset(
     "pay stub",
     "w-2",
     "tax return",
-    )
 )
 
 
