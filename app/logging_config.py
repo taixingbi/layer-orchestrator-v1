@@ -14,6 +14,7 @@ from .request_context import (
     get_http_method,
     get_http_path,
     get_http_status,
+    get_pipeline_phase,
     get_request_id,
     get_session_id,
 )
@@ -68,6 +69,8 @@ class _RequestContextFilter(logging.Filter):
             record.status = ctx_status
         elif not hasattr(record, "status"):
             record.status = "-"
+        if not hasattr(record, "phase"):
+            record.phase = get_pipeline_phase()
         return True
 
 
@@ -84,6 +87,7 @@ class _JsonFormatter(logging.Formatter):
             "method": getattr(record, "method", "-"),
             "path": getattr(record, "path", "-"),
             "status": getattr(record, "status", "-"),
+            "phase": getattr(record, "phase", get_pipeline_phase()),
             "message": record.getMessage(),
         }
         if record.exc_info:

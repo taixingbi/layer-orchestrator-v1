@@ -9,7 +9,7 @@ from typing import AsyncIterator, Dict, List, Optional
 
 from .config import has_langsmith_credentials, settings
 from .logging_config import new_request_id, setup_logging, shutdown_logging
-from .request_context import bind_request_context, reset_request_context, set_http_status
+from .request_context import bind_pipeline_phase, bind_request_context, reset_request_context, set_http_status
 
 setup_logging()
 

@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 _request_id: ContextVar[str] = ContextVar("request_id", default="-")
 _session_id: ContextVar[str] = ContextVar("session_id", default="-")
 _http_method: ContextVar[str] = ContextVar("http_method", default="-")
 _http_path: ContextVar[str] = ContextVar("http_path", default="-")
 _http_status: ContextVar[str] = ContextVar("http_status", default="-")
+_pipeline_phase: ContextVar[str] = ContextVar("pipeline_phase", default="-")
 
 
 def get_request_id() -> str:
@@ -33,6 +35,20 @@ def get_http_status() -> str:
     return _http_status.get()
 
 
+def get_pipeline_phase() -> str:
+    return _pipeline_phase.get()
+
+
+@asynccontextmanager
+async def bind_pipeline_phase(phase: str) -> AsyncIterator[None]:
+    """Set active pipeline phase for JSON logs (nested contexts restore previous value)."""
+    token = _pipeline_phase.set(phase or "-")
+    try:
+        yield
+    finally:
+        _pipeline_phase.reset(token)
+
+
 @dataclass(frozen=True)
 class _RequestContextTokens:
     rid: Token[str]
@@ -40,6 +56,7 @@ class _RequestContextTokens:
     method: Token[str]
     path: Token[str]
     status: Token[str]
+    phase: Token[str]
 
 
 def bind_request_context(
@@ -59,6 +76,7 @@ def bind_request_context(
         method=_http_method.set(method or "-"),
         path=_http_path.set(path or "-"),
         status=_http_status.set(status or "-"),
+        phase=_pipeline_phase.set("-"),
     )
 
 
@@ -68,6 +86,7 @@ def reset_request_context(tokens: _RequestContextTokens) -> None:
     _http_method.reset(tokens.method)
     _http_path.reset(tokens.path)
     _http_status.reset(tokens.status)
+    _pipeline_phase.reset(tokens.phase)
 
 
 def set_http_status(status: str) -> None:
