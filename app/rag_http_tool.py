@@ -122,9 +122,23 @@ async def query_rag_http(
     request_id: str = "",
     session_id: str = "",
     trace_id: str = "",
+    *,
+    user_id: str = "",
+    user_roles: str = "",
+    user_groups: str = "",
+    user_teams: str = "",
 ) -> str:
     """POST /v1/rag/query and return formatted text for the LLM."""
-    text, _ = await query_rag_http_with_meta(question, request_id, session_id, trace_id)
+    text, _ = await query_rag_http_with_meta(
+        question,
+        request_id,
+        session_id,
+        trace_id,
+        user_id=user_id,
+        user_roles=user_roles,
+        user_groups=user_groups,
+        user_teams=user_teams,
+    )
     return text
 
 
@@ -133,6 +147,11 @@ async def query_rag_http_with_meta(
     request_id: str = "",
     session_id: str = "",
     trace_id: str = "",
+    *,
+    user_id: str = "",
+    user_roles: str = "",
+    user_groups: str = "",
+    user_teams: str = "",
 ) -> Tuple[str, Dict[str, Any]]:
     """POST /v1/rag/query and return (formatted_text, metadata)."""
     base = (settings.rag_http_base_url or "").rstrip("/")
@@ -153,6 +172,10 @@ async def query_rag_http_with_meta(
         "X-Request-Id": request_id or "",
         "X-Session-Id": session_id or "",
         "X-Trace-Id": trace_id or request_id or "",
+        "X-User-Id": user_id or "",
+        "X-User-Roles": user_roles or "",
+        "X-User-Groups": user_groups or "",
+        "X-User-Teams": user_teams or "",
     }
     headers = {k: v for k, v in headers.items() if v}
     client = _shared_http_client()
@@ -185,8 +208,21 @@ def create_rag_http_tools():
         request_id: str = "",
         session_id: str = "",
         trace_id: str = "",
+        user_id: str = "",
+        user_roles: str = "",
+        user_groups: str = "",
+        user_teams: str = "",
     ) -> str:
         """Retrieve relevant knowledge from the configured vector collection (RAG). Use for questions that need factual or policy information from the knowledge base."""
-        return await query_rag_http(question, request_id, session_id, trace_id)
+        return await query_rag_http(
+            question,
+            request_id,
+            session_id,
+            trace_id,
+            user_id=user_id,
+            user_roles=user_roles,
+            user_groups=user_groups,
+            user_teams=user_teams,
+        )
 
     return [query_knowledge_base]

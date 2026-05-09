@@ -20,6 +20,10 @@ curl -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
   -H "X-Session-Id: ses-123" \
   -H "X-Request-Id: req-123" \
   -H "X-Trace-Id: req-123" \
+  -H "X-User-Id: taixing" \
+  -H "X-User-Roles: hr" \
+  -H "X-User-Groups: engineering" \
+  -H "X-User-Teams: rag-platform" \
   -d '{
     "question": "what is taixing visa status in us?"
   }' | jq .
@@ -29,6 +33,7 @@ curl -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
 
 `-N` turns off curl buffering so Server-Sent Events stream line-by-line.  
 `request_id`, `session_id`, and `trace_id` must be passed in headers (not request body).  
+Optional user context (`X-User-Id`, `X-User-Roles`, `X-User-Groups`, `X-User-Teams`) is forwarded to the RAG service on `POST /v1/rag/query`.  
 Expect multiple `{"type":"state",...}` events during the RAG phase (`rag_query`, `llm_call`, `judge`, etc.); see [design.md](design.md) for phase names.
 
 ```bash
@@ -37,6 +42,10 @@ curl -N -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
   -H "X-Session-Id: ses-123" \
   -H "X-Request-Id: req-123" \
   -H "X-Trace-Id: req-123" \
+  -H "X-User-Id: taixing" \
+  -H "X-User-Roles: hr" \
+  -H "X-User-Groups: engineering" \
+  -H "X-User-Teams: rag-platform" \
   -d '{
     "question": "what is taixing visa status in us?",
     "stream": true
@@ -54,6 +63,10 @@ curl -N -sS -X POST "http://192.168.86.179:30183/v1/rag/query" \
   -H "X-Request-Id: req-abc123" \
   -H "X-Session-Id: ses-xyz789" \
   -H "X-Trace-Id: trc-001" \
+  -H "X-User-Id: taixing" \
+  -H "X-User-Roles: hr" \
+  -H "X-User-Groups: engineering" \
+  -H "X-User-Teams: rag-platform" \
   -d '{
     "question": "what is taixing visa",
     "collection_base": "taixing_knowledge",

@@ -4,7 +4,7 @@ import logging
 import time
 import uuid
 from builtins import BaseExceptionGroup
-from typing import Any, AsyncIterator, Awaitable, Callable, List, Optional, Tuple
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from langchain_core.callbacks import AsyncCallbackHandler
 
@@ -38,6 +38,7 @@ async def run_graph(
     request_id: Optional[str] = None,
     session_id: Optional[str] = None,
     trace_id: Optional[str] = None,
+    rag_user: Optional[Dict[str, str]] = None,
     emit_state: Optional[Callable[..., Awaitable[None]]] = None,
 ) -> Tuple[List[Any], Optional[str]]:
     """Run one phase (RAG) and return (messages, agent_graph_run_id). agent_graph_run_id from LangSmith."""
@@ -57,6 +58,11 @@ async def run_graph(
             for k, v in (("request_id", request_id), ("session_id", session_id), ("trace_id", trace_id))
             if v is not None
         }
+        if rag_user:
+            for key in ("user_id", "user_roles", "user_groups", "user_teams"):
+                v = rag_user.get(key)
+                if v:
+                    configurable[key] = v
         if emit_state is not None:
             configurable["emit_state"] = emit_state
         config = {
@@ -107,6 +113,7 @@ async def answer_query_sync(
     request_id: Optional[str] = None,
     session_id: Optional[str] = None,
     trace_id: Optional[str] = None,
+    rag_user: Optional[Dict[str, str]] = None,
 ) -> str:
     """Run agent and return the final answer. Consumes stream_answer_query for single code path."""
     answer = ""
@@ -115,6 +122,7 @@ async def answer_query_sync(
         request_id=request_id,
         session_id=session_id,
         trace_id=trace_id,
+        rag_user=rag_user,
         tools_timeout_s=tools_timeout_s,
         invoke_timeout_s=invoke_timeout_s,
     ):
@@ -131,6 +139,7 @@ async def stream_answer_query(
     session_id: Optional[str] = None,
     request_id: Optional[str] = None,
     trace_id: Optional[str] = None,
+    rag_user: Optional[Dict[str, str]] = None,
     tools_timeout_s: Optional[float] = None,
     invoke_timeout_s: Optional[float] = None,
 ) -> AsyncIterator[dict]:
@@ -320,6 +329,7 @@ async def stream_answer_query(
                     request_id=request_id,
                     session_id=session_id,
                     trace_id=trace_id,
+                    rag_user=rag_user,
                     emit_state=emit_graph_state,
                 )
             )

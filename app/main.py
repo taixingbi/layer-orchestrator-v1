@@ -33,28 +33,40 @@ def _sse_stream_answer_gen(
     session_id: Optional[str] = None,
     request_id: Optional[str] = None,
     trace_id: Optional[str] = None,
+    rag_user: Optional[Dict[str, str]] = None,
 ) -> AsyncIterator[str]:
     """Async generator for POST /orchestrator/answer with stream=true."""
     async def _gen():
         async for chunk in _answer_event_iter(
-            question, session_id=session_id, request_id=request_id, trace_id=trace_id
+            question,
+            session_id=session_id,
+            request_id=request_id,
+            trace_id=trace_id,
+            rag_user=rag_user,
         ):
             yield f"data: {json.dumps(chunk)}\n\n"
     return _gen()
 
 
 def _reject_body_correlation_fields(raw_body: object) -> None:
-    forbidden_keys = [
-        key
-        for key in ("session_id", "request_id", "trace_id")
-        if isinstance(raw_body, dict) and key in raw_body
-    ]
-    if forbidden_keys:
+    if not isinstance(raw_body, dict):
+        return
+    correlation_keys = [key for key in ("session_id", "request_id", "trace_id") if key in raw_body]
+    if correlation_keys:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"{', '.join(forbidden_keys)} must be sent in headers only: "
+                f"{', '.join(correlation_keys)} must be sent in headers only: "
                 "X-Session-Id, X-Request-Id, X-Trace-Id"
+            ),
+        )
+    user_keys = [key for key in ("user_id", "user_roles", "user_groups", "user_teams") if key in raw_body]
+    if user_keys:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{', '.join(user_keys)} must be sent in headers only: "
+                "X-User-Id, X-User-Roles, X-User-Groups, X-User-Teams"
             ),
         )
 
@@ -65,6 +77,15 @@ def _header_ids(request: Request) -> tuple[Optional[str], Optional[str], Optiona
         getattr(request.state, "request_id", None),
         getattr(request.state, "trace_id", None),
     )
+
+
+def _header_rag_user(request: Request) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    for key in ("user_id", "user_roles", "user_groups", "user_teams"):
+        v = getattr(request.state, key, None)
+        if isinstance(v, str) and v.strip():
+            out[key] = v.strip()
+    return out
 
 
 _TERMINAL_STATE_STATUSES = frozenset({"completed", "failed", "skipped"})
@@ -192,12 +213,14 @@ async def _answer_event_iter(
     session_id: Optional[str],
     request_id: Optional[str],
     trace_id: Optional[str],
+    rag_user: Optional[Dict[str, str]] = None,
 ) -> AsyncIterator[dict]:
     async for chunk in stream_answer_query(
         question,
         session_id=session_id,
         request_id=request_id,
         trace_id=trace_id,
+        rag_user=rag_user,
     ):
         yield chunk
 
@@ -208,6 +231,7 @@ async def _answer_json(
     session_id: Optional[str],
     request_id: Optional[str],
     trace_id: Optional[str],
+    rag_user: Optional[Dict[str, str]] = None,
 ) -> dict:
     final: dict = {
         "request_id": request_id,
@@ -225,6 +249,7 @@ async def _answer_json(
         session_id=session_id,
         request_id=request_id,
         trace_id=trace_id,
+        rag_user=rag_user,
     ):
         t = event.get("type")
         if t == "request_id":
@@ -301,6 +326,18 @@ async def _http_request_logging_middleware(request: Request, call_next):
     request.state.request_id = request_id
     request.state.session_id = session_id
     request.state.trace_id = trace_id
+    hdr = request.headers
+
+    def _strip_opt(h: Optional[str]) -> Optional[str]:
+        if h is None:
+            return None
+        s = h.strip()
+        return s if s else None
+
+    request.state.user_id = _strip_opt(hdr.get("x-user-id"))
+    request.state.user_roles = _strip_opt(hdr.get("x-user-roles"))
+    request.state.user_groups = _strip_opt(hdr.get("x-user-groups"))
+    request.state.user_teams = _strip_opt(hdr.get("x-user-teams"))
     path = request.url.path
     method = request.method
     ctx = bind_request_context(
@@ -356,6 +393,7 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
     raw_body = await request.json()
     _reject_body_correlation_fields(raw_body)
     session_id, request_id, trace_id = _header_ids(request)
+    rag_user = _header_rag_user(request)
     if body.stream:
         return StreamingResponse(
             _sse_stream_answer_gen(
@@ -363,6 +401,7 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
                 session_id=session_id,
                 request_id=request_id,
                 trace_id=trace_id,
+                rag_user=rag_user,
             ),
             media_type="text/event-stream",
             headers=SSE_HEADERS,
@@ -372,6 +411,7 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
         session_id=session_id,
         request_id=request_id,
         trace_id=trace_id,
+        rag_user=rag_user,
     )
     status_code = 200 if result.get("status") == "ok" else 500
     return JSONResponse(result, status_code=status_code)

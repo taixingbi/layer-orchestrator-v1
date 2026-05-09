@@ -19,9 +19,11 @@ This document explains the runtime design of `layer-orchestrator-v1`: components
 - `app/orchestrator.py`  
   High-level pipeline orchestrator (`stream_answer_query`, `run_graph`).
 - `app/agent_graph.py`  
-  LangGraph construction and reliability loop:
-  - deterministic HTTP RAG mode (no model tool-calling)
-  - judge + retry path
+  LangGraph construction (retrieve + `llm_call` nodes); deterministic HTTP RAG mode (no model tool-calling).
+- `app/graph_judge.py`  
+  LangGraph `judge` node and `MAX_RETRIES` for the quality loop.
+- `app/agent_graph_state.py` / `app/graph_emit.py`  
+  Shared graph state type and SSE `emit_state` helper.
 - `app/rag_http_tool.py`  
   HTTP client for `POST {RAG_HTTP_BASE_URL}/v1/rag/query`.
 - `app/agent_rewrite.py`  
@@ -34,6 +36,8 @@ This document explains the runtime design of `layer-orchestrator-v1`: components
   Structured JSON logging with request/session context; shipped by external collectors (for example Alloy).
 
 ## Primary Flow: `/orchestrator/answer`
+
+Clients may send user context in headers (`X-User-Id`, `X-User-Roles`, `X-User-Groups`, `X-User-Teams`); the orchestrator relays them on the outbound RAG `POST /v1/rag/query` (body fields `user_id`, `user_roles`, `user_groups`, `user_teams` are rejected).
 
 1. Initialize request ids and emit SSE `{type:"request_id"}`.
 2. Run intent gate:
@@ -117,5 +121,5 @@ Accepts user rating + optional type/comment and forwards to LangSmith when crede
 ## Trade-offs
 
 - Deterministic HTTP RAG path favors compatibility and predictability over dynamic tool routing.
-- Single retry (`MAX_RETRIES = 1`) limits latency but may leave some borderline answers unimproved.
+- Single retry (`MAX_RETRIES = 1` in `app/graph_judge.py`) limits latency but may leave some borderline answers unimproved.
 - Intent gate + rewrite improve retrieval quality but add extra LLM calls and latency.
