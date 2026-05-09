@@ -24,8 +24,12 @@ FEEDBACK_TYPES = frozenset([
 class FeedbackBody(BaseModel):
     """Feedback on an agent response."""
 
-    request_id: Optional[str] = Field(None, description="request_id from first SSE event of orchestrator/answer (stream=true) (optional)")
-    agent_graph_run_id: Optional[str] = Field(None, description="agent_graph_run_id from answer event; use to attach feedback to agent_graph run")
+    request_id: Optional[str] = Field(None, description="request_id from headers / first SSE event (optional)")
+    trace_id: Optional[str] = Field(None, description="X-Trace-Id / JSON trace_id; preferred id for feedback when LangSmith run matches trace")
+    agent_graph_run_id: Optional[str] = Field(
+        None,
+        description="LangSmith root run UUID if known; otherwise use trace_id or request_id",
+    )
     question: Optional[str] = Field(None, description="Original question (optional)")
     answer_snippet: Optional[str] = Field(None, description="Snippet of answer being rated (optional)")
     rating: Literal["thumbs_up", "thumbs_down"] = Field(..., description="Thumbs up or down")

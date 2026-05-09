@@ -55,20 +55,9 @@ The RAG phase invokes `run_graph()` only on the `rag` path:
 retrieve → POST /v1/rag/query → evidence as answer payload
 ```
 
-#### b. Captures the **root LangSmith run_id**
+#### b. Captures the **root LangSmith run_id** (internal / logs only)
 
-This becomes:
-
-```
-agent_graph_run_id
-```
-
-Used later for:
-
-* Observability
-* Human feedback
-* Trace debugging
-* Evaluation datasets
+The graph callback records the LangSmith root run id for **server logs and observability**. Clients correlate requests with **`trace_id`** (header `X-Trace-Id` / JSON `trace_id`); **`POST /feedback`** accepts `trace_id`, `request_id`, or `agent_graph_run_id` (LangSmith UUID) for `create_feedback`.
 
 ---
 
@@ -79,8 +68,7 @@ After the phase completes:
 ```json
 {
   "type": "answer",
-  "text": "<final answer>",
-  "agent_graph_run_id": "<optional>"
+  "text": "<final answer>"
 }
 ```
 
@@ -125,7 +113,7 @@ This flow is intentionally designed to solve common LLM production failures:
 | Wrong data source          | Single RAG tool (no routing)                    |
 | Unobservable failures      | SSE phase visibility                            |
 | Weak retrieval queries     | Router rewrites to a standalone search query   |
-| User feedback disconnected | `agent_graph_run_id` links feedback → trace     |
+| User feedback disconnected | `trace_id` / `request_id` / optional LangSmith UUID on `/feedback` |
 
 ---
 
@@ -152,11 +140,11 @@ sequenceDiagram
     Graph->>RAG: POST /v1/rag/query
   end
 
-  API-->>Client: SSE {type:"answer", agent_graph_run_id}
+  API-->>Client: SSE {type:"answer"}
   API-->>Client: SSE {type:"done"}
 
   opt user provides feedback
-    Client->>API: POST /feedback (run_id, rating, comment)
+    Client->>API: POST /feedback (trace_id or run_id, rating, comment)
     API->>LangSmith: create_feedback(run_id, payload)
     LangSmith-->>API: stored
   end

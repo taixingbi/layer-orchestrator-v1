@@ -221,7 +221,6 @@ async def _answer_json(
         "route": None,
         "rewrite": None,
         "answer": None,
-        "agent_graph_run_id": None,
     }
     states_by_phase: Dict[str, dict] = {}
     state_phase_order: List[str] = []
@@ -243,7 +242,6 @@ async def _answer_json(
             final["route"] = event.get("route")
         elif t == "answer":
             final["answer"] = event.get("text")
-            final["agent_graph_run_id"] = event.get("agent_graph_run_id")
             if "citations" in event:
                 final["citations"] = event["citations"]
             if "follow_up_questions" in event:
@@ -421,7 +419,7 @@ async def submit_feedback(body: FeedbackBody):
     """Submit feedback on an agent response (thumbs up/down, type, optional comment)."""
     if body.feedback_type and body.feedback_type not in FEEDBACK_TYPES:
         return {"status": "error", "message": f"feedback_type must be one of: {', '.join(sorted(FEEDBACK_TYPES))}"}
-    agent_graph_run_id = body.agent_graph_run_id or body.request_id
+    run_id_for_feedback = body.agent_graph_run_id or body.trace_id or body.request_id
     logging.getLogger("layer_orchestrator.feedback").info(
         "feedback_received",
         extra={
@@ -433,10 +431,10 @@ async def submit_feedback(body: FeedbackBody):
             },
         },
     )
-    if agent_graph_run_id and has_langsmith_credentials():
+    if run_id_for_feedback and has_langsmith_credentials():
         await asyncio.to_thread(
             submit_langsmith_feedback,
-            agent_graph_run_id=agent_graph_run_id,
+            agent_graph_run_id=run_id_for_feedback,
             rating=body.rating,
             feedback_type=body.feedback_type,
             comment=body.comment,

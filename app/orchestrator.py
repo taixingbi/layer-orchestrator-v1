@@ -374,8 +374,6 @@ async def stream_answer_query(
                     },
                 )
                 ans_event: Dict[str, Any] = {"type": "answer", "text": graph_answer}
-                if agent_graph_run_id:
-                    ans_event["agent_graph_run_id"] = agent_graph_run_id
                 env = last_rag_tool_envelope(messages)
                 if env.get("citations") is not None:
                     ans_event["citations"] = env["citations"]

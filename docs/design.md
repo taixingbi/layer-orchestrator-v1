@@ -35,6 +35,8 @@ This document explains the runtime design of `layer-orchestrator-v1`: components
 
 ## Primary Flow: `/orchestrator/answer`
 
+Field-by-field request and response schema: **[request-response-schema.md](request-response-schema.md)**.
+
 Clients may send user context in headers (`X-User-Id`, `X-User-Roles`, `X-User-Groups`, `X-User-Teams`); the orchestrator relays them on the outbound RAG `POST /v1/rag/query` (body fields `user_id`, `user_roles`, `user_groups`, `user_teams` are rejected).
 
 1. Initialize request ids and emit SSE `{type:"request_id"}`.
@@ -75,7 +77,7 @@ Event types:
 - `error`
 - `done` (success only; emitted after the final `request_complete` state)
 
-After LangGraph returns on a `rag` path, `answer` (with optional `agent_graph_run_id`) is emitted immediately, then the orchestrator emits the `rag` phase `completed` state and remaining lifecycle events.
+After LangGraph returns on a `rag` path, `answer` is emitted immediately (correlate runs with JSON/header `trace_id`), then the orchestrator emits the `rag` phase `completed` state and remaining lifecycle events.
 
 `state` events include `phase`, `status` (`running`, `completed`, `failed`, `skipped`), `ui_message`, optional timestamps, `latency_ms`, and `metadata`. High-level orchestrator phases include **`intent_router`** (single LLM rewrite+route), **`rag`**, and **`request_complete`**. During the LangGraph RAG phase, the only granular phase emitted is `rag_query` (HTTP RAG retrieve). Non-stream JSON includes one entry per `phase` with a **terminal** status (`completed`, `failed`, `skipped`). A prior `running` event for the same phase is **merged** into that entry (e.g. `started_at` from `running`, `ended_at` / `latency_ms` / `ui_message` from the terminal event, `metadata` shallow-merged). Pure `running` phases are omitted. Non-stream JSON includes a top-level `timings_ms` object with end-to-end `total`, phase timings (`intent_router`, `request_complete`), and nested `rag` timing where `rag.total` is the orchestrator wall timing for `rag_query` and `rag.service` is the RAG service breakdown from `rag_query.metadata.rag_latency_ms`.
 

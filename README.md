@@ -112,14 +112,14 @@ To stream from the same endpoint, set `"stream": true` in the body.
 
 ## Feedback
 
-Submit feedback on an agent response. Use `agent_graph_run_id` from the **`answer`** SSE event of **`/orchestrator/answer`** when `"stream": true` (or `request_id` from the first event) to attach feedback to the agent_graph run in LangSmith.
+Submit feedback on an agent response. The server tries, in order: **`agent_graph_run_id`** (LangSmith root run UUID), **`trace_id`**, then **`request_id`**, as the `run_id` passed to LangSmith `create_feedback`. LangSmith only accepts a real run UUID unless your tracing maps `trace_id` to that run.
 
-**Thumbs up (with agent_graph_run_id):**
+**Thumbs up (with trace_id):**
 
 ```bash
 curl -s -X POST http://127.0.0.1:8000/feedback \
   -H "Content-Type: application/json" \
-  -d '{"agent_graph_run_id":"c111d890-55c2-40ec-ba23-84a18ffa91f1","rating":"thumbs_up"}'
+  -d '{"trace_id":"12345678","rating":"thumbs_up"}'
 ```
 
 **Thumbs down (with type and comment):**
@@ -128,7 +128,7 @@ curl -s -X POST http://127.0.0.1:8000/feedback \
 curl -s -X POST http://127.0.0.1:8000/feedback \
   -H "Content-Type: application/json" \
   -d '{
-    "agent_graph_run_id": "019c5f54-0667-7531-9b48-62a65710fd2c",
+    "trace_id": "12345678",
     "rating": "thumbs_down",
     "feedback_type": "not_factual",
     "comment": "Only returned 3 titles"
