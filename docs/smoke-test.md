@@ -29,6 +29,25 @@ curl -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
   }' | jq .
 ```
 
+## Orchestrator with conversation `history` (follow-up question)
+
+Prior turns are `user` / `assistant` pairs; the latest user message is `question`. Rewrite uses history to expand elliptical questions; RAG runs on the standalone rewrite.
+
+```bash
+curl -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: ses-123" \
+  -H "X-Request-Id: req-124" \
+  -H "X-Trace-Id: req-124" \
+  -d '{
+    "question": "What about location?",
+    "history": [
+      {"role": "user", "content": "What is Taixing Bi US visa status?"},
+      {"role": "assistant", "content": "Taixing has H4 EAD and does not need sponsorship."}
+    ]
+  }' | jq .
+```
+
 ## Orchestrator (SSE with `stream=true`)
 
 `-N` turns off curl buffering so Server-Sent Events stream line-by-line.  

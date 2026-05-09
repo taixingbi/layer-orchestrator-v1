@@ -39,19 +39,31 @@ async def judge_node(state: AgentState, config: RunnableConfig):
                 metadata={"retry_count": retry_count},
             )
             return {"judge_passed": True}
-        question = ""
+        cfg = (config or {}).get("configurable") or {}
+        question = (cfg.get("original_question") or "").strip()
         answer = ""
         tool_contents: List[str] = []
         for m in messages:
             role = message_role(m)
-            if role in ("human", "user") and not question:
-                question = extract_message_content(m)
+            if role in ("human", "user"):
+                continue
             elif role == "ai":
-                answer = extract_message_content(m)
+                tcalls = getattr(m, "tool_calls", None) or (
+                    m.get("tool_calls") if isinstance(m, dict) else None
+                )
+                if tcalls:
+                    continue
+                c = extract_message_content(m)
+                if (c or "").strip():
+                    answer = c
             elif role == "tool":
                 tool_contents.append(extract_message_content(m))
+        if not question:
+            for m in messages:
+                if message_role(m) in ("human", "user"):
+                    question = extract_message_content(m)
+                    break
         evidence = "\n".join(f"[E{i+1}] {c}" for i, c in enumerate(tool_contents) if c) or None
-        cfg = (config or {}).get("configurable") or {}
         judge_started_at = utc_now_iso()
         t_judge = time.perf_counter()
         await emit_pipeline_state(

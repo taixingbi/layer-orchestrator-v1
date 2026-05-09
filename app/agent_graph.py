@@ -2,9 +2,9 @@
 import logging
 import time
 import uuid
-from typing import Any, Dict, Literal, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START
 
@@ -19,6 +19,54 @@ from .utils import extract_message_content, first_user_text, message_role
 
 _agent_cache: Dict[tuple, Any] = {}
 _graph_log = logging.getLogger("layer_orchestrator.agent_graph")
+
+_ANSWER_SYSTEM = "Answer using the retrieved context. Be concise."
+
+
+def _tool_evidence_text(messages: List[Any]) -> str:
+    chunks: List[str] = []
+    for m in messages:
+        if message_role(m) == "tool":
+            c = extract_message_content(m)
+            if c:
+                chunks.append(c)
+    return "\n\n".join(chunks) if chunks else ""
+
+
+def _last_real_ai_answer(messages: List[Any]) -> Optional[str]:
+    for m in reversed(messages):
+        if message_role(m) not in ("ai", "assistant"):
+            continue
+        tcalls = getattr(m, "tool_calls", None) or (
+            m.get("tool_calls") if isinstance(m, dict) else None
+        )
+        if tcalls:
+            continue
+        c = (extract_message_content(m) or "").strip()
+        if c:
+            return c
+    return None
+
+
+def _judge_feedback_content(messages: List[Any]) -> Optional[str]:
+    for m in reversed(messages):
+        if message_role(m) not in ("human", "user"):
+            continue
+        c = extract_message_content(m) or ""
+        if "not good enough" in c.lower():
+            return c
+    return None
+
+
+def _build_answer_human_content(cfg: Dict[str, Any], state: AgentState, evidence: str) -> str:
+    orig = str(cfg.get("original_question") or "").strip() or first_user_text(state["messages"])
+    standalone = str(cfg.get("standalone_question") or "").strip() or first_user_text(state["messages"])
+    parts = [f"Original user question:\n{orig}", f"Standalone question:\n{standalone}"]
+    hist = str(cfg.get("history_snippet") or "").strip()
+    if hist:
+        parts.append(f"Conversation context:\n{hist}")
+    parts.append(f"Retrieved context:\n{evidence}")
+    return "\n\n".join(parts)
 
 
 def _judge_continue(state: AgentState) -> Literal["__end__", "llm_call"]:
@@ -46,7 +94,7 @@ async def build_graph_agent(
         async with bind_pipeline_phase("rag_query"):
             t0 = time.perf_counter()
             cfg = (config or {}).get("configurable") or {}
-            question = first_user_text(state["messages"])
+            question = str(cfg.get("standalone_question") or "").strip() or first_user_text(state["messages"])
             rag_started_at = utc_now_iso()
             await emit_pipeline_state(
                 config,
@@ -147,7 +195,25 @@ async def build_graph_agent(
                 "llm_call_started",
                 extra={"event": "llm_call_started", "gateway_meta": {"messages_count": msgs_count}},
             )
-            result = await base_llm.ainvoke(state["messages"], config=config, **invoke_kw)
+            evidence = _tool_evidence_text(state["messages"])
+            base_human = _build_answer_human_content(cfg, state, evidence)
+            if retry == 0:
+                llm_messages: List[Any] = [
+                    SystemMessage(content=_ANSWER_SYSTEM),
+                    HumanMessage(content=base_human),
+                ]
+            else:
+                llm_messages = [
+                    SystemMessage(content=_ANSWER_SYSTEM),
+                    HumanMessage(content=base_human),
+                ]
+                prev = _last_real_ai_answer(state["messages"])
+                fb = _judge_feedback_content(state["messages"])
+                if prev:
+                    llm_messages.append(AIMessage(content=prev))
+                if fb:
+                    llm_messages.append(HumanMessage(content=fb))
+            result = await base_llm.ainvoke(llm_messages, config=config, **invoke_kw)
             _graph_log.debug(
                 "llm_call_completed",
                 extra={

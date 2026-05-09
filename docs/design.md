@@ -27,7 +27,7 @@ This document explains the runtime design of `layer-orchestrator-v1`: components
 - `app/rag_http_tool.py`  
   HTTP client for `POST {RAG_HTTP_BASE_URL}/v1/rag/query`.
 - `app/agent_rewrite.py`  
-  Query rewrite (third-person normalization + LLM rewrite).
+  Query rewrite (third-person normalization + LLM rewrite). Optional `history` on `/orchestrator/answer` feeds a context-aware rewrite (standalone retrieval query); intent gate still uses the latest `question` only.
 - `app/intent_gate.py`  
   Smalltalk gate (returns canned response for non-task chat).
 - `app/agent_answer_judge.py`  
@@ -43,10 +43,10 @@ Clients may send user context in headers (`X-User-Id`, `X-User-Roles`, `X-User-G
 2. Run intent gate:
    - If smalltalk: emit answer and finish.
 3. Rewrite query:
-   - deterministic second-person -> third-person conversion
-   - LLM rewrite for retrieval clarity
+   - deterministic second-person -> third-person conversion on the latest `question`
+   - LLM rewrite into a **standalone** search query (uses last turns from optional `history` only to resolve references)
 4. Route to RAG (current behavior always routes to RAG when configured).
-5. Execute LangGraph phase via `run_graph(...)`.
+5. Execute LangGraph phase via `run_graph(...)`: RAG retrieval uses the standalone query; the answer LLM receives original question, standalone query, optional short conversation snippet, and retrieved context. The judge scores against the **original** latest question.
 6. Emit final answer (plus `agent_graph_run_id` when available).
 7. Emit completion state or error event.
 

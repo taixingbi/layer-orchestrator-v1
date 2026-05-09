@@ -9,7 +9,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional
 from langchain_core.callbacks import AsyncCallbackHandler
 
 from .agent_graph import build_graph_agent
-from .agent_rewrite import rewrite_query
+from .agent_rewrite import history_snippet_for_answer, rewrite_query_with_context
 from .config import get_langsmith_tags, settings
 from .intent_gate import get_canned_answer
 from .pipeline_state import state_event, utc_now_iso
@@ -39,6 +39,9 @@ async def run_graph(
     session_id: Optional[str] = None,
     trace_id: Optional[str] = None,
     rag_user: Optional[Dict[str, str]] = None,
+    original_question: Optional[str] = None,
+    standalone_question: Optional[str] = None,
+    history_snippet: Optional[str] = None,
     emit_state: Optional[Callable[..., Awaitable[None]]] = None,
 ) -> Tuple[List[Any], Optional[str]]:
     """Run one phase (RAG) and return (messages, agent_graph_run_id). agent_graph_run_id from LangSmith."""
@@ -63,6 +66,12 @@ async def run_graph(
                 v = rag_user.get(key)
                 if v:
                     configurable[key] = v
+        if original_question:
+            configurable["original_question"] = original_question
+        if standalone_question:
+            configurable["standalone_question"] = standalone_question
+        if history_snippet:
+            configurable["history_snippet"] = history_snippet
         if emit_state is not None:
             configurable["emit_state"] = emit_state
         config = {
@@ -114,6 +123,7 @@ async def answer_query_sync(
     session_id: Optional[str] = None,
     trace_id: Optional[str] = None,
     rag_user: Optional[Dict[str, str]] = None,
+    history: Optional[List[Tuple[str, str]]] = None,
 ) -> str:
     """Run agent and return the final answer. Consumes stream_answer_query for single code path."""
     answer = ""
@@ -123,6 +133,7 @@ async def answer_query_sync(
         session_id=session_id,
         trace_id=trace_id,
         rag_user=rag_user,
+        history=list(history) if history is not None else None,
         tools_timeout_s=tools_timeout_s,
         invoke_timeout_s=invoke_timeout_s,
     ):
@@ -140,6 +151,7 @@ async def stream_answer_query(
     request_id: Optional[str] = None,
     trace_id: Optional[str] = None,
     rag_user: Optional[Dict[str, str]] = None,
+    history: Optional[List[Tuple[str, str]]] = None,
     tools_timeout_s: Optional[float] = None,
     invoke_timeout_s: Optional[float] = None,
 ) -> AsyncIterator[dict]:
@@ -149,6 +161,7 @@ async def stream_answer_query(
     invoke_s = invoke_timeout_s if invoke_timeout_s is not None else settings.invoke_timeout_s
     t0 = time.perf_counter()
     use_http_rag = bool(settings.rag_http_base_url)
+    hist = list(history) if history else []
     try:
         async with bind_pipeline_phase("request"):
             _pipeline_log.info(
@@ -225,8 +238,9 @@ async def stream_answer_query(
                 "rewrite_started",
                 extra={"event": "rewrite_started", "request_id": request_id, "session_id": session_id or "-"},
             )
-            rewritten = await rewrite_query(
+            rewritten = await rewrite_query_with_context(
                 query,
+                hist,
                 request_id=request_id,
                 session_id=session_id,
                 trace_id=trace_id,
@@ -286,6 +300,7 @@ async def stream_answer_query(
                 metadata={"route": "RAG"},
             )
         messages = [{"role": "user", "content": rewritten}]
+        hist_snip = history_snippet_for_answer(hist, query) if hist else ""
         async with bind_pipeline_phase("rag"):
             agent_graph_run_id = None
             if not use_http_rag:
@@ -330,6 +345,9 @@ async def stream_answer_query(
                     session_id=session_id,
                     trace_id=trace_id,
                     rag_user=rag_user,
+                    original_question=query.strip(),
+                    standalone_question=rewritten.strip(),
+                    history_snippet=hist_snip or None,
                     emit_state=emit_graph_state,
                 )
             )

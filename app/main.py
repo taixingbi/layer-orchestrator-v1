@@ -5,7 +5,7 @@ from datetime import datetime
 import json
 import logging
 import time
-from typing import AsyncIterator, Dict, List, Optional
+from typing import AsyncIterator, Dict, List, Literal, Optional, Tuple
 
 from .config import has_langsmith_credentials, settings
 from .logging_config import new_request_id, setup_logging, shutdown_logging
@@ -15,9 +15,10 @@ setup_logging()
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.requests import Request
 from .langsmith_feedback import FEEDBACK_TYPES, FeedbackBody, submit_langsmith_feedback
+from .agent_rewrite import normalize_history_turns
 from .orchestrator import stream_answer_query
 
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
@@ -34,6 +35,7 @@ def _sse_stream_answer_gen(
     request_id: Optional[str] = None,
     trace_id: Optional[str] = None,
     rag_user: Optional[Dict[str, str]] = None,
+    history: Optional[List[Tuple[str, str]]] = None,
 ) -> AsyncIterator[str]:
     """Async generator for POST /orchestrator/answer with stream=true."""
     async def _gen():
@@ -43,6 +45,7 @@ def _sse_stream_answer_gen(
             request_id=request_id,
             trace_id=trace_id,
             rag_user=rag_user,
+            history=history,
         ):
             yield f"data: {json.dumps(chunk)}\n\n"
     return _gen()
@@ -214,6 +217,7 @@ async def _answer_event_iter(
     request_id: Optional[str],
     trace_id: Optional[str],
     rag_user: Optional[Dict[str, str]] = None,
+    history: Optional[List[Tuple[str, str]]] = None,
 ) -> AsyncIterator[dict]:
     async for chunk in stream_answer_query(
         question,
@@ -221,6 +225,7 @@ async def _answer_event_iter(
         request_id=request_id,
         trace_id=trace_id,
         rag_user=rag_user,
+        history=history,
     ):
         yield chunk
 
@@ -232,6 +237,7 @@ async def _answer_json(
     request_id: Optional[str],
     trace_id: Optional[str],
     rag_user: Optional[Dict[str, str]] = None,
+    history: Optional[List[Tuple[str, str]]] = None,
 ) -> dict:
     final: dict = {
         "request_id": request_id,
@@ -250,6 +256,7 @@ async def _answer_json(
         request_id=request_id,
         trace_id=trace_id,
         rag_user=rag_user,
+        history=history,
     ):
         t = event.get("type")
         if t == "request_id":
@@ -382,9 +389,19 @@ async def _http_request_logging_middleware(request: Request, call_next):
         reset_request_context(ctx)
 
 
+class HistoryTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class AnswerBody(BaseModel):
     question: str
     stream: bool = False
+    history: List[HistoryTurn] = Field(default_factory=list)
+
+
+def _history_from_answer_body(body: AnswerBody) -> List[Tuple[str, str]]:
+    return normalize_history_turns([(t.role, t.content) for t in body.history])
 
 
 @app.post("/orchestrator/answer")
@@ -394,6 +411,7 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
     _reject_body_correlation_fields(raw_body)
     session_id, request_id, trace_id = _header_ids(request)
     rag_user = _header_rag_user(request)
+    hist = _history_from_answer_body(body)
     if body.stream:
         return StreamingResponse(
             _sse_stream_answer_gen(
@@ -402,6 +420,7 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
                 request_id=request_id,
                 trace_id=trace_id,
                 rag_user=rag_user,
+                history=hist,
             ),
             media_type="text/event-stream",
             headers=SSE_HEADERS,
@@ -412,6 +431,7 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
         request_id=request_id,
         trace_id=trace_id,
         rag_user=rag_user,
+        history=hist,
     )
     status_code = 200 if result.get("status") == "ok" else 500
     return JSONResponse(result, status_code=status_code)

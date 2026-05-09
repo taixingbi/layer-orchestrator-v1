@@ -33,8 +33,16 @@ def first_user_text(messages: List[Any]) -> str:
 
 
 def last_ai_content(messages: List[Any]) -> str:
-    """Return the text content of the last AI message in the list."""
+    """Return the text content of the last substantive AI message (skip empty/tool-call stubs)."""
     for msg in reversed(messages):
-        if message_role(msg) in ("ai", "assistant"):
-            return extract_message_content(msg) or ""
+        if message_role(msg) not in ("ai", "assistant"):
+            continue
+        tcalls = getattr(msg, "tool_calls", None) or (
+            msg.get("tool_calls") if isinstance(msg, dict) else None
+        )
+        if tcalls:
+            continue
+        text = (extract_message_content(msg) or "").strip()
+        if text:
+            return text
     return ""
