@@ -26,7 +26,7 @@ This ID is propagated through:
 
 ### ✍️ 2–3. Intent / rewrite router (one LLM)
 
-One gateway call returns **JSON only**: `rewritten_question`, `route` (`rag` \| `direct_reply` \| `clarify` \| `reject`), `can_answer_directly`, `direct_answer`, `reason`. Optional conversation `history` in the request body is included in the router prompt. A small server-side guard can force `rag` when the model chose `direct_reply` but the topic matches sensitive/private patterns (visa, sponsorship, compensation, etc.).
+One gateway call returns **JSON only**: `rewritten_question`, `route` (`rag` \| `direct_reply` \| `clarify` \| `reject`), `can_answer_directly`, `direct_answer`, `reason`. Optional conversation `history` in the request body is included in the router prompt. A small server-side guard can force `rag` when the model chose `direct_reply` but the **latest user message** matches sensitive substring patterns (visa, sponsorship, compensation, etc.); patterns in the rewritten query alone do not trigger the guard.
 
 SSE emissions (after the router completes):
 

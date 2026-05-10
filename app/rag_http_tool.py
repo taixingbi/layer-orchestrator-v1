@@ -8,6 +8,9 @@ from langchain_core.tools import tool
 
 from .config import settings
 
+# JSON keys tried in order for the user-visible answer string (RAG API variants).
+_RAG_ANSWER_KEYS: Tuple[str, ...] = ("answer", "response", "generated_answer", "text")
+
 _http_client: Optional[httpx.AsyncClient] = None
 
 
@@ -33,7 +36,7 @@ async def aclose_rag_http_client() -> None:
 def rag_primary_answer_text(data: Any) -> str:
     """Prefer the RAG JSON `answer` field (verbatim user-facing string)."""
     if isinstance(data, dict):
-        for key in ("answer", "response", "generated_answer", "text"):
+        for key in _RAG_ANSWER_KEYS:
             val = data.get(key)
             if isinstance(val, str) and val.strip():
                 return val.strip()
@@ -57,7 +60,7 @@ def _format_rag_response(data: Any) -> str:
     if not isinstance(data, dict):
         return json.dumps(data, default=str)[:50000]
     parts: List[str] = []
-    for key in ("answer", "response", "generated_answer", "text"):
+    for key in _RAG_ANSWER_KEYS:
         val = data.get(key)
         if val:
             parts.append(f"{key}: {val}")
@@ -86,7 +89,7 @@ def _accumulate_sse_payload(raw_events: List[str]) -> Any:
             continue
         last_obj = obj
         if isinstance(obj, dict):
-            for key in ("answer", "response", "generated_answer", "text"):
+            for key in _RAG_ANSWER_KEYS:
                 val = obj.get(key)
                 if isinstance(val, str) and val:
                     text_chunks.append(val)
@@ -132,7 +135,7 @@ def _rag_api_body_for_log(data: Any) -> Dict[str, Any]:
         if key in data:
             out[key] = data[key]
     if "answer" not in out:
-        for alt in ("response", "generated_answer", "text"):
+        for alt in _RAG_ANSWER_KEYS[1:]:
             if alt in data and data[alt] is not None:
                 out["answer"] = data[alt]
                 break

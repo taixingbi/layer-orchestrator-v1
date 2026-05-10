@@ -19,7 +19,7 @@ This document explains the runtime design of `layer-orchestrator-v1`: components
 - `app/orchestrator.py`  
   High-level pipeline orchestrator (`stream_answer_query`, `run_graph`).
 - `app/intent_rewrite_router.py`  
-  Single LLM call returning JSON: `rewritten_question`, `route` (`rag` | `direct_reply` | `clarify` | `reject`), `can_answer_directly`, `direct_answer`, `reason`. Server-side guard can force `rag` when `direct_reply` would touch sensitive/private topics.
+  Single LLM call returning JSON: `rewritten_question`, `route` (`rag` | `direct_reply` | `clarify` | `reject`), `can_answer_directly`, `direct_answer`, `reason`. Server-side guard can force `rag` when the model chose `direct_reply` but the **latest user message** matches sensitive substring patterns (visa, compensation, etc.); the rewritten query is not used for that check so history-expanded rewrites do not alone trigger the guard.
 - `app/agent_graph.py`  
   LangGraph with a single `retrieve` node (HTTP RAG once); formatted RAG payload is the response body (no `llm_call` / judge in the graph).
 - `app/graph_judge.py` / `app/agent_answer_judge.py`  
@@ -35,7 +35,7 @@ This document explains the runtime design of `layer-orchestrator-v1`: components
 
 ## Primary Flow: `/orchestrator/answer`
 
-Field-by-field request and response schema: **[request-response-schema.md](request-response-schema.md)**.
+Field-by-field request and response schema: **[schema-request-response.md](schema-request-response.md)**.
 
 Clients may send user context in headers (`X-User-Id`, `X-User-Roles`, `X-User-Groups`, `X-User-Teams`); the orchestrator relays them on the outbound RAG `POST /v1/rag/query` (body fields `user_id`, `user_roles`, `user_groups`, `user_teams` are rejected).
 
@@ -43,7 +43,7 @@ Clients may send user context in headers (`X-User-Id`, `X-User-Roles`, `X-User-G
 2. **Intent / rewrite router** (one LLM): returns JSON with standalone `rewritten_question` and `route`.
 3. Emit SSE `{type:"rewrite", "text": ...}` and `{type:"route", "route": ...}` (lowercase route values; breaking change from historical `"RAG"`).
 4. Branch:
-   - **`direct_reply`**: emit `answer` from `direct_answer` (common/greeting only; guard may have forced `rag`).
+   - **`direct_reply`**: emit `answer` from `direct_answer` (incl. short general follow-ups when the router chooses it; guard may still force `rag` if the latest user text hits sensitive patterns).
    - **`clarify`**: emit `answer` prompting the user (from `direct_answer` or a default).
    - **`reject`**: emit `answer` with refusal text.
    - **`rag`**: run LangGraph `retrieve` with `rewritten_question`; API `answer` is the RAG tool payload (formatted string from `rag_http_tool`).
