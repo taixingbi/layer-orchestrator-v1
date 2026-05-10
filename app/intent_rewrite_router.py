@@ -77,6 +77,65 @@ class RouterDecision(BaseModel):
         return bool(v)
 
 
+# Latest user message: if it matches this and does not name the candidate, prefer direct_reply over rag.
+_GENERAL_IMMIGRATION_OR_WORK_AUTH_RE = re.compile(
+    r"\b("
+    r"h-?4\b|h-?1b?\b|h-?2a\b|h-?2b\b|l-?1a?\b|o-?1\b|\btn\b|ead\b|"
+    r"i-?\s*765\b|i-?\s*485\b|i-?\s*140\b|i-?\s*130\b|i-?\s*539\b|"
+    r"perm\b|green\s*card|naturalization|citizenship|uscis\b|"
+    r"\bvisa\b|renewal|extension|stem\s*opt|\bopt\b|f-?1\b|j-?1\b|advance\s*parole|"
+    r"work\s*authorization|work\s*permit|daca\b|asylum\b"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_GENERAL_TOPIC_DIRECT_ANSWER = (
+    "This looks like a general U.S. immigration or work-authorization topic, not a question that "
+    "should be answered only from your internal document search. For current rules and renewal "
+    "steps (including H-4 EAD), use official USCIS/DHS guidance (for example Form I-765 instructions) "
+    "and qualified immigration counsel for case-specific advice. "
+    "Use the document-backed path when you need citations from your organization's materials."
+)
+
+
+def _latest_question_names_candidate(q: str) -> bool:
+    """True if the latest user text likely refers to the named candidate."""
+    ql = (q or "").strip().lower()
+    if not ql:
+        return False
+    full = (CANDIDATE_NAME or "").strip().lower()
+    if full and full in ql:
+        return True
+    parts = (CANDIDATE_NAME or "").split()
+    if not parts:
+        return False
+    first = parts[0].lower()
+    if len(first) >= 2 and re.search(rf"\b{re.escape(first)}\b", ql):
+        return True
+    return False
+
+
+def maybe_override_rag_for_general_question(decision: RouterDecision, latest_question: str) -> RouterDecision:
+    """If the router chose rag but the ask is general immigration/process and not about the candidate, use direct_reply."""
+    if decision.route != "rag":
+        return decision
+    q = (latest_question or "").strip()
+    if not q or _latest_question_names_candidate(q):
+        return decision
+    if not _GENERAL_IMMIGRATION_OR_WORK_AUTH_RE.search(q):
+        return decision
+    suffix = " [server: general_immigration_topic→direct_reply]"
+    reason = ((decision.reason or "").strip() + suffix).strip()
+    return decision.model_copy(
+        update={
+            "route": "direct_reply",
+            "can_answer_directly": True,
+            "direct_answer": _GENERAL_TOPIC_DIRECT_ANSWER,
+            "reason": reason,
+        },
+    )
+
+
 def _strip_json_fences(raw: str) -> str:
     t = raw.strip()
     if t.startswith("```"):
@@ -173,12 +232,16 @@ async def run_intent_rewrite_router(
                     "gateway_meta": {"preview": (raw or "")[:200] or None},
                 },
             )
-            return fallback_router_decision(q, reason="parse_fallback")
+            return maybe_override_rag_for_general_question(
+                fallback_router_decision(q, reason="parse_fallback"),
+                q,
+            )
         decision = RouterDecision.model_validate(obj)
         if not (decision.rewritten_question or "").strip():
             decision = decision.model_copy(
                 update={"rewritten_question": rewrite_to_third_person(q)},
             )
+        decision = maybe_override_rag_for_general_question(decision, q)
         _router_log.info(
             "intent_router_completed",
             extra={
@@ -202,4 +265,7 @@ async def run_intent_rewrite_router(
                 "error_message": str(e),
             },
         )
-        return fallback_router_decision(q, reason=f"invoke_error:{type(e).__name__}")
+        return maybe_override_rag_for_general_question(
+            fallback_router_decision(q, reason=f"invoke_error:{type(e).__name__}"),
+            q,
+        )
