@@ -11,7 +11,6 @@ from langchain_core.callbacks import AsyncCallbackHandler
 from .agent_graph import build_graph_agent
 from .config import get_langsmith_tags, settings
 from .intent_rewrite_router import (
-    apply_direct_reply_guard,
     normalize_post_router,
     run_intent_rewrite_router,
 )
@@ -229,7 +228,6 @@ async def stream_answer_query(
                 session_id=session_id,
                 trace_id=trace_id,
             )
-            decision = apply_direct_reply_guard(decision, query.strip())
             decision = normalize_post_router(decision)
             router_ended_at = utc_now_iso()
             yield state_event(

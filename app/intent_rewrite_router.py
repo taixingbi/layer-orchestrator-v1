@@ -36,41 +36,11 @@ Rules:
 - If the user only greets or asks a simple common public question (no private data), you may set route to "direct_reply" with a short direct_answer.
 - If the latest question depends on history, rewrite it as a standalone search-friendly rewritten_question (for rag) or a clear paraphrase (for other routes).
 - Short conversational follow-ups that only need high-level, widely known guidance (e.g. travel considerations after visa class was already stated in history)—not employer-internal facts, not citations from a knowledge base, not personalized legal advice—may use route "direct_reply" with a brief direct_answer; note uncertainty and suggest consulting official sources or counsel when appropriate.
+- Even when the candidate (Taixing Bi) is named, do not default to "rag" automatically: judge whether the question is **general** (common public knowledge, high-level non-advisory explanation, greetings) vs **document- or org-grounded** (needs internal profile, policies, cited facts). Use "direct_reply" only for the former with short caveats; use "rag" for the latter.
 - Do not put private or document-specific factual answers in direct_answer; those must go through "rag".
 - If the question is ambiguous, use route "clarify" and put what you need in direct_answer or a short prompt.
 - If the request is unsafe or disallowed, use route "reject" with a brief refusal in direct_answer.
 - Keep rewritten_question short and search-friendly."""
-
-# Phrases on the **latest user message only** that force RAG if the model chose direct_reply (defense in depth).
-# Rewritten_question often injects visa tokens from history for search; do not use it here or follow-ups get forced to rag.
-# Word-boundary matching avoids substring false positives (e.g. "ead" inside "instead").
-_SENSITIVE_HINTS: frozenset[str] = frozenset(
-    (
-        "visa",
-        "h4",
-        "ead",
-        "work authorization",
-        "sponsorship",
-        "salary",
-        "compensation",
-    )
-)
-
-
-def _sensitive_hint_regex_fragment(hint: str) -> str:
-    if " " in hint.strip():
-        inner = r"\s+".join(re.escape(w) for w in hint.split())
-        return rf"\b(?:{inner})\b"
-    return rf"\b{re.escape(hint)}\b"
-
-
-_SENSITIVE_PATTERN = re.compile(
-    "|".join(
-        _sensitive_hint_regex_fragment(h)
-        for h in sorted(_SENSITIVE_HINTS, key=len, reverse=True)
-    ),
-    re.IGNORECASE,
-)
 
 _VALID_ROUTES = frozenset({"rag", "direct_reply", "clarify", "reject"})
 
@@ -140,27 +110,6 @@ def fallback_router_decision(question: str, *, reason: str = "parse_fallback") -
         direct_answer=None,
         reason=reason,
     )
-
-
-def _sensitive_topics_match(blob: str) -> bool:
-    return bool(_SENSITIVE_PATTERN.search(blob))
-
-
-def apply_direct_reply_guard(decision: RouterDecision, latest_question: str) -> RouterDecision:
-    """If route is direct_reply but the user's latest text looks like a sensitive topic, force rag."""
-    if decision.route != "direct_reply":
-        return decision
-    blob = (latest_question or "").lower()
-    if _sensitive_topics_match(blob):
-        extra = " [server: forced rag for sensitive topic]"
-        return RouterDecision(
-            rewritten_question=decision.rewritten_question or rewrite_to_third_person(latest_question.strip()),
-            route="rag",
-            can_answer_directly=False,
-            direct_answer=None,
-            reason=(decision.reason or "").strip() + extra,
-        )
-    return decision
 
 
 def normalize_post_router(decision: RouterDecision) -> RouterDecision:
