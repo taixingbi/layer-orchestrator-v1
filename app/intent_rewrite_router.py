@@ -9,6 +9,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from .agent_rewrite import (
+    CANDIDATE_NAME,
     REWRITE_HISTORY_MAX_LINES,
     format_history_for_prompt,
     normalize_history_turns,
@@ -18,29 +19,31 @@ from .config import gateway_llm_invoke_kwargs, get_langsmith_tags, get_llm
 
 _router_log = logging.getLogger("layer_orchestrator.intent_router")
 
-ROUTER_SYSTEM = """You are the orchestrator router.
+ROUTER_SYSTEM = f"""You are the orchestrator router.
 
 Use conversation history only to rewrite the latest user question.
 
 Return JSON only, with no markdown fences, no other text:
-{
+{{
   "rewritten_question": string,
   "route": "rag" | "direct_reply" | "clarify" | "reject",
   "can_answer_directly": boolean,
   "direct_answer": string | null,
   "reason": string
-}
+}}
 
-Rules:
-- If the user asks about private, user-specific, project-internal, or document-grounded knowledge, set route to "rag", can_answer_directly false, direct_answer null.
-- If the user only greets or asks a simple common public question (no private data), you may set route to "direct_reply" with a short direct_answer.
-- If the latest question depends on history, rewrite it as a standalone search-friendly rewritten_question (for rag) or a clear paraphrase (for other routes).
-- Short conversational follow-ups that only need high-level, widely known guidance (e.g. travel considerations after visa class was already stated in history)—not employer-internal facts, not citations from a knowledge base, not personalized legal advice—may use route "direct_reply" with a brief direct_answer; note uncertainty and suggest consulting official sources or counsel when appropriate.
-- Even when the candidate (Taixing Bi) is named, do not default to "rag" automatically: judge whether the question is **general** (common public knowledge, high-level non-advisory explanation, greetings) vs **document- or org-grounded** (needs internal profile, policies, cited facts). Use "direct_reply" only for the former with short caveats; use "rag" for the latter.
-- Do not put private or document-specific factual answers in direct_answer; those must go through "rag".
+Routing priority (apply in order):
+1) **direct_reply** — Use when the latest question is **general** (common public knowledge: definitions, how a visa or benefit category works, typical processes, renewal requirements in general, greetings, math/coding trivia, etc.) OR when it is **not about {CANDIDATE_NAME}** in a way that needs their profile or your employer documents. Set can_answer_directly true, put a concise helpful direct_answer (note uncertainty; suggest official sources or counsel for immigration/legal topics). rewritten_question may paraphrase the user ask; it is not used for retrieval on this route.
+2) **rag** — Use when the user needs **{CANDIDATE_NAME}-specific** facts (their status, dates, employer-internal HR/policy, résumé or performance claims, project-internal details) or answers that must be **grounded in the knowledge base with citations**, not invented. Set can_answer_directly false, direct_answer null. Produce a standalone search-friendly rewritten_question.
+3) **clarify** / **reject** — Same as before.
+
+Additional rules:
+- Never put {CANDIDATE_NAME}-specific or document-only factual claims in direct_answer; those belong in rag with retrieval.
+- History may mention {CANDIDATE_NAME} or a visa class; if the **latest question** only asks a **general** follow-up (e.g. renewal rules for that visa type, not "what did we file for {CANDIDATE_NAME}?"), use **direct_reply**, not rag.
+- If the latest question depends on history for meaning, still choose direct_reply vs rag by whether the answer should be general vs candidate/doc-grounded.
 - If the question is ambiguous, use route "clarify" and put what you need in direct_answer or a short prompt.
 - If the request is unsafe or disallowed, use route "reject" with a brief refusal in direct_answer.
-- Keep rewritten_question short and search-friendly."""
+- Keep rewritten_question short and search-friendly (especially for rag)."""
 
 _VALID_ROUTES = frozenset({"rag", "direct_reply", "clarify", "reject"})
 
