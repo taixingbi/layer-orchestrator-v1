@@ -69,6 +69,15 @@ def _validate_answer_body_limits(body: "AnswerBody", raw_size_bytes: int) -> Non
                 f"{settings.max_history_messages} (MAX_HISTORY_MESSAGES)"
             ),
         )
+    context_chars = q_len + sum(len(t.content or "") for t in (body.history or []))
+    if context_chars > settings.max_context_chars:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"context too large: {context_chars} chars > "
+                f"{settings.max_context_chars} (MAX_CONTEXT_CHARS)"
+            ),
+        )
 
 
 def _sse_stream_answer_gen(

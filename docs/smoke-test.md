@@ -105,13 +105,15 @@ curl -N -sS -X POST "http://192.168.86.179:30183/v1/rag/query" \
   }'
 ```
 
+
 ## Workflow safety limits
 
 These protections are app-level safeguards (not gateway traffic shaping). Default env values:
 
-- `MAX_REQUEST_BODY_MB=2`
-- `MAX_HISTORY_MESSAGES=50`
-- `MAX_QUESTION_CHARS=8000`
+- `MAX_REQUEST_BODY_MB=1`
+- `MAX_HISTORY_MESSAGES=50` (recommended range: `30-50`)
+- `MAX_QUESTION_CHARS=8000` (about 2k tokens)
+- `MAX_CONTEXT_CHARS=120000`
 - `REQUEST_TIMEOUT_MS=30000`
 - `STREAM_IDLE_TIMEOUT_MS=30000`
 - `MAX_CONCURRENT_DOWNSTREAM_CALLS=32`
@@ -123,7 +125,7 @@ python - <<'PY'
 import json
 import urllib.error
 import urllib.request
-q = "x" * (3 * 1024 * 1024)  # ~3MB to exceed default 2MB cap
+q = "x" * (2 * 1024 * 1024)  # ~2MB to exceed default 1MB cap
 body = {"question": q}
 req = urllib.request.Request(
     "http://192.168.86.179:30184/orchestrator/answer",
@@ -174,6 +176,31 @@ import json
 import urllib.error
 import urllib.request
 body = {"question": "x" * 9000}  # > default 8000
+req = urllib.request.Request(
+    "http://192.168.86.179:30184/orchestrator/answer",
+    data=json.dumps(body).encode("utf-8"),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+try:
+    with urllib.request.urlopen(req) as res:
+        print(res.status)
+        print(res.read().decode("utf-8"))
+except urllib.error.HTTPError as e:
+    print(e.code)
+    print(e.read().decode("utf-8"))
+PY
+```
+
+### Context limit (`400`)
+
+```bash
+python - <<'PY'
+import json
+import urllib.error
+import urllib.request
+hist = [{"role": "user", "content": "x" * 3000} for _ in range(40)]  # 120k chars in history
+body = {"question": "x" * 1000, "history": hist}  # total context > default 120000
 req = urllib.request.Request(
     "http://192.168.86.179:30184/orchestrator/answer",
     data=json.dumps(body).encode("utf-8"),

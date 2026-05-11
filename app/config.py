@@ -42,9 +42,10 @@ class Settings:
     rag_http_max_attempts: int = max(1, int(os.getenv("RAG_HTTP_MAX_ATTEMPTS", "3")))
     rag_http_retry_backoff_s: float = float(os.getenv("RAG_HTTP_RETRY_BACKOFF_S", "0.5"))
     # Workflow safety limits (application-level safeguards).
-    max_request_body_mb: float = float(os.getenv("MAX_REQUEST_BODY_MB", "2"))
+    max_request_body_mb: float = float(os.getenv("MAX_REQUEST_BODY_MB", "1"))
     max_history_messages: int = max(1, int(os.getenv("MAX_HISTORY_MESSAGES", "50")))
     max_question_chars: int = max(1, int(os.getenv("MAX_QUESTION_CHARS", "8000")))
+    max_context_chars: int = max(1, int(os.getenv("MAX_CONTEXT_CHARS", "120000")))
     request_timeout_ms: int = max(1, int(os.getenv("REQUEST_TIMEOUT_MS", "30000")))
     stream_idle_timeout_ms: int = max(1, int(os.getenv("STREAM_IDLE_TIMEOUT_MS", "30000")))
     max_concurrent_downstream_calls: int = int(os.getenv("MAX_CONCURRENT_DOWNSTREAM_CALLS", "32"))
