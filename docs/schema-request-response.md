@@ -196,6 +196,68 @@ Timeout examples in stream mode:
 
 ---
 
+## `POST /orchestrator/eval/router`
+
+Router-only evaluation endpoint. Runs rewrite/route logic and deterministic checks only; it does **not** run RAG or graph execution.
+
+### Headers (optional)
+
+Same correlation headers as `/orchestrator/answer`:
+
+- `X-Session-Id`
+- `X-Request-Id`
+- `X-Trace-Id`
+
+### JSON body
+
+```json
+{
+  "question": "string (required)",
+  "history": []
+}
+```
+
+`history` items use the same shape as `/orchestrator/answer`: `{ "role": "user" | "assistant", "content": "string" }`.
+
+### Response (`200`)
+
+```json
+{
+  "request_id": "string | null",
+  "session_id": "string | null",
+  "trace_id": "string | null",
+  "decision": {
+    "rewritten_question": "string",
+    "route": "rag" | "direct_reply" | "clarify" | "reject",
+    "can_answer_directly": false,
+    "direct_answer": "string | null",
+    "reason": "string"
+  },
+  "evaluation": {
+    "eval_pass": true,
+    "checks": {
+      "has_rewrite": true,
+      "route_valid": true,
+      "direct_reply_has_answer": true,
+      "history_followup_rewritten": true
+    },
+    "notes": []
+  },
+  "status": "ok"
+}
+```
+
+### Evaluation checks
+
+- `has_rewrite`: rewritten question is non-empty.
+- `route_valid`: route is one of `rag`, `direct_reply`, `clarify`, `reject`.
+- `direct_reply_has_answer`: when route is `direct_reply`, `direct_answer` is non-empty.
+- `history_followup_rewritten`: if history is present, rewritten question differs from raw question.
+
+`evaluation.eval_pass` is `true` only when all checks pass.
+
+---
+
 ## `POST /feedback`
 
 ### JSON body

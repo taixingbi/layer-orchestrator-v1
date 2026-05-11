@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 from starlette.requests import Request
 from .langsmith_feedback import FEEDBACK_TYPES, FeedbackBody, submit_langsmith_feedback
 from .agent_rewrite import normalize_history_turns
+from .intent_rewrite_router import RouterDecision, normalize_post_router, run_intent_rewrite_router
 from .orchestrator import stream_answer_query
 
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
@@ -499,6 +500,50 @@ def _history_from_answer_body(body: AnswerBody) -> List[Tuple[str, str]]:
     return normalize_history_turns([(t.role, t.content) for t in body.history])
 
 
+class EvalRouterBody(BaseModel):
+    question: str
+    history: List[HistoryTurn] = Field(default_factory=list)
+
+
+def _history_from_eval_body(body: EvalRouterBody) -> List[Tuple[str, str]]:
+    return normalize_history_turns([(t.role, t.content) for t in body.history])
+
+
+def _router_eval_payload(
+    decision: RouterDecision,
+    *,
+    question: str,
+    history: List[Tuple[str, str]],
+) -> dict:
+    checks: Dict[str, bool] = {
+        "has_rewrite": bool((decision.rewritten_question or "").strip()),
+        "route_valid": decision.route in ("rag", "direct_reply", "clarify", "reject"),
+        "direct_reply_has_answer": (
+            decision.route != "direct_reply" or bool((decision.direct_answer or "").strip())
+        ),
+    }
+    if history:
+        checks["history_followup_rewritten"] = (
+            (decision.rewritten_question or "").strip().lower() != (question or "").strip().lower()
+        )
+    else:
+        checks["history_followup_rewritten"] = True
+    notes: List[str] = []
+    if not checks["has_rewrite"]:
+        notes.append("rewritten_question is empty")
+    if not checks["route_valid"]:
+        notes.append("route is not in allowed set")
+    if not checks["direct_reply_has_answer"]:
+        notes.append("direct_reply route returned empty direct_answer")
+    if history and not checks["history_followup_rewritten"]:
+        notes.append("history exists but rewritten_question did not change from question")
+    return {
+        "eval_pass": all(checks.values()),
+        "checks": checks,
+        "notes": notes,
+    }
+
+
 @app.post("/orchestrator/answer")
 async def orchestrator_answer(body: AnswerBody, request: Request):
     """Unified endpoint: stream=true returns SSE; stream=false returns aggregated JSON."""
@@ -546,6 +591,38 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
         )
     status_code = 200 if result.get("status") == "ok" else 500
     return JSONResponse(result, status_code=status_code)
+
+
+@app.post("/orchestrator/eval/router")
+async def orchestrator_eval_router(body: EvalRouterBody, request: Request):
+    """Evaluate intent router decision only (no RAG execution)."""
+    raw_body = await request.json()
+    _reject_body_correlation_fields(raw_body)
+    session_id, request_id, trace_id = _header_ids(request)
+    hist = _history_from_eval_body(body)
+    decision = await run_intent_rewrite_router(
+        body.question,
+        hist,
+        request_id=request_id,
+        session_id=session_id,
+        trace_id=trace_id,
+    )
+    decision = normalize_post_router(decision)
+    evaluation = _router_eval_payload(decision, question=body.question, history=hist)
+    return {
+        "request_id": request_id,
+        "session_id": session_id,
+        "trace_id": trace_id,
+        "decision": {
+            "rewritten_question": decision.rewritten_question,
+            "route": decision.route,
+            "can_answer_directly": decision.can_answer_directly,
+            "direct_answer": decision.direct_answer,
+            "reason": decision.reason,
+        },
+        "evaluation": evaluation,
+        "status": "ok",
+    }
 
 
 @app.post("/feedback")

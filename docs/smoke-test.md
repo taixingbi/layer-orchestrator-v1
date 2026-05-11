@@ -113,6 +113,30 @@ curl -N -sS -X POST "http://192.168.86.179:30183/v1/rag/query" \
   }'
 ```
 
+## Router eval only (no RAG call)
+
+Use this to evaluate rewrite/route behavior and deterministic checks without running the RAG phase.
+
+```bash
+curl -sS -X POST "http://192.168.86.179:30184/orchestrator/eval/router" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: ses-123" \
+  -H "X-Request-Id: req-router-1" \
+  -H "X-Trace-Id: req-router-1" \
+  -d '{
+    "question": "What are the renewal requirements for H4 EAD?",
+    "history": [
+      {"role": "user", "content": "What is Taixing Bi US visa status?"},
+      {"role": "assistant", "content": "H4 EAD. No visa sponsorship required. [1]"}
+    ]
+  }' | jq .
+```
+
+Response includes:
+
+- `decision`: router output (`rewritten_question`, `route`, `direct_answer`, `reason`)
+- `evaluation`: `eval_pass` plus boolean checks (`has_rewrite`, `route_valid`, `direct_reply_has_answer`, `history_followup_rewritten`)
+
 
 ## Workflow safety limits
 
