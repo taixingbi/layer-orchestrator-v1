@@ -89,6 +89,14 @@ docker run -p 8000:8000 --env-file .env YOUR_DOCKERHUB_USER/layer-orchestrator-v
 curl http://127.0.0.1:8000/health
 ```
 
+## Metrics (Prometheus)
+
+```bash
+curl -s http://127.0.0.1:8000/metrics
+```
+
+Exposes HTTP and pipeline metrics including request counts, latency histograms (for p50/p95/p99 via PromQL `histogram_quantile`), route decisions, router/RAG phase durations, and timeout counters.
+
 ## Orchestrator (SSE with `stream=true`)
 
 ```bash

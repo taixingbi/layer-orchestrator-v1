@@ -17,6 +17,7 @@ dependencies = [
   "langsmith",
   "langgraph",
   "httpx",
+  "prometheus-client>=0.25.0",
 ]
 
 [project.optional-dependencies]

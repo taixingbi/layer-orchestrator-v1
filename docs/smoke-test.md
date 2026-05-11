@@ -20,6 +20,14 @@ curl -sS "http://192.168.86.179:30184/ready" | jq .
 
 Use `curl -i` or `curl -o /dev/null -w "%{http_code}\n"` if you need the HTTP status code (`200` vs `503`).
 
+## Metrics (Prometheus)
+
+Use this for dashboards/alerts (request count, error rate, route count, p50/p95/p99, router/RAG latency, timeout count):
+
+```bash
+curl -sS "http://192.168.86.179:30184/metrics"
+```
+
 ## Orchestrator (non-stream JSON)
 
 Returns one aggregated JSON object. The pipeline uses a single **intent/rewrite router** LLM (`timings_ms.intent_router`), then either returns an immediate `answer` (routes `direct_reply`, `clarify`, `reject`) or runs RAG when `route` is `rag`. The `route` field is lowercase (`rag`, not `RAG`).

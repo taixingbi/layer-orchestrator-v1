@@ -6,6 +6,7 @@ langchain-openai
 langsmith
 langgraph
 httpx
+prometheus-client>=0.25.0
 
 [dev]
 pytest

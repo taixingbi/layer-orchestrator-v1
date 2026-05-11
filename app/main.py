@@ -8,13 +8,20 @@ import time
 from typing import AsyncIterator, Dict, List, Literal, Optional, Tuple
 
 from .config import has_langsmith_credentials, settings
+from .metrics import (
+    inc_timeout,
+    metrics_content_type,
+    metrics_payload,
+    observe_http,
+    observe_pipeline_event,
+)
 from .ready_checks import run_readiness
 from .logging_config import new_request_id, setup_logging, shutdown_logging
 from .request_context import bind_pipeline_phase, bind_request_context, reset_request_context, set_http_status
 
 setup_logging()
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.requests import Request
@@ -107,7 +114,10 @@ def _sse_stream_answer_gen(
             if request_timeout_s is not None:
                 remaining = request_timeout_s - (time.perf_counter() - started)
                 if remaining <= 0:
-                    yield f"data: {json.dumps({'type': 'error', 'text': 'Error: TimeoutError: request timeout exceeded'})}\n\n"
+                    inc_timeout("request")
+                    timeout_event = {"type": "error", "text": "Error: TimeoutError: request timeout exceeded"}
+                    observe_pipeline_event(timeout_event)
+                    yield f"data: {json.dumps(timeout_event)}\n\n"
                     return
                 timeout_s = min(timeout_s, remaining) if timeout_s is not None else remaining
             try:
@@ -117,9 +127,13 @@ def _sse_stream_answer_gen(
             except asyncio.TimeoutError:
                 if request_timeout_s is not None and (time.perf_counter() - started) >= request_timeout_s:
                     msg = "Error: TimeoutError: request timeout exceeded"
+                    inc_timeout("request")
                 else:
                     msg = "Error: TimeoutError: stream idle timeout exceeded"
-                yield f"data: {json.dumps({'type': 'error', 'text': msg})}\n\n"
+                    inc_timeout("stream_idle")
+                timeout_event = {"type": "error", "text": msg}
+                observe_pipeline_event(timeout_event)
+                yield f"data: {json.dumps(timeout_event)}\n\n"
                 return
             yield f"data: {json.dumps(chunk)}\n\n"
 
@@ -277,6 +291,7 @@ async def _answer_event_iter(
         rag_user=rag_user,
         history=history,
     ):
+        observe_pipeline_event(chunk)
         yield chunk
 
 
@@ -375,9 +390,17 @@ app = FastAPI(
 
 @app.middleware("http")
 async def _http_request_logging_middleware(request: Request, call_next):
-    # Keep health/readiness checks lightweight and out of request logs.
-    if request.url.path in ("/health", "/ready"):
-        return await call_next(request)
+    # Keep health/readiness/metrics checks lightweight and out of request logs.
+    if request.url.path in ("/health", "/ready", "/metrics"):
+        t0 = time.perf_counter()
+        response = await call_next(request)
+        observe_http(
+            method=request.method,
+            path=request.url.path,
+            status_code=int(response.status_code),
+            latency_s=(time.perf_counter() - t0),
+        )
+        return response
     if request.url.path == "/orchestrator/answer":
         raw_cl = (request.headers.get("content-length") or "").strip()
         if raw_cl:
@@ -434,6 +457,7 @@ async def _http_request_logging_middleware(request: Request, call_next):
                 response = await call_next(request)
             except Exception:
                 latency_ms = _latency_ms(t0)
+                observe_http(method=method, path=path, status_code=500, latency_s=latency_ms / 1000.0)
                 _http_log.error(
                     "http_request_error",
                     extra={
@@ -444,6 +468,7 @@ async def _http_request_logging_middleware(request: Request, call_next):
                 )
                 raise
             latency_ms = _latency_ms(t0)
+            observe_http(method=method, path=path, status_code=int(response.status_code), latency_s=latency_ms / 1000.0)
             response.headers["X-Request-Id"] = request_id
             set_http_status(str(response.status_code))
             _http_log.info(
@@ -514,6 +539,7 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
             timeout=request_timeout_s,
         )
     except asyncio.TimeoutError:
+        inc_timeout("request")
         return JSONResponse(
             {"status": "error", "error": "request timeout exceeded"},
             status_code=504,
@@ -569,3 +595,9 @@ async def ready():
     all_ok, body = await run_readiness()
     status_code = 200 if all_ok else 503
     return JSONResponse(body, status_code=status_code)
+
+
+@app.get("/metrics")
+def metrics():
+    """Prometheus metrics endpoint."""
+    return Response(content=metrics_payload(), media_type=metrics_content_type())
