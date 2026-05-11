@@ -19,6 +19,22 @@ from .request_context import bind_pipeline_phase
 from .utils import last_rag_tool_envelope, last_rag_tool_evidence
 
 _pipeline_log = logging.getLogger("layer_orchestrator.pipeline")
+_downstream_semaphore: Optional[asyncio.Semaphore] = None
+_downstream_semaphore_limit: Optional[int] = None
+
+
+def _get_downstream_semaphore() -> Optional[asyncio.Semaphore]:
+    """Optional cap for concurrent downstream graph/RAG work."""
+    global _downstream_semaphore, _downstream_semaphore_limit
+    limit = settings.max_concurrent_downstream_calls
+    if limit <= 0:
+        _downstream_semaphore = None
+        _downstream_semaphore_limit = None
+        return None
+    if _downstream_semaphore is None or _downstream_semaphore_limit != limit:
+        _downstream_semaphore = asyncio.Semaphore(limit)
+        _downstream_semaphore_limit = limit
+    return _downstream_semaphore
 
 
 async def _yield_request_complete_done(
@@ -71,71 +87,84 @@ async def run_graph(
     rag_user: Optional[Dict[str, str]] = None,
     standalone_question: Optional[str] = None,
     emit_state: Optional[Callable[..., Awaitable[None]]] = None,
+    downstream_acquire_timeout_s: Optional[float] = None,
 ) -> Tuple[List[Any], Optional[str]]:
     """Run one phase (RAG) and return (messages, agent_graph_run_id). agent_graph_run_id from LangSmith."""
     t0 = time.perf_counter()
-    async with bind_pipeline_phase("agent_graph"):
-        _pipeline_log.info(
-            "graph_run_started",
-            extra={"event": "graph_run_started", "request_id": request_id or "-", "session_id": session_id or "-"},
-        )
-        agent = await build_graph_agent(
-            tools_timeout_s=tools_timeout_s,
-        )
-        run_ids: List[str] = []
-        callback = _AgentRunIdCallback(run_ids)
-        configurable = {
-            k: v
-            for k, v in (("request_id", request_id), ("session_id", session_id), ("trace_id", trace_id))
-            if v is not None
-        }
-        if rag_user:
-            for key in ("user_id", "user_roles", "user_groups", "user_teams"):
-                v = rag_user.get(key)
-                if v:
-                    configurable[key] = v
-        if standalone_question:
-            configurable["standalone_question"] = standalone_question
-        if emit_state is not None:
-            configurable["emit_state"] = emit_state
-        config = {
-            "run_name": "agent_graph",
-            "callbacks": [callback],
-            "tags": get_langsmith_tags(request_id=request_id, session_id=session_id),
-            "configurable": configurable,
-        }
-        try:
-            out = await asyncio.wait_for(
-                agent.ainvoke({"messages": messages}, config=config),
-                timeout=invoke_timeout_s,
+    semaphore = _get_downstream_semaphore()
+    acquired = False
+    if semaphore is not None:
+        if downstream_acquire_timeout_s is not None:
+            await asyncio.wait_for(semaphore.acquire(), timeout=downstream_acquire_timeout_s)
+        else:
+            await semaphore.acquire()
+        acquired = True
+    try:
+        async with bind_pipeline_phase("agent_graph"):
+            _pipeline_log.info(
+                "graph_run_started",
+                extra={"event": "graph_run_started", "request_id": request_id or "-", "session_id": session_id or "-"},
             )
-        except Exception as e:
-            _pipeline_log.error(
-                "graph_run_failed",
+            agent = await build_graph_agent(
+                tools_timeout_s=tools_timeout_s,
+            )
+            run_ids: List[str] = []
+            callback = _AgentRunIdCallback(run_ids)
+            configurable = {
+                k: v
+                for k, v in (("request_id", request_id), ("session_id", session_id), ("trace_id", trace_id))
+                if v is not None
+            }
+            if rag_user:
+                for key in ("user_id", "user_roles", "user_groups", "user_teams"):
+                    v = rag_user.get(key)
+                    if v:
+                        configurable[key] = v
+            if standalone_question:
+                configurable["standalone_question"] = standalone_question
+            if emit_state is not None:
+                configurable["emit_state"] = emit_state
+            config = {
+                "run_name": "agent_graph",
+                "callbacks": [callback],
+                "tags": get_langsmith_tags(request_id=request_id, session_id=session_id),
+                "configurable": configurable,
+            }
+            try:
+                out = await asyncio.wait_for(
+                    agent.ainvoke({"messages": messages}, config=config),
+                    timeout=invoke_timeout_s,
+                )
+            except Exception as e:
+                _pipeline_log.error(
+                    "graph_run_failed",
+                    extra={
+                        "event": "graph_run_failed",
+                        "request_id": request_id or "-",
+                        "session_id": session_id or "-",
+                        "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
+                        "error_type": type(e).__name__,
+                        "error_message": str(e),
+                        "structured_error": {"type": type(e).__name__, "message": str(e)},
+                    },
+                )
+                setattr(e, "_pipeline_logged", True)
+                raise
+            agent_graph_run_id = run_ids[0] if run_ids else None
+            _pipeline_log.info(
+                "graph_run_completed",
                 extra={
-                    "event": "graph_run_failed",
+                    "event": "graph_run_completed",
                     "request_id": request_id or "-",
                     "session_id": session_id or "-",
                     "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
-                    "error_type": type(e).__name__,
-                    "error_message": str(e),
-                    "structured_error": {"type": type(e).__name__, "message": str(e)},
+                    "gateway_meta": {"has_agent_graph_run_id": bool(agent_graph_run_id)},
                 },
             )
-            setattr(e, "_pipeline_logged", True)
-            raise
-        agent_graph_run_id = run_ids[0] if run_ids else None
-        _pipeline_log.info(
-            "graph_run_completed",
-            extra={
-                "event": "graph_run_completed",
-                "request_id": request_id or "-",
-                "session_id": session_id or "-",
-                "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
-                "gateway_meta": {"has_agent_graph_run_id": bool(agent_graph_run_id)},
-            },
-        )
-        return out["messages"], agent_graph_run_id
+            return out["messages"], agent_graph_run_id
+    finally:
+        if acquired and semaphore is not None:
+            semaphore.release()
 
 
 async def answer_query_sync(
@@ -183,6 +212,7 @@ async def stream_answer_query(
     request_id = request_id or str(uuid.uuid4())
     tools_s = tools_timeout_s if tools_timeout_s is not None else settings.tools_timeout_s
     invoke_s = invoke_timeout_s if invoke_timeout_s is not None else settings.invoke_timeout_s
+    request_timeout_s = settings.request_timeout_ms / 1000.0
     t0 = time.perf_counter()
     use_http_rag = bool(settings.rag_http_base_url)
     hist = list(history) if history else []
@@ -327,6 +357,7 @@ async def stream_answer_query(
                     rag_user=rag_user,
                     standalone_question=rewritten.strip(),
                     emit_state=emit_graph_state,
+                    downstream_acquire_timeout_s=request_timeout_s,
                 )
             )
             try:

@@ -105,6 +105,138 @@ curl -N -sS -X POST "http://192.168.86.179:30183/v1/rag/query" \
   }'
 ```
 
+## Workflow safety limits
+
+These protections are app-level safeguards (not gateway traffic shaping). Default env values:
+
+- `MAX_REQUEST_BODY_MB=2`
+- `MAX_HISTORY_MESSAGES=50`
+- `MAX_QUESTION_CHARS=8000`
+- `REQUEST_TIMEOUT_MS=30000`
+- `STREAM_IDLE_TIMEOUT_MS=30000`
+- `MAX_CONCURRENT_DOWNSTREAM_CALLS=32`
+
+### Oversized request body (`413`)
+
+```bash
+python - <<'PY'
+import json
+import urllib.error
+import urllib.request
+q = "x" * (3 * 1024 * 1024)  # ~3MB to exceed default 2MB cap
+body = {"question": q}
+req = urllib.request.Request(
+    "http://192.168.86.179:30184/orchestrator/answer",
+    data=json.dumps(body).encode("utf-8"),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+try:
+    with urllib.request.urlopen(req) as res:
+        print(res.status)
+        print(res.read().decode("utf-8"))
+except urllib.error.HTTPError as e:
+    print(e.code)
+    print(e.read().decode("utf-8"))
+PY
+```
+
+### History limit (`400`)
+
+```bash
+python - <<'PY'
+import json
+import urllib.error
+import urllib.request
+hist = [{"role": "user", "content": "hi"} for _ in range(51)]  # > default 50
+body = {"question": "test", "history": hist}
+req = urllib.request.Request(
+    "http://192.168.86.179:30184/orchestrator/answer",
+    data=json.dumps(body).encode("utf-8"),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+try:
+    with urllib.request.urlopen(req) as res:
+        print(res.status)
+        print(res.read().decode("utf-8"))
+except urllib.error.HTTPError as e:
+    print(e.code)
+    print(e.read().decode("utf-8"))
+PY
+```
+
+### Question length limit (`400`)
+
+```bash
+python - <<'PY'
+import json
+import urllib.error
+import urllib.request
+body = {"question": "x" * 9000}  # > default 8000
+req = urllib.request.Request(
+    "http://192.168.86.179:30184/orchestrator/answer",
+    data=json.dumps(body).encode("utf-8"),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+try:
+    with urllib.request.urlopen(req) as res:
+        print(res.status)
+        print(res.read().decode("utf-8"))
+except urllib.error.HTTPError as e:
+    print(e.code)
+    print(e.read().decode("utf-8"))
+PY
+```
+
+### Request timeout (`504`)
+
+If total processing exceeds `REQUEST_TIMEOUT_MS`, non-stream responses return `504` with an error body; SSE responses emit a timeout error event and close.
+
+## Feedback
+
+`POST /feedback` records thumbs up/down on a prior answer. The handler always logs the event; it **forwards to LangSmith** only when `LANGCHAIN_API_KEY` or `LANGSMITH_API_KEY` is set and a run id is supplied. The server picks the LangSmith `run_id` in order: **`agent_graph_run_id`** (root graph run UUID from tracing, best match), **`trace_id`**, then **`request_id`**. LangSmith expects a real run UUID unless your project maps `trace_id` to that run.
+
+**Thumbs up** (correlate with the same `trace_id` / `request_id` you used on `/orchestrator/answer`):
+
+```bash
+curl -sS -X POST "http://192.168.86.179:30184/feedback" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "trace_id": "req-123",
+    "request_id": "req-123",
+    "rating": "thumbs_up"
+  }' | jq .
+```
+
+**Thumbs down** with optional `feedback_type` and `comment`:
+
+```bash
+curl -sS -X POST "http://192.168.86.179:30184/feedback" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "trace_id": "req-123",
+    "rating": "thumbs_down",
+    "feedback_type": "not_factual",
+    "comment": "Answer did not match the cited policy",
+    "question": "what is taixing visa status in us?"
+  }' | jq .
+```
+
+`feedback_type` (optional): `not_relevant`, `biased`, `not_factual`, `incomplete_instructions`, `unsafe`, `style_tone`, `other`.
+
+**With LangSmith root run id** (from a non-stream or SSE `answer` event when tracing is enabled):
+
+```bash
+curl -sS -X POST "http://192.168.86.179:30184/feedback" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_graph_run_id": "YOUR_LANGSMITH_ROOT_RUN_UUID",
+    "rating": "thumbs_up"
+  }' | jq .
+```
+
 ## See also
 
 - [Gateway inference](gateway-inference.md) — LLM base URL and headers

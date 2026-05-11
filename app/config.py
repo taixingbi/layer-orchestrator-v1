@@ -41,6 +41,13 @@ class Settings:
     # Transient RAG HTTP failures: retry with exponential backoff (see app/rag_http_tool.py).
     rag_http_max_attempts: int = max(1, int(os.getenv("RAG_HTTP_MAX_ATTEMPTS", "3")))
     rag_http_retry_backoff_s: float = float(os.getenv("RAG_HTTP_RETRY_BACKOFF_S", "0.5"))
+    # Workflow safety limits (application-level safeguards).
+    max_request_body_mb: float = float(os.getenv("MAX_REQUEST_BODY_MB", "2"))
+    max_history_messages: int = max(1, int(os.getenv("MAX_HISTORY_MESSAGES", "50")))
+    max_question_chars: int = max(1, int(os.getenv("MAX_QUESTION_CHARS", "8000")))
+    request_timeout_ms: int = max(1, int(os.getenv("REQUEST_TIMEOUT_MS", "30000")))
+    stream_idle_timeout_ms: int = max(1, int(os.getenv("STREAM_IDLE_TIMEOUT_MS", "30000")))
+    max_concurrent_downstream_calls: int = int(os.getenv("MAX_CONCURRENT_DOWNSTREAM_CALLS", "32"))
 
     # LLM: HTTP chat completions at {LLM_GATEWAY_BASE_URL}/v1/chat/completions
     llm_gateway_base_url: Optional[str] = os.getenv("LLM_GATEWAY_BASE_URL")

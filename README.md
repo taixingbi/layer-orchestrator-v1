@@ -41,6 +41,12 @@ Copy or create `.env` at the **project root** (loaded by `app/config.py`). Typic
 | `RAG_K`, `RAG_K_MAX`, `RAG_INCLUDE_RETRIEVAL_HITS` | RAG request fields (defaults: `5`, `40`, `true`) |
 | `RAG_HTTP_MAX_ATTEMPTS` | Max POST attempts per RAG call for transient errors (default: `3`; set to `1` to disable retry) |
 | `RAG_HTTP_RETRY_BACKOFF_S` | Base delay (seconds) for exponential backoff between RAG retries (default: `0.5`) |
+| `MAX_REQUEST_BODY_MB` | Max request body size for `/orchestrator/answer` (default: `2`) |
+| `MAX_HISTORY_MESSAGES` | Max `history` items accepted per answer request (default: `50`) |
+| `MAX_QUESTION_CHARS` | Max `question` length in characters (default: `8000`) |
+| `REQUEST_TIMEOUT_MS` | End-to-end request timeout for orchestrator answer execution (default: `30000`) |
+| `STREAM_IDLE_TIMEOUT_MS` | Max idle gap between SSE events before stream timeout (default: `30000`) |
+| `MAX_CONCURRENT_DOWNSTREAM_CALLS` | Max concurrent downstream graph/RAG executions (default: `32`; set `0` to disable cap) |
 | `TOOLS_TIMEOUT_S` | Timeout for the HTTP RAG client (seconds; default: `60`) |
 | `READINESS_TIMEOUT_S` | Timeout for `GET /ready` outbound probes to LLM and RAG (seconds; default: `5`) |
 | `INVOKE_TIMEOUT_S` | LangGraph agent invoke timeout (seconds; default: `120`) |

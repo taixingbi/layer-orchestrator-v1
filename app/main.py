@@ -30,6 +30,47 @@ def _latency_ms(t0: float) -> float:
     return round((time.perf_counter() - t0) * 1000, 2)
 
 
+def _max_request_body_bytes() -> int:
+    return max(1, int(settings.max_request_body_mb * 1024 * 1024))
+
+
+def _request_timeout_s() -> float:
+    return settings.request_timeout_ms / 1000.0
+
+
+def _stream_idle_timeout_s() -> float:
+    return settings.stream_idle_timeout_ms / 1000.0
+
+
+def _validate_answer_body_limits(body: "AnswerBody", raw_size_bytes: int) -> None:
+    if raw_size_bytes > _max_request_body_bytes():
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"request body too large: {raw_size_bytes} bytes > "
+                f"{_max_request_body_bytes()} bytes (MAX_REQUEST_BODY_MB={settings.max_request_body_mb})"
+            ),
+        )
+    q_len = len((body.question or ""))
+    if q_len > settings.max_question_chars:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"question too long: {q_len} chars > "
+                f"{settings.max_question_chars} (MAX_QUESTION_CHARS)"
+            ),
+        )
+    hist_len = len(body.history or [])
+    if hist_len > settings.max_history_messages:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"history too long: {hist_len} messages > "
+                f"{settings.max_history_messages} (MAX_HISTORY_MESSAGES)"
+            ),
+        )
+
+
 def _sse_stream_answer_gen(
     question: str,
     session_id: Optional[str] = None,
@@ -37,18 +78,42 @@ def _sse_stream_answer_gen(
     trace_id: Optional[str] = None,
     rag_user: Optional[Dict[str, str]] = None,
     history: Optional[List[Tuple[str, str]]] = None,
+    request_timeout_s: Optional[float] = None,
+    stream_idle_timeout_s: Optional[float] = None,
 ) -> AsyncIterator[str]:
     """Async generator for POST /orchestrator/answer with stream=true."""
+
     async def _gen():
-        async for chunk in _answer_event_iter(
+        ait = _answer_event_iter(
             question,
             session_id=session_id,
             request_id=request_id,
             trace_id=trace_id,
             rag_user=rag_user,
             history=history,
-        ):
+        ).__aiter__()
+        started = time.perf_counter()
+        while True:
+            timeout_s = stream_idle_timeout_s
+            if request_timeout_s is not None:
+                remaining = request_timeout_s - (time.perf_counter() - started)
+                if remaining <= 0:
+                    yield f"data: {json.dumps({'type': 'error', 'text': 'Error: TimeoutError: request timeout exceeded'})}\n\n"
+                    return
+                timeout_s = min(timeout_s, remaining) if timeout_s is not None else remaining
+            try:
+                chunk = await asyncio.wait_for(ait.__anext__(), timeout=timeout_s)
+            except StopAsyncIteration:
+                return
+            except asyncio.TimeoutError:
+                if request_timeout_s is not None and (time.perf_counter() - started) >= request_timeout_s:
+                    msg = "Error: TimeoutError: request timeout exceeded"
+                else:
+                    msg = "Error: TimeoutError: stream idle timeout exceeded"
+                yield f"data: {json.dumps({'type': 'error', 'text': msg})}\n\n"
+                return
             yield f"data: {json.dumps(chunk)}\n\n"
+
     return _gen()
 
 
@@ -304,6 +369,24 @@ async def _http_request_logging_middleware(request: Request, call_next):
     # Keep health/readiness checks lightweight and out of request logs.
     if request.url.path in ("/health", "/ready"):
         return await call_next(request)
+    if request.url.path == "/orchestrator/answer":
+        raw_cl = (request.headers.get("content-length") or "").strip()
+        if raw_cl:
+            try:
+                cl = int(raw_cl)
+                if cl > _max_request_body_bytes():
+                    return JSONResponse(
+                        {
+                            "status": "error",
+                            "error": (
+                                f"request body too large: {cl} bytes > {_max_request_body_bytes()} bytes "
+                                f"(MAX_REQUEST_BODY_MB={settings.max_request_body_mb})"
+                            ),
+                        },
+                        status_code=413,
+                    )
+            except ValueError:
+                pass
 
     request_id = request.headers.get("x-request-id") or new_request_id()
     session_id = request.headers.get("x-session-id")
@@ -385,11 +468,15 @@ def _history_from_answer_body(body: AnswerBody) -> List[Tuple[str, str]]:
 @app.post("/orchestrator/answer")
 async def orchestrator_answer(body: AnswerBody, request: Request):
     """Unified endpoint: stream=true returns SSE; stream=false returns aggregated JSON."""
+    raw_bytes = await request.body()
+    _validate_answer_body_limits(body, len(raw_bytes))
     raw_body = await request.json()
     _reject_body_correlation_fields(raw_body)
     session_id, request_id, trace_id = _header_ids(request)
     rag_user = _header_rag_user(request)
     hist = _history_from_answer_body(body)
+    request_timeout_s = _request_timeout_s()
+    stream_idle_timeout_s = _stream_idle_timeout_s()
     if body.stream:
         return StreamingResponse(
             _sse_stream_answer_gen(
@@ -399,18 +486,29 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
                 trace_id=trace_id,
                 rag_user=rag_user,
                 history=hist,
+                request_timeout_s=request_timeout_s,
+                stream_idle_timeout_s=stream_idle_timeout_s,
             ),
             media_type="text/event-stream",
             headers=SSE_HEADERS,
         )
-    result = await _answer_json(
-        body.question,
-        session_id=session_id,
-        request_id=request_id,
-        trace_id=trace_id,
-        rag_user=rag_user,
-        history=hist,
-    )
+    try:
+        result = await asyncio.wait_for(
+            _answer_json(
+                body.question,
+                session_id=session_id,
+                request_id=request_id,
+                trace_id=trace_id,
+                rag_user=rag_user,
+                history=hist,
+            ),
+            timeout=request_timeout_s,
+        )
+    except asyncio.TimeoutError:
+        return JSONResponse(
+            {"status": "error", "error": "request timeout exceeded"},
+            status_code=504,
+        )
     status_code = 200 if result.get("status") == "ok" else 500
     return JSONResponse(result, status_code=status_code)
 
