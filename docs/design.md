@@ -15,7 +15,8 @@ This document explains the runtime design of `layer-orchestrator-v1`: components
   FastAPI entrypoint. Exposes:
   - `POST /orchestrator/answer` (set `stream=true` for SSE, default aggregated JSON)
   - `POST /feedback`
-  - `GET /health`
+  - `GET /health` (liveness; config only)
+  - `GET /ready` (readiness; probes LLM gateway and RAG HTTP)
 - `app/orchestrator.py`  
   High-level pipeline orchestrator (`stream_answer_query`, `run_graph`).
 - `app/intent_rewrite_router.py`  

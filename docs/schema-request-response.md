@@ -197,6 +197,36 @@ LangSmith `create_feedback` is called only when credentials are configured. The 
 
 ---
 
+## `GET /ready`
+
+Readiness probe: calls the **LLM gateway** (`POST …/v1/chat/completions` with `max_tokens: 1`) and the **RAG service** (`POST …/v1/rag/query` with a minimal body). Uses `READINESS_TIMEOUT_S` (default `5`) per request.
+
+### Response (`200` when both dependencies are healthy)
+
+```json
+{
+  "status": "ok",
+  "dependencies": {
+    "llm": {
+      "ok": true,
+      "status": "ok",
+      "latency_ms": 120.5
+    },
+    "rag": {
+      "ok": true,
+      "status": "ok",
+      "latency_ms": 45.2
+    }
+  }
+}
+```
+
+### Response (`503` when any required dependency fails)
+
+Same JSON shape with `status: "degraded"` and one or both of `dependencies.llm` / `dependencies.rag` having `"ok": false`. Failure objects may include `status` (`not_configured`, `timeout`, `error`), `error`, optional `detail`, and `latency_ms` (or `null` when not configured).
+
+---
+
 ## RAG alignment ( `route: "rag"` )
 
 When the upstream RAG HTTP service returns JSON with `answer`, `citations`, and `follow_up_questions`, the orchestrator mirrors **`answer`** (verbatim string), **`citations`**, and **`follow_up_questions`** on the non-stream JSON response and on the streaming **`answer`** event when those fields exist. Downstream RAG latency detail appears under **`timings_ms.rag.service`** when present.

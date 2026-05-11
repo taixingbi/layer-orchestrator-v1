@@ -46,6 +46,7 @@ class Settings:
     # Default timeouts (seconds)
     tools_timeout_s: float = float(os.getenv("TOOLS_TIMEOUT_S", "60"))
     invoke_timeout_s: float = float(os.getenv("INVOKE_TIMEOUT_S", "120"))
+    readiness_timeout_s: float = float(os.getenv("READINESS_TIMEOUT_S", "5"))
 
 
 settings = Settings()

@@ -8,6 +8,7 @@ import time
 from typing import AsyncIterator, Dict, List, Literal, Optional, Tuple
 
 from .config import has_langsmith_credentials, settings
+from .ready_checks import run_readiness
 from .logging_config import new_request_id, setup_logging, shutdown_logging
 from .request_context import bind_pipeline_phase, bind_request_context, reset_request_context, set_http_status
 
@@ -300,8 +301,8 @@ app = FastAPI(
 
 @app.middleware("http")
 async def _http_request_logging_middleware(request: Request, call_next):
-    # Keep health checks lightweight and out of request logs.
-    if request.url.path == "/health":
+    # Keep health/readiness checks lightweight and out of request logs.
+    if request.url.path in ("/health", "/ready"):
         return await call_next(request)
 
     request_id = request.headers.get("x-request-id") or new_request_id()
@@ -453,3 +454,11 @@ def health() -> dict:
         "langsmith_tracing": settings.langsmith_tracing,
         "langchain_endpoint": settings.langchain_endpoint,
     }
+
+
+@app.get("/ready")
+async def ready():
+    """Verify LLM gateway and RAG HTTP service; 503 if any required dependency fails."""
+    all_ok, body = await run_readiness()
+    status_code = 200 if all_ok else 503
+    return JSONResponse(body, status_code=status_code)

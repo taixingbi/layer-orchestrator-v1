@@ -40,6 +40,7 @@ Copy or create `.env` at the **project root** (loaded by `app/config.py`). Typic
 | `RAG_COLLECTION_BASE` | `collection_base` for RAG (default: `taixing_knowledge`) |
 | `RAG_K`, `RAG_K_MAX`, `RAG_INCLUDE_RETRIEVAL_HITS` | RAG request fields (defaults: `5`, `40`, `true`) |
 | `TOOLS_TIMEOUT_S` | Timeout for the HTTP RAG client (seconds; default: `60`) |
+| `READINESS_TIMEOUT_S` | Timeout for `GET /ready` outbound probes to LLM and RAG (seconds; default: `5`) |
 | `INVOKE_TIMEOUT_S` | LangGraph agent invoke timeout (seconds; default: `120`) |
 | `LOG_LEVEL` | Logging level (default: `INFO`) |
 | `LOG_TIMEZONE` | IANA timezone for log timestamps (default: `America/New_York`) |

@@ -10,6 +10,16 @@ Pretty-print JSON (requires [`jq`](https://jqlang.github.io/jq/); omit `| jq .` 
 curl -sS "http://192.168.86.179:30184/health" | jq .
 ```
 
+## Readiness (LLM + RAG)
+
+Returns `200` when both the chat-completions gateway and RAG HTTP service respond successfully; otherwise `503` with per-dependency details.
+
+```bash
+curl -sS "http://192.168.86.179:30184/ready" | jq .
+```
+
+Use `curl -i` or `curl -o /dev/null -w "%{http_code}\n"` if you need the HTTP status code (`200` vs `503`).
+
 ## Orchestrator (non-stream JSON)
 
 Returns one aggregated JSON object. The pipeline uses a single **intent/rewrite router** LLM (`timings_ms.intent_router`), then either returns an immediate `answer` (routes `direct_reply`, `clarify`, `reject`) or runs RAG when `route` is `rag`. The `route` field is lowercase (`rag`, not `RAG`).
