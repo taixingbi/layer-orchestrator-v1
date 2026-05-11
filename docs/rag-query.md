@@ -9,6 +9,8 @@ Content-Type: application/json
 
 The LangGraph agent exposes this as the tool **`query_knowledge_base`** (see `app/rag_http_tool.py`). `request_id` and `session_id` are injected from the orchestrator context when present.
 
+The HTTP client **retries** transient errors (see table below). Successful responses include `rag_http_attempts` in tool metadata when surfaced by the pipeline.
+
 ## Environment variables
 
 | Variable | Required | Default | Description |
@@ -18,6 +20,8 @@ The LangGraph agent exposes this as the tool **`query_knowledge_base`** (see `ap
 | `RAG_K` | No | `5` | Retrieval `k` |
 | `RAG_K_MAX` | No | `40` | Upper cap `k_max` |
 | `RAG_INCLUDE_RETRIEVAL_HITS` | No | `true` | Whether to ask for hits in the response |
+| `RAG_HTTP_MAX_ATTEMPTS` | No | `3` | Retries: max POST attempts on transient failures (`429`, `502`, `503`, `504`, timeouts, connection errors). Use `1` to disable. |
+| `RAG_HTTP_RETRY_BACKOFF_S` | No | `0.5` | Base seconds for exponential backoff between attempts (capped; jitter applied). |
 | `TOOLS_TIMEOUT_S` | No | `60` | HTTP client timeout for this request (seconds) |
 
 ### Example `.env` snippet

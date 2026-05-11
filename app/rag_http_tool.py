@@ -1,6 +1,8 @@
 """LangChain tool that calls the RAG HTTP API (POST /v1/rag/query)."""
 
+import asyncio
 import json
+import random
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
@@ -10,6 +12,11 @@ from .config import settings
 
 # JSON keys tried in order for the user-visible answer string (RAG API variants).
 _RAG_ANSWER_KEYS: Tuple[str, ...] = ("answer", "response", "generated_answer", "text")
+
+# Retry only idempotent, transient cases (timeouts, connection errors, overload / gateway).
+_RAG_RETRYABLE_STATUS: frozenset = frozenset({429, 502, 503, 504})
+_RAG_RETRY_AFTER_CAP_S: float = 30.0
+_RAG_BACKOFF_CAP_S: float = 10.0
 
 _http_client: Optional[httpx.AsyncClient] = None
 
@@ -142,6 +149,21 @@ def _rag_api_body_for_log(data: Any) -> Dict[str, Any]:
     return out
 
 
+def _rag_retry_delay_s(attempt_index: int, response: Optional[httpx.Response]) -> float:
+    """Exponential backoff with jitter; honors Retry-After on 429 when present."""
+    base = settings.rag_http_retry_backoff_s * (2**attempt_index)
+    base = min(_RAG_BACKOFF_CAP_S, base)
+    if response is not None and response.status_code == 429:
+        raw = (response.headers.get("retry-after") or "").strip()
+        if raw:
+            try:
+                base = max(base, min(_RAG_RETRY_AFTER_CAP_S, float(raw)))
+            except ValueError:
+                pass
+    # jitter in [0.5 * base, base]
+    return base * (0.5 + 0.5 * random.random())
+
+
 async def query_rag_http(
     question: str,
     request_id: str = "",
@@ -204,9 +226,28 @@ async def query_rag_http_with_meta(
     }
     headers = {k: v for k, v in headers.items() if v}
     client = _shared_http_client()
-    response = await client.post(url, json=payload, headers=headers)
+    max_attempts = settings.rag_http_max_attempts
+    response: Optional[httpx.Response] = None
+    attempt = 0
+    while attempt < max_attempts:
+        try:
+            response = await client.post(url, json=payload, headers=headers)
+        except (httpx.TimeoutException, httpx.RequestError):
+            attempt += 1
+            if attempt >= max_attempts:
+                raise
+            await asyncio.sleep(_rag_retry_delay_s(attempt - 1, None))
+            continue
+        if response.status_code in _RAG_RETRYABLE_STATUS:
+            attempt += 1
+            if attempt >= max_attempts:
+                response.raise_for_status()
+            await asyncio.sleep(_rag_retry_delay_s(attempt - 1, response))
+            continue
+        response.raise_for_status()
+        break
+    assert response is not None
     http_status = response.status_code
-    response.raise_for_status()
     ctype = (response.headers.get("content-type") or "").lower()
     if "text/event-stream" in ctype:
         events: List[str] = []
@@ -216,7 +257,10 @@ async def query_rag_http_with_meta(
         data = _accumulate_sse_payload(events)
     else:
         data = response.json()
-    metadata: Dict[str, Any] = {"http_status_code": http_status}
+    metadata: Dict[str, Any] = {
+        "http_status_code": http_status,
+        "rag_http_attempts": attempt + 1,
+    }
     rag_latency_ms = _extract_rag_latency_ms(data)
     if rag_latency_ms is not None:
         metadata["rag_latency_ms"] = rag_latency_ms

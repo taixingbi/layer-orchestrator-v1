@@ -38,6 +38,9 @@ class Settings:
     rag_include_retrieval_hits: bool = (
         os.getenv("RAG_INCLUDE_RETRIEVAL_HITS", "true").lower() == "true"
     )
+    # Transient RAG HTTP failures: retry with exponential backoff (see app/rag_http_tool.py).
+    rag_http_max_attempts: int = max(1, int(os.getenv("RAG_HTTP_MAX_ATTEMPTS", "3")))
+    rag_http_retry_backoff_s: float = float(os.getenv("RAG_HTTP_RETRY_BACKOFF_S", "0.5"))
 
     # LLM: HTTP chat completions at {LLM_GATEWAY_BASE_URL}/v1/chat/completions
     llm_gateway_base_url: Optional[str] = os.getenv("LLM_GATEWAY_BASE_URL")

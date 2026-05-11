@@ -39,6 +39,8 @@ Copy or create `.env` at the **project root** (loaded by `app/config.py`). Typic
 | `RAG_HTTP_BASE_URL` | RAG service base URL; app calls `POST {base}/v1/rag/query` |
 | `RAG_COLLECTION_BASE` | `collection_base` for RAG (default: `taixing_knowledge`) |
 | `RAG_K`, `RAG_K_MAX`, `RAG_INCLUDE_RETRIEVAL_HITS` | RAG request fields (defaults: `5`, `40`, `true`) |
+| `RAG_HTTP_MAX_ATTEMPTS` | Max POST attempts per RAG call for transient errors (default: `3`; set to `1` to disable retry) |
+| `RAG_HTTP_RETRY_BACKOFF_S` | Base delay (seconds) for exponential backoff between RAG retries (default: `0.5`) |
 | `TOOLS_TIMEOUT_S` | Timeout for the HTTP RAG client (seconds; default: `60`) |
 | `READINESS_TIMEOUT_S` | Timeout for `GET /ready` outbound probes to LLM and RAG (seconds; default: `5`) |
 | `INVOKE_TIMEOUT_S` | LangGraph agent invoke timeout (seconds; default: `120`) |
