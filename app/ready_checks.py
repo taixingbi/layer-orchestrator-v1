@@ -101,8 +101,6 @@ async def check_rag_http(client: httpx.AsyncClient) -> Dict[str, Any]:
         "collection_base": settings.rag_collection_base,
         "k": 1,
         "k_max": 1,
-        "request_id": _READINESS_RID,
-        "session_id": _READINESS_RID,
         "include_retrieval_hits": False,
     }
     headers = {
