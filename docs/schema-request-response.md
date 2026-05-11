@@ -39,6 +39,24 @@ Response includes `X-Request-Id` (middleware).
 
 **Rejected in body (400):** `session_id`, `request_id`, `trace_id`, `user_id`, `user_roles`, `user_groups`, `user_teams`.
 
+### Workflow safety limits
+
+The orchestrator enforces configurable request safety limits:
+
+- `MAX_REQUEST_BODY_MB` (default `1`)
+- `MAX_HISTORY_MESSAGES` (default `50`)
+- `MAX_QUESTION_CHARS` (default `8000`)
+- `MAX_CONTEXT_CHARS` (default `120000`, computed as `len(question) + sum(len(history[i].content))`)
+- `REQUEST_TIMEOUT_MS` (default `30000`)
+- `STREAM_IDLE_TIMEOUT_MS` (default `30000`, stream mode only)
+
+Violations and timeout behavior:
+
+- `413` when request body is too large.
+- `400` when question/history/context validation fails.
+- `504` for non-stream request timeout (`REQUEST_TIMEOUT_MS` exceeded).
+- Stream mode emits an SSE `error` event and closes when request timeout or stream idle timeout is exceeded.
+
 ---
 
 ## `POST /orchestrator/answer` — non-stream (`stream: false`)
@@ -107,6 +125,34 @@ Same fields as far as they were accumulated, plus:
 
 `timings_ms` may still be present if terminal state events were recorded.
 
+### Validation / timeout errors
+
+- `400` validation error:
+
+```json
+{
+  "detail": "question too long: ... (MAX_QUESTION_CHARS)"
+}
+```
+
+- `413` payload too large:
+
+```json
+{
+  "status": "error",
+  "error": "request body too large: ... (MAX_REQUEST_BODY_MB=...)"
+}
+```
+
+- `504` request timeout:
+
+```json
+{
+  "status": "error",
+  "error": "request timeout exceeded"
+}
+```
+
 ---
 
 ## `POST /orchestrator/answer` — stream (`stream: true`)
@@ -142,6 +188,11 @@ Response: **SSE**, each line `data: <json>\n\n`.
 ```
 
 Phases are emitted by the orchestrator and, during the graph, by the retrieve node (`rag_query`). Successful completion ends with `request_complete` + `done`.
+
+Timeout examples in stream mode:
+
+- `{"type":"error","text":"Error: TimeoutError: request timeout exceeded"}`
+- `{"type":"error","text":"Error: TimeoutError: stream idle timeout exceeded"}`
 
 ---
 
@@ -224,6 +275,26 @@ Readiness probe: calls the **LLM gateway** (`POST …/v1/chat/completions` with 
 ### Response (`503` when any required dependency fails)
 
 Same JSON shape with `status: "degraded"` and one or both of `dependencies.llm` / `dependencies.rag` having `"ok": false`. Failure objects may include `status` (`not_configured`, `timeout`, `error`), `error`, optional `detail`, and `latency_ms` (or `null` when not configured).
+
+---
+
+## `GET /metrics`
+
+Prometheus text endpoint for HTTP and pipeline metrics.
+
+### Response (`200`)
+
+`Content-Type`: Prometheus/OpenMetrics text format (`text/plain; version=0.0.4; charset=utf-8`)
+
+Example metric families exposed:
+
+- `orchestrator_http_requests_total` (labels: `method`, `path`, `status`)
+- `orchestrator_http_request_duration_seconds` (histogram)
+- `orchestrator_route_decisions_total` (labels: `route`)
+- `orchestrator_router_duration_seconds` (histogram)
+- `orchestrator_rag_duration_seconds` (histogram; from `rag_query` phase)
+- `orchestrator_pipeline_errors_total`
+- `orchestrator_timeouts_total` (labels include timeout kind)
 
 ---
 
