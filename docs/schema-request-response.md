@@ -213,11 +213,22 @@ Same correlation headers as `/orchestrator/answer`:
 ```json
 {
   "question": "string (required)",
+  "expected_route": "rag | direct_reply | clarify | reject (optional)",
+  "router_model": "string (optional; default: LLM_MODEL)",
+  "router_temperature": 0,
+  "router_prompt_version": "string (optional; versioned prompt file id)",
+  "router_prompt_override": "string (optional; replaces file-based prompt for this request)",
   "history": []
 }
 ```
 
 `history` items use the same shape as `/orchestrator/answer`: `{ "role": "user" | "assistant", "content": "string" }`.
+
+When `expected_route` is set, the response includes `evaluation.route_match` and `evaluation.checks.route_match` comparing it to `decision.route`. When omitted, `evaluation.expected_route` and `evaluation.route_match` are `null` (no expectation); `checks.route_match` is still `true` (vacuous pass).
+
+**Versioned router prompts** (when `router_prompt_override` is omitted): the system prompt is read from `app/prompts/{router_prompt_version}.txt` (plain text only; no separate loader module). If `router_prompt_version` is omitted, the file id defaults to `ROUTER_PROMPT_VERSION` (env) or `router-v1`. Version ids must match `^[a-zA-Z0-9][a-zA-Z0-9._-]*$`. If the requested file is missing, the server falls back to `router-v1.txt` and reports that in `router.prompt_fallback_from`. Prompt files may contain the literal placeholder `__CANDIDATE_NAME__`; it is replaced at load time with the configured candidate name.
+
+`router_prompt_override` length counts toward `MAX_CONTEXT_CHARS` together with the question and history message bodies.
 
 ### Response (`200`)
 
@@ -226,18 +237,31 @@ Same correlation headers as `/orchestrator/answer`:
   "request_id": "string | null",
   "session_id": "string | null",
   "trace_id": "string | null",
+  "router": {
+    "model": "string",
+    "temperature": 0,
+    "prompt_version": "string | null",
+    "prompt_source": "versioned_file | body_override",
+    "prompt_file": "router-v1 | null",
+    "prompt_fallback_from": "string | null",
+    "prompt_override_used": false
+  },
   "decision": {
     "rewritten_question": "string",
-    "route": "rag" | "direct_reply" | "clarify" | "reject",
+    "route": "rag | direct_reply | clarify | reject",
     "can_answer_directly": false,
     "direct_answer": "string | null",
     "reason": "string"
   },
   "evaluation": {
-    "eval_pass": true,
+    "expected_route": "direct_reply | null",
+    "actual_route": "direct_reply",
+    "route_match": true,
+    "all_checks_pass": true,
     "checks": {
       "has_rewrite": true,
       "route_valid": true,
+      "route_match": true,
       "direct_reply_has_answer": true,
       "history_followup_rewritten": true
     },
@@ -251,10 +275,11 @@ Same correlation headers as `/orchestrator/answer`:
 
 - `has_rewrite`: rewritten question is non-empty.
 - `route_valid`: route is one of `rag`, `direct_reply`, `clarify`, `reject`.
+- `route_match` (top-level and in `checks`): when `expected_route` is provided, compares to `actual_route`; when omitted, top-level `route_match` is `null` and `checks.route_match` is `true`.
 - `direct_reply_has_answer`: when route is `direct_reply`, `direct_answer` is non-empty.
 - `history_followup_rewritten`: if history is present, rewritten question differs from raw question.
 
-`evaluation.eval_pass` is `true` only when all checks pass.
+`evaluation.all_checks_pass` is `true` only when every entry in `checks` is `true`.
 
 ---
 

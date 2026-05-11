@@ -5,7 +5,7 @@ from datetime import datetime
 import json
 import logging
 import time
-from typing import AsyncIterator, Dict, List, Literal, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Tuple
 
 from .config import has_langsmith_credentials, settings
 from .metrics import (
@@ -23,7 +23,7 @@ setup_logging()
 
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from starlette.requests import Request
 from .langsmith_feedback import FEEDBACK_TYPES, FeedbackBody, submit_langsmith_feedback
 from .agent_rewrite import normalize_history_turns
@@ -502,7 +502,66 @@ def _history_from_answer_body(body: AnswerBody) -> List[Tuple[str, str]]:
 
 class EvalRouterBody(BaseModel):
     question: str
+    expected_route: Optional[Literal["rag", "direct_reply", "clarify", "reject"]] = None
+    router_model: Optional[str] = Field(default=None, max_length=256)
+    router_temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0)
+    router_prompt_version: Optional[str] = Field(
+        default=None,
+        max_length=256,
+        pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$",
+    )
+    router_prompt_override: Optional[str] = None
     history: List[HistoryTurn] = Field(default_factory=list)
+
+    @field_validator("router_model", "router_prompt_version", mode="before")
+    @classmethod
+    def _blank_router_str_to_none(cls, v: object) -> Optional[str]:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            return s if s else None
+        raise ValueError("must be a string or null")
+
+
+def _validate_eval_router_body_limits(body: EvalRouterBody) -> None:
+    q_len = len(body.question or "")
+    if q_len > settings.max_question_chars:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"question too long: {q_len} chars > "
+                f"{settings.max_question_chars} (MAX_QUESTION_CHARS)"
+            ),
+        )
+    hist_len = len(body.history or [])
+    if hist_len > settings.max_history_messages:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"history too long: {hist_len} messages > "
+                f"{settings.max_history_messages} (MAX_HISTORY_MESSAGES)"
+            ),
+        )
+    override = body.router_prompt_override or ""
+    ov_len = len(override)
+    if ov_len > settings.max_context_chars:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"router_prompt_override too long: {ov_len} chars > "
+                f"{settings.max_context_chars} (MAX_CONTEXT_CHARS)"
+            ),
+        )
+    context_chars = q_len + sum(len(t.content or "") for t in (body.history or [])) + ov_len
+    if context_chars > settings.max_context_chars:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"context too large: {context_chars} chars > "
+                f"{settings.max_context_chars} (MAX_CONTEXT_CHARS)"
+            ),
+        )
 
 
 def _history_from_eval_body(body: EvalRouterBody) -> List[Tuple[str, str]]:
@@ -514,14 +573,22 @@ def _router_eval_payload(
     *,
     question: str,
     history: List[Tuple[str, str]],
+    expected_route: Optional[str],
 ) -> dict:
+    actual_route = decision.route
+    exp = expected_route.strip().lower() if isinstance(expected_route, str) and expected_route.strip() else None
+
     checks: Dict[str, bool] = {
         "has_rewrite": bool((decision.rewritten_question or "").strip()),
-        "route_valid": decision.route in ("rag", "direct_reply", "clarify", "reject"),
+        "route_valid": actual_route in ("rag", "direct_reply", "clarify", "reject"),
         "direct_reply_has_answer": (
-            decision.route != "direct_reply" or bool((decision.direct_answer or "").strip())
+            actual_route != "direct_reply" or bool((decision.direct_answer or "").strip())
         ),
     }
+    if exp is not None:
+        checks["route_match"] = actual_route == exp
+    else:
+        checks["route_match"] = True
     if history:
         checks["history_followup_rewritten"] = (
             (decision.rewritten_question or "").strip().lower() != (question or "").strip().lower()
@@ -533,12 +600,18 @@ def _router_eval_payload(
         notes.append("rewritten_question is empty")
     if not checks["route_valid"]:
         notes.append("route is not in allowed set")
+    if exp is not None and not checks["route_match"]:
+        notes.append(f"route mismatch: expected {exp}, got {actual_route}")
     if not checks["direct_reply_has_answer"]:
         notes.append("direct_reply route returned empty direct_answer")
     if history and not checks["history_followup_rewritten"]:
         notes.append("history exists but rewritten_question did not change from question")
+    all_checks_pass = all(checks.values())
     return {
-        "eval_pass": all(checks.values()),
+        "expected_route": exp,
+        "actual_route": actual_route,
+        "route_match": (actual_route == exp) if exp is not None else None,
+        "all_checks_pass": all_checks_pass,
         "checks": checks,
         "notes": notes,
     }
@@ -594,25 +667,64 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
 
 
 @app.post("/orchestrator/eval/router")
-async def orchestrator_eval_router(body: EvalRouterBody, request: Request):
+async def orchestrator_eval_router(request: Request):
     """Evaluate intent router decision only (no RAG execution)."""
-    raw_body = await request.json()
-    _reject_body_correlation_fields(raw_body)
+    raw_bytes = await request.body()
+    if len(raw_bytes) > _max_request_body_bytes():
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"request body too large: {len(raw_bytes)} bytes > "
+                f"{_max_request_body_bytes()} bytes (MAX_REQUEST_BODY_MB={settings.max_request_body_mb})"
+            ),
+        )
+    try:
+        raw_obj = json.loads(raw_bytes)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="invalid JSON body")
+    if not isinstance(raw_obj, dict):
+        raise HTTPException(status_code=400, detail="JSON body must be an object")
+    _reject_body_correlation_fields(raw_obj)
+    body = EvalRouterBody.model_validate(raw_obj)
+    _validate_eval_router_body_limits(body)
     session_id, request_id, trace_id = _header_ids(request)
     hist = _history_from_eval_body(body)
+    resolved_temp = 0.0 if body.router_temperature is None else float(body.router_temperature)
+    resolved_model = (body.router_model or "").strip() or settings.llm_model
+    run_meta: Dict[str, Any] = {}
     decision = await run_intent_rewrite_router(
         body.question,
         hist,
         request_id=request_id,
         session_id=session_id,
         trace_id=trace_id,
+        router_model=body.router_model,
+        router_temperature=body.router_temperature,
+        router_prompt_version=body.router_prompt_version,
+        router_system_prompt=body.router_prompt_override,
+        runtime_meta=run_meta,
     )
     decision = normalize_post_router(decision)
-    evaluation = _router_eval_payload(decision, question=body.question, history=hist)
+    evaluation = _router_eval_payload(
+        decision,
+        question=body.question,
+        history=hist,
+        expected_route=body.expected_route,
+    )
+    prompt_override_used = bool((body.router_prompt_override or "").strip())
     return {
         "request_id": request_id,
         "session_id": session_id,
         "trace_id": trace_id,
+        "router": {
+            "model": resolved_model,
+            "temperature": resolved_temp,
+            "prompt_version": body.router_prompt_version,
+            "prompt_source": run_meta.get("prompt_source"),
+            "prompt_file": run_meta.get("prompt_file"),
+            "prompt_fallback_from": run_meta.get("prompt_requested_fallback"),
+            "prompt_override_used": prompt_override_used,
+        },
         "decision": {
             "rewritten_question": decision.rewritten_question,
             "route": decision.route,

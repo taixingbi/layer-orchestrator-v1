@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(REPO_ROOT / ".env")
 load_dotenv()
 
-# Cached LangChain chat HTTP clients, keyed by (model, base_url, temperature)
+# Cached LangChain chat HTTP clients, keyed by (model_id, base_url, temperature)
 _llm_instances: Dict[tuple, Any] = {}
 
 
@@ -53,6 +53,8 @@ class Settings:
     # LLM: HTTP chat completions at {LLM_GATEWAY_BASE_URL}/v1/chat/completions
     llm_gateway_base_url: Optional[str] = os.getenv("LLM_GATEWAY_BASE_URL")
     llm_model: str = os.getenv("LLM_MODEL") or "Qwen/Qwen2.5-7B-Instruct"
+    # Intent router prompt text: app/prompts/{id}.txt (see ROUTER_PROMPT_VERSION)
+    default_router_prompt_version: str = (os.getenv("ROUTER_PROMPT_VERSION") or "router-v1").strip() or "router-v1"
 
     # Default timeouts (seconds)
     tools_timeout_s: float = float(os.getenv("TOOLS_TIMEOUT_S", "60"))
@@ -104,7 +106,7 @@ def gateway_llm_invoke_kwargs(
     return {"extra_headers": hdrs} if hdrs else {}
 
 
-def get_llm(temperature: float = 0):
+def get_llm(temperature: float = 0, *, model: Optional[str] = None):
     """Return a cached LangChain chat client for POST /v1/chat/completions on the gateway."""
     base = normalized_llm_base_url()
     if not base:
@@ -114,10 +116,11 @@ def get_llm(temperature: float = 0):
     # Transport: langchain-openai package (HTTP JSON to /v1/chat/completions).
     from langchain_openai import ChatOpenAI as ChatCompletionsClient
 
-    key = (settings.llm_model, base, temperature)
+    m = (model or "").strip() or settings.llm_model
+    key = (m, base, temperature)
     if key not in _llm_instances:
         kw: Dict[str, Any] = {
-            "model": settings.llm_model,
+            "model": m,
             "temperature": temperature,
             "base_url": base,
             "api_key": os.getenv("LLM_API_KEY") or "not-needed",

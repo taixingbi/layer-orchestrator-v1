@@ -3,7 +3,8 @@ import json
 import logging
 import re
 import time
-from typing import List, Literal, Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -15,35 +16,86 @@ from .agent_rewrite import (
     normalize_history_turns,
     rewrite_to_third_person,
 )
-from .config import gateway_llm_invoke_kwargs, get_langsmith_tags, get_llm
+from .config import gateway_llm_invoke_kwargs, get_langsmith_tags, get_llm, settings
 
 _router_log = logging.getLogger("layer_orchestrator.intent_router")
 
-ROUTER_SYSTEM = f"""You are the orchestrator router.
+_ROUTER_PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
+_DEFAULT_ROUTER_PROMPT_ID = "router-v1"
+_ROUTER_PROMPT_VERSION_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
-Use conversation history only to rewrite the latest user question.
 
-Return JSON only, with no markdown fences, no other text:
-{{
-  "rewritten_question": string,
-  "route": "rag" | "direct_reply" | "clarify" | "reject",
-  "can_answer_directly": boolean,
-  "direct_answer": string | null,
-  "reason": string
-}}
+def _sanitize_router_prompt_version(version_id: str) -> str:
+    v = (version_id or "").strip()
+    if not v or len(v) > 256 or ".." in v or "/" in v or "\\" in v or v.startswith("."):
+        raise ValueError("invalid router prompt version")
+    if not _ROUTER_PROMPT_VERSION_RE.match(v):
+        raise ValueError("invalid router prompt version")
+    return v
 
-Routing priority (apply in order):
-1) **direct_reply** — Use when the latest question is **general** (common public knowledge: definitions, how a visa or benefit category works, typical processes, renewal requirements in general, greetings, math/coding trivia, etc.) OR when it is **not about {CANDIDATE_NAME}** in a way that needs their profile or your employer documents. Set can_answer_directly true, put a concise helpful direct_answer (note uncertainty; suggest official sources or counsel for immigration/legal topics). rewritten_question may paraphrase the user ask; it is not used for retrieval on this route.
-2) **rag** — Use when the user needs **{CANDIDATE_NAME}-specific** facts (their status, dates, employer-internal HR/policy, résumé or performance claims, project-internal details) or answers that must be **grounded in the knowledge base with citations**, not invented. Set can_answer_directly false, direct_answer null. Produce a standalone search-friendly rewritten_question.
-3) **clarify** / **reject** — Same as before.
 
-Additional rules:
-- Never put {CANDIDATE_NAME}-specific or document-only factual claims in direct_answer; those belong in rag with retrieval.
-- History may mention {CANDIDATE_NAME} or a visa class; if the **latest question** only asks a **general** follow-up (e.g. renewal rules for that visa type, not "what did we file for {CANDIDATE_NAME}?"), use **direct_reply**, not rag.
-- If the latest question depends on history for meaning, still choose direct_reply vs rag by whether the answer should be general vs candidate/doc-grounded.
-- If the question is ambiguous, use route "clarify" and put what you need in direct_answer or a short prompt.
-- If the request is unsafe or disallowed, use route "reject" with a brief refusal in direct_answer.
-- Keep rewritten_question short and search-friendly (especially for rag)."""
+def _render_stored_router_prompt(raw: str) -> str:
+    name = (CANDIDATE_NAME or "").strip() or "the candidate"
+    return raw.replace("__CANDIDATE_NAME__", name)
+
+
+def _read_router_prompt_file(version_id: str) -> Tuple[str, str, Optional[str]]:
+    """Return (raw_text, resolved_file_id, requested_id_if_fallback_else_None)."""
+    safe = _sanitize_router_prompt_version(version_id)
+    path = _ROUTER_PROMPTS_DIR / f"{safe}.txt"
+    if path.is_file():
+        return path.read_text(encoding="utf-8"), safe, None
+    _router_log.warning(
+        "router_prompt_file_missing",
+        extra={"event": "router_prompt_file_missing", "requested": safe, "fallback": _DEFAULT_ROUTER_PROMPT_ID},
+    )
+    fb = _ROUTER_PROMPTS_DIR / f"{_DEFAULT_ROUTER_PROMPT_ID}.txt"
+    if not fb.is_file():
+        raise RuntimeError(
+            f"Missing default router prompt file {_DEFAULT_ROUTER_PROMPT_ID}.txt under {_ROUTER_PROMPTS_DIR}"
+        )
+    return fb.read_text(encoding="utf-8"), _DEFAULT_ROUTER_PROMPT_ID, safe
+
+
+def _resolve_router_system_content(
+    *,
+    body_override: Optional[str],
+    requested_version: Optional[str],
+    default_version: str,
+) -> Tuple[str, Dict[str, Any]]:
+    if isinstance(body_override, str) and body_override.strip():
+        return body_override.strip(), {
+            "prompt_source": "body_override",
+            "prompt_file": None,
+            "prompt_requested_fallback": None,
+        }
+    raw_default = (default_version or "").strip() or _DEFAULT_ROUTER_PROMPT_ID
+    try:
+        default_id = _sanitize_router_prompt_version(raw_default)
+    except ValueError:
+        _router_log.warning(
+            "router_prompt_invalid_default",
+            extra={"event": "router_prompt_invalid_default", "value": raw_default},
+        )
+        default_id = _DEFAULT_ROUTER_PROMPT_ID
+    req_raw = (requested_version or "").strip()
+    version_to_load = req_raw if req_raw else default_id
+    try:
+        safe_req = _sanitize_router_prompt_version(version_to_load)
+    except ValueError:
+        _router_log.warning(
+            "router_prompt_invalid_version",
+            extra={"event": "router_prompt_invalid_version", "value": version_to_load},
+        )
+        safe_req = default_id
+    raw_text, resolved_id, fallback_from = _read_router_prompt_file(safe_req)
+    rendered = _render_stored_router_prompt(raw_text)
+    return rendered, {
+        "prompt_source": "versioned_file",
+        "prompt_file": resolved_id,
+        "prompt_requested_fallback": fallback_from,
+    }
+
 
 _VALID_ROUTES = frozenset({"rag", "direct_reply", "clarify", "reject"})
 
@@ -197,6 +249,11 @@ async def run_intent_rewrite_router(
     request_id: Optional[str] = None,
     session_id: Optional[str] = None,
     trace_id: Optional[str] = None,
+    router_model: Optional[str] = None,
+    router_temperature: Optional[float] = None,
+    router_prompt_version: Optional[str] = None,
+    router_system_prompt: Optional[str] = None,
+    runtime_meta: Optional[Dict[str, Any]] = None,
 ) -> RouterDecision:
     """One LLM call returning RouterDecision; parse errors fall back to conservative rag."""
     q = (question or "").strip()
@@ -210,14 +267,34 @@ async def run_intent_rewrite_router(
     )
 
     t0 = time.perf_counter()
-    llm = get_llm()
+    temp = 0.0 if router_temperature is None else float(router_temperature)
+    llm = get_llm(temp, model=router_model)
+    system_content, res_meta = _resolve_router_system_content(
+        body_override=router_system_prompt,
+        requested_version=router_prompt_version,
+        default_version=settings.default_router_prompt_version,
+    )
+    if runtime_meta is not None:
+        runtime_meta.clear()
+        runtime_meta.update(res_meta)
+    tags = list(get_langsmith_tags(request_id=request_id, session_id=session_id))
+    resolved_model = (router_model or "").strip() or settings.llm_model
+    tags.append(f"intent_router_model:{resolved_model}")
+    if res_meta["prompt_source"] == "body_override":
+        tags.append("router_prompt_source:body_override")
+    else:
+        tags.append("router_prompt_source:versioned_file")
+        tags.append(f"router_prompt_file:{res_meta['prompt_file']}")
+        fb = res_meta.get("prompt_requested_fallback")
+        if fb:
+            tags.append(f"router_prompt_fallback_from:{fb}")
     invoke_kw = gateway_llm_invoke_kwargs(request_id, session_id, trace_id)
     try:
         msg = await llm.ainvoke(
-            [SystemMessage(content=ROUTER_SYSTEM), HumanMessage(content=user_body)],
+            [SystemMessage(content=system_content), HumanMessage(content=user_body)],
             config={
                 "run_name": "intent_rewrite_router",
-                "tags": get_langsmith_tags(request_id=request_id, session_id=session_id),
+                "tags": tags,
             },
             max_tokens=512,
             **invoke_kw,

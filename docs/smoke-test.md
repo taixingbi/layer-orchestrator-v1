@@ -125,6 +125,10 @@ curl -sS -X POST "http://192.168.86.179:30184/orchestrator/eval/router" \
   -H "X-Trace-Id: req-router-1" \
   -d '{
     "question": "What are the renewal requirements for H4 EAD?",
+    "expected_route": "direct_reply",
+    "router_model": "Qwen/Qwen2.5-7B-Instruct",
+    "router_temperature": 0,
+    "router_prompt_version": "router-v3",
     "history": [
       {"role": "user", "content": "What is Taixing Bi US visa status?"},
       {"role": "assistant", "content": "H4 EAD. No visa sponsorship required. [1]"}
@@ -132,10 +136,13 @@ curl -sS -X POST "http://192.168.86.179:30184/orchestrator/eval/router" \
   }' | jq .
 ```
 
+The router system prompt for `router-v3` is plain text in `app/prompts/router-v3.txt` (you can still pass `router_prompt_override` for an ad-hoc prompt). Default production file is `router-v1.txt` unless `ROUTER_PROMPT_VERSION` is set.
+
 Response includes:
 
-- `decision`: router output (`rewritten_question`, `route`, `direct_answer`, `reason`)
-- `evaluation`: `eval_pass` plus boolean checks (`has_rewrite`, `route_valid`, `direct_reply_has_answer`, `history_followup_rewritten`)
+- `router`: effective `model`, `temperature`, `prompt_version`, `prompt_source`, `prompt_file`, optional `prompt_fallback_from`, and `prompt_override_used`
+- `decision`: router output (`rewritten_question`, `route`, `can_answer_directly`, `direct_answer`, `reason`)
+- `evaluation`: `expected_route`, `actual_route`, `route_match`, `all_checks_pass`, `checks` (including `route_match`), and `notes`
 
 
 ## Workflow safety limits
