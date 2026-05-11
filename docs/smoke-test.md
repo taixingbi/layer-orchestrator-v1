@@ -121,100 +121,69 @@ These protections are app-level safeguards (not gateway traffic shaping). Defaul
 ### Oversized request body (`413`)
 
 ```bash
-python - <<'PY'
+python3 - <<'PY'
 import json
-import urllib.error
-import urllib.request
-q = "x" * (2 * 1024 * 1024)  # ~2MB to exceed default 1MB cap
-body = {"question": q}
-req = urllib.request.Request(
-    "http://192.168.86.179:30184/orchestrator/answer",
-    data=json.dumps(body).encode("utf-8"),
-    headers={"Content-Type": "application/json"},
-    method="POST",
-)
-try:
-    with urllib.request.urlopen(req) as res:
-        print(res.status)
-        print(res.read().decode("utf-8"))
-except urllib.error.HTTPError as e:
-    print(e.code)
-    print(e.read().decode("utf-8"))
+q = "x" * (7 * 1024)
+with open("/tmp/orch_big.json", "w") as f:
+    json.dump({"question": q}, f)
+print("size bytes:", __import__("os").path.getsize("/tmp/orch_big.json"))
 PY
+
+curl --max-time 10 -sS -o /tmp/orch_413_body.json -w "HTTP %{http_code}\n" \
+  -X POST "http://192.168.86.179:30184/orchestrator/answer" \
+  -H "Content-Type: application/json" \
+  --data-binary @/tmp/orch_big.json
+
+cat /tmp/orch_413_body.json
 ```
 
 ### History limit (`400`)
 
 ```bash
-python - <<'PY'
-import json
-import urllib.error
-import urllib.request
-hist = [{"role": "user", "content": "hi"} for _ in range(51)]  # > default 50
-body = {"question": "test", "history": hist}
-req = urllib.request.Request(
-    "http://192.168.86.179:30184/orchestrator/answer",
-    data=json.dumps(body).encode("utf-8"),
-    headers={"Content-Type": "application/json"},
-    method="POST",
-)
-try:
-    with urllib.request.urlopen(req) as res:
-        print(res.status)
-        print(res.read().decode("utf-8"))
-except urllib.error.HTTPError as e:
-    print(e.code)
-    print(e.read().decode("utf-8"))
-PY
-```
-
-### Question length limit (`400`)
-
-```bash
-python - <<'PY'
-import json
-import urllib.error
-import urllib.request
-body = {"question": "x" * 9000}  # > default 8000
-req = urllib.request.Request(
-    "http://192.168.86.179:30184/orchestrator/answer",
-    data=json.dumps(body).encode("utf-8"),
-    headers={"Content-Type": "application/json"},
-    method="POST",
-)
-try:
-    with urllib.request.urlopen(req) as res:
-        print(res.status)
-        print(res.read().decode("utf-8"))
-except urllib.error.HTTPError as e:
-    print(e.code)
-    print(e.read().decode("utf-8"))
-PY
+hist="$(jq -n '[range(0;51) | {role:"user", content:"hi"}]')"
+json="$(jq -n --arg q "test" --argjson h "$hist" '{question: $q, history: $h}')"
+curl -sS -o /tmp/orch_400_history.json -w "HTTP %{http_code}\n" \
+  -X POST "http://192.168.86.179:30184/orchestrator/answer" \
+  -H "Content-Type: application/json" \
+  --data "$json"
+cat /tmp/orch_400_history.json
 ```
 
 ### Context limit (`400`)
 
 ```bash
-python - <<'PY'
-import json
-import urllib.error
-import urllib.request
-hist = [{"role": "user", "content": "x" * 3000} for _ in range(40)]  # 120k chars in history
-body = {"question": "x" * 1000, "history": hist}  # total context > default 120000
-req = urllib.request.Request(
-    "http://192.168.86.179:30184/orchestrator/answer",
-    data=json.dumps(body).encode("utf-8"),
-    headers={"Content-Type": "application/json"},
-    method="POST",
-)
-try:
-    with urllib.request.urlopen(req) as res:
-        print(res.status)
-        print(res.read().decode("utf-8"))
-except urllib.error.HTTPError as e:
-    print(e.code)
-    print(e.read().decode("utf-8"))
+python3 - <<'PY'
+import json, os
+
+chunk = "x" * 3000
+q = "x" * 1000
+
+payload = {
+    "question": q,
+    "history": [
+        {"role": "user", "content": chunk}
+        for _ in range(40)
+    ]
+}
+
+path = "/tmp/orch_context_big.json"
+with open(path, "w") as f:
+    json.dump(payload, f)
+
+total_context_chars = len(q) + sum(len(m["content"]) for m in payload["history"])
+
+print("file_size_bytes:", os.path.getsize(path))
+print("question_chars:", len(q))
+print("history_messages:", len(payload["history"]))
+print("total_context_chars:", total_context_chars)
 PY
+
+curl --max-time 10 -sS -o /tmp/orch_400_context.json -w "HTTP %{http_code}\n" \
+  -X POST "http://192.168.86.179:30184/orchestrator/answer" \
+  -H "Content-Type: application/json" \
+  --data-binary @/tmp/orch_context_big.json
+
+cat /tmp/orch_400_context.json
 ```
 
 ### Request timeout (`504`)
