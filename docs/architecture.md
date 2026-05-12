@@ -26,7 +26,7 @@ This ID is propagated through:
 
 ### ✍️ 2–3. Intent / rewrite router (one LLM)
 
-One gateway call returns **JSON only**: `rewritten_question`, `route` (`rag` \| `direct_reply` \| `clarify` \| `reject`), `can_answer_directly`, `direct_answer`, `reason`. Optional conversation `history` in the request body is included in the router prompt. Naming the candidate does not trigger a hard server override; the router prompt tells the model to use `rag` for document/org-grounded needs and `direct_reply` for clearly general questions even when Taixing Bi is named.
+One gateway call returns **JSON only**: `rewritten_question`, `route` (`rag` \| `direct_reply` \| `clarify` \| `reject`), `can_answer_directly`, `direct_answer`, `reason`. Optional conversation `history` in the request body is included in the router prompt. Naming the candidate does not trigger a hard server override; the router prompt tells the model to use `rag` for document/org-grounded needs and `direct_reply` for clearly general questions even when Taixing Bi is named. **Full pipeline (small-talk, overrides, assets):** [intent-router.md](intent-router.md).
 
 SSE emissions (after the router completes):
 

@@ -20,7 +20,7 @@ This document explains the runtime design of `layer-orchestrator-v1`: components
 - `app/orchestrator.py`  
   High-level pipeline orchestrator (`stream_answer_query`, `run_graph`).
 - `app/intent_rewrite_router.py`  
-  Single LLM call returning JSON: `rewritten_question`, `route` (`rag` | `direct_reply` | `clarify` | `reject`), `can_answer_directly`, `direct_answer`, `reason`. Naming the candidate does not force a server-side route override; the model is instructed to choose `rag` vs `direct_reply` by whether the question needs document/org-grounded facts vs a general high-level reply.
+  Single LLM call returning JSON: `rewritten_question`, `route` (`rag` | `direct_reply` | `clarify` | `reject`), `can_answer_directly`, `direct_answer`, `reason`. Naming the candidate does not force a server-side route override; the model is instructed to choose `rag` vs `direct_reply` by whether the question needs document/org-grounded facts vs a general high-level reply. **Details:** [intent-router.md](intent-router.md) (small-talk short-circuit when history is empty, post-LLM overrides, `normalize_post_router`).
 - `app/agent_graph.py`  
   LangGraph with a single `retrieve` node (HTTP RAG once); formatted RAG payload is the response body (no `llm_call` / judge in the graph).
 - `app/graph_judge.py` / `app/agent_answer_judge.py`  
