@@ -120,6 +120,8 @@ _SMALLTALK_PATTERN_MAX_LEN = 120
 _SMALLTALK_PATTERN_RULES: List[Tuple[re.Pattern[str], str]] = [
     (re.compile(r"^tell\s+me\s+about\s+yourself$"), "assistant_intro"),
     (re.compile(r"^tell\s+me\s+more\s+about\s+yourself$"), "assistant_intro"),
+    (re.compile(r"^tell\s+me\s+who\s+you\s+are$"), "assistant_intro"),
+    (re.compile(r"^(could|would|can)\s+you\s+tell\s+me\s+who\s+you\s+are$"), "assistant_intro"),
     (re.compile(r"^(please\s+)?introduce\s+yourself$"), "assistant_intro"),
     (re.compile(r"^(can|could)\s+you\s+introduce\s+yourself$"), "assistant_intro"),
     (re.compile(r"^what\s+are\s+you$"), "assistant_intro"),
