@@ -13,7 +13,7 @@ Batch-evaluates the intent router: for each row in **`gold-test/data/*.csv`**, c
 |------|------|
 | **`data/*.csv`** | Gold inputs: header **`question,expected_route`**. The route is always the field after the **last** comma (questions may contain commas). |
 | **`run-router-eval.sh`** | Runner; **`DATA_DIR`** / **`RESULT_DIR`** default next to this script (works from any cwd). |
-| **`result/<name>.csv`** | One output per input basename, e.g. `data/router-gold-profile.csv` → `result/router-gold-profile.csv` (five columns: **`question`**, **`expected_route`**, **`actual_route`**, **`route_match`**, **`rewritten_question`**). |
+| **`result/<name>.csv`** | One output per input basename, e.g. `data/router-gold-profile.csv` → `result/router-gold-profile.csv` (six columns: **`question`**, **`expected_route`**, **`actual_route`**, **`route_match`**, **`rewritten_question`**, **`actual_answer`**). |
 | **`result/router-eval-report-<version>.md`** | Summary: counts, match rate, **`ROUTER_PROMPT_VERSION`**, **Bad items** (`route_match` = false). Filename includes the prompt id (e.g. **`router-eval-report-router-v1.00.md`**). |
 
 ## Run
@@ -48,9 +48,9 @@ On **stdout**, the script prints only a **`File` / `Match rate`** table (per res
 
 ## Output CSV columns
 
-`question`, `expected_route`, `actual_route`, `route_match`, `rewritten_question`
+`question`, `expected_route`, `actual_route`, `route_match`, `rewritten_question`, `actual_answer`
 
-(`route_match` is from the eval API: **`true`** / **`false`** / **`null`** when no expected route was sent; gold rows always send **`expected_route`**, so you normally see booleans. **`rewritten_question`** comes from **`decision.rewritten_question`** on the eval response.)
+(`route_match` is from the eval API: **`true`** / **`false`** / **`null`** when no expected route was sent; gold rows always send **`expected_route`**, so you normally see booleans. **`rewritten_question`** comes from **`decision.rewritten_question`**. **`actual_answer`** is **`decision.answer`** from the eval response when **`actual_route`** is **`direct_reply`**; otherwise it is written as an empty field.)
 
 ## Suites
 
@@ -59,11 +59,11 @@ On **stdout**, the script prints only a **`File` / `Match rate`** table (per res
 
 ## Report
 
-After all CSVs are processed, the script scans **`result/*.csv`** files whose header starts with **`question,expected_route,actual_route,route_match`** (optional fifth column **`rewritten_question`**) and writes **`router-eval-report-<version>.md`** (or **`REPORT_PATH`**), including:
+After all CSVs are processed, the script scans **`result/*.csv`** files whose header starts with **`question,expected_route,actual_route,route_match`** (optional fifth column **`rewritten_question`**, optional sixth **`actual_answer`**) and writes **`router-eval-report-<version>.md`** (or **`REPORT_PATH`**), including:
 
 - UTC time, orchestrator URL, eval URL, concurrency, **`ROUTER_PROMPT_VERSION`**
 - **Summary** and **Per file** tables (match rate = **`true / (true + false)`**)
-- **Bad items**: every row where **`route_match`** is **`false`**, with **`rewritten_question`** when present in the result CSV
+- **Bad items**: every row where **`route_match`** is **`false`**, with **`rewritten_question`** and **`actual_answer`** when present in the result CSV
 
 Generated **`result/*.csv`** and the report are listed in **`.gitignore`**; re-run the script to regenerate them.
 

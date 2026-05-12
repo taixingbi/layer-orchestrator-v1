@@ -85,7 +85,7 @@ process_one_csv() {
   wait
 
   {
-    echo "question,expected_route,actual_route,route_match,rewritten_question"
+    echo "question,expected_route,actual_route,route_match,rewritten_question,actual_answer"
     local i q er bodyf
     for ((i = 1; i <= row; i++)); do
       IFS=$'\t' read -r q er <"$tmp_dir/meta$i" || true
@@ -94,17 +94,24 @@ process_one_csv() {
         jq -r --arg q "$q" --arg er "$er" '
           (.decision // null) as $d
           | if $d != null then
-            [
-              $q,
-              $er,
-              ($d.route // ""),
-              ((.evaluation // {}) | .route_match | if . == null then "null" elif . then "true" else "false" end),
-              ($d.rewritten_question // "")
-            ] | @csv
+              (
+                if ($d.route // "") == "direct_reply" then ($d.answer // "")
+                else ""
+                end
+              ) as $aa
+              | [
+                  $q,
+                  $er,
+                  ($d.route // ""),
+                  ((.evaluation // {}) | .route_match | if . == null then "null" elif . then "true" else "false" end),
+                  ($d.rewritten_question // ""),
+                  $aa
+                ] | @csv
           else
             [
               $q,
               $er,
+              "",
               "",
               "",
               ""
@@ -113,7 +120,7 @@ process_one_csv() {
         ' <"$bodyf"
       else
         jq -n --arg q "$q" --arg er "$er" \
-          '[$q, $er, "", "", ""] | @csv'
+          '[$q, $er, "", "", "", ""] | @csv'
       fi
     done
   } >"$out_path"
@@ -146,6 +153,7 @@ for path in sorted(glob.glob(os.path.join(result_dir, "*.csv"))):
         if norm[:4] != want:
             continue
         has_rw = len(norm) >= 5 and norm[4] == "rewritten_question"
+        has_aa = len(norm) >= 6 and norm[5] == "actual_answer"
         for row in r:
             if len(row) < 4:
                 c["other"] += 1
@@ -155,6 +163,7 @@ for path in sorted(glob.glob(os.path.join(result_dir, "*.csv"))):
             tot["rows"] += 1
             q, er, ar, rm = row[0], row[1], row[2], row[3]
             rw = row[4] if has_rw and len(row) > 4 else ""
+            aa = row[5] if has_aa and len(row) > 5 else ""
             m = (rm or "").strip().lower()
             if m == "true":
                 c["true"] += 1
@@ -162,7 +171,7 @@ for path in sorted(glob.glob(os.path.join(result_dir, "*.csv"))):
             elif m == "false":
                 c["false"] += 1
                 tot["false"] += 1
-                bad_items.append((name, q, er, ar, rw))
+                bad_items.append((name, q, er, ar, rw, aa))
             elif m == "null":
                 c["null"] += 1
                 tot["null"] += 1
@@ -216,15 +225,15 @@ for name, c in per_file:
 lines.append("")
 lines.append("## Bad items (`route_match` = false)")
 lines.append("")
-lines.append("| Source file | expected_route | actual_route | question | rewritten_question |")
-lines.append("|-------------|----------------|--------------|----------|--------------------|")
+lines.append("| Source file | expected_route | actual_route | question | rewritten_question | actual_answer |")
+lines.append("|-------------|----------------|--------------|----------|--------------------|---------------|")
 if bad_items:
-    for name, q, er, ar, rw in sorted(bad_items, key=lambda x: (x[0], x[1] or "")):
+    for name, q, er, ar, rw, aa in sorted(bad_items, key=lambda x: (x[0], x[1] or "")):
         lines.append(
-            f"| `{esc_cell(name)}` | {esc_cell(er)} | {esc_cell(ar)} | {esc_cell(q)} | {esc_cell(rw, max_len=220)} |"
+            f"| `{esc_cell(name)}` | {esc_cell(er)} | {esc_cell(ar)} | {esc_cell(q)} | {esc_cell(rw, max_len=220)} | {esc_cell(aa, max_len=220)} |"
         )
 else:
-    lines.append("| — | — | — | — | *none* |")
+    lines.append("| — | — | — | — | — | *none* |")
 lines.append("")
 
 os.makedirs(os.path.dirname(report_path) or ".", exist_ok=True)

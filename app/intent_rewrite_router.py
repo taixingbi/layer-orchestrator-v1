@@ -150,7 +150,7 @@ _GENERAL_TOPIC_DIRECT_ANSWER = (
 )
 
 _GREETING_SHORTCUT_ANSWER = (
-    "Hello! Ask whenever you have a question about your profile, role, work authorization, or internal materials."
+    "Hello! Ask whenever you have a question about Taixing Bi's profile, role, work authorization, or internal materials."
 )
 
 
