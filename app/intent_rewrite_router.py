@@ -149,6 +149,40 @@ _GENERAL_TOPIC_DIRECT_ANSWER = (
     "Use the document-backed path when you need citations from your organization's materials."
 )
 
+_GREETING_SHORTCUT_ANSWER = (
+    "Hello! Ask whenever you have a question about your profile, role, work authorization, or internal materials."
+)
+
+
+def _compile_pure_greeting_patterns() -> Tuple[re.Pattern[str], ...]:
+    """Whole-message patterns for standalone greetings (no substantive ask)."""
+    parts = (CANDIDATE_NAME or "").strip().split()
+    pats: List[re.Pattern[str]] = [
+        re.compile(r"^h+i+\s*[\?!.,]*$", re.I),
+        re.compile(r"^(hello|hey)\s*[\?!.,]*$", re.I),
+        re.compile(r"^hi\s+there\s*[\?!.,]*$", re.I),
+        re.compile(r"^hello\s+there\s*[\?!.,]*$", re.I),
+        re.compile(r"^how\s+are\s+you\s*[\?!.,]*$", re.I),
+        re.compile(r"^good\s+(morning|afternoon|evening|day)\s*[\?!.,]*$", re.I),
+    ]
+    if parts:
+        fn = re.escape(parts[0])
+        opt_last = rf"(?:\s+{re.escape(parts[1])})?" if len(parts) > 1 else ""
+        pats.append(
+            re.compile(rf"^(hi|hello|hey)\s*,?\s*{fn}{opt_last}\s*[\?!.,]*$", re.I),
+        )
+    return tuple(pats)
+
+
+_PURE_GREETING_RES: Tuple[re.Pattern[str], ...] = _compile_pure_greeting_patterns()
+
+
+def _is_pure_greeting_latest(latest: str) -> bool:
+    q = (latest or "").strip()
+    if not q or len(q) > 80:
+        return False
+    return any(p.fullmatch(q) for p in _PURE_GREETING_RES)
+
 
 def _latest_question_names_candidate(q: str) -> bool:
     """True if the latest user text likely refers to the named candidate."""
@@ -278,6 +312,28 @@ async def run_intent_rewrite_router(
         return fallback_router_decision(question, reason="empty_question")
 
     hist = normalize_history_turns(history)
+    if not hist and _is_pure_greeting_latest(q):
+        if runtime_meta is not None:
+            runtime_meta.clear()
+            runtime_meta.update(
+                {
+                    "prompt_source": "greeting_shortcut",
+                    "prompt_file": None,
+                    "prompt_requested_fallback": None,
+                }
+            )
+        _router_log.info(
+            "intent_router_greeting_shortcut",
+            extra={"event": "intent_router_greeting_shortcut", "gateway_meta": {"question_preview": q[:80]}},
+        )
+        return RouterDecision(
+            rewritten_question=q,
+            route="direct_reply",
+            can_answer_directly=True,
+            direct_answer=_GREETING_SHORTCUT_ANSWER,
+            reason="[server: greeting_only→direct_reply]",
+        )
+
     hist_block = format_history_for_prompt(hist, REWRITE_HISTORY_MAX_LINES)
     user_body = (
         f"History:\n{hist_block}\n\nLatest question:\n{q}" if hist_block else f"History:\n(none)\n\nLatest question:\n{q}"
