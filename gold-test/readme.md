@@ -7,6 +7,7 @@ Runs **`POST /orchestrator/eval/router`** for every row in each CSV under **`dat
 - **`data/*.csv`** — gold inputs (`question,expected_route`; route is the field after the **last** comma).
 - **`run-router-eval.sh`** — batch runner (works from any working directory).
 - **`result/<name>.csv`** — outputs (same basename as each input), e.g. `data/router-gold-profile.csv` → `result/router-gold-profile.csv`.
+- **`result/router-eval-report.md`** — Markdown summary after each run (counts, match rates).
 
 ## Run
 
@@ -24,6 +25,7 @@ bash gold-test/run-router-eval.sh
 | `RESULT_DIR` | `<gold-test>/result` | Directory for output `*.csv` |
 | `ORCHESTRATOR_URL` | `http://192.168.86.179:30184` | Base URL (no path) |
 | `CONCURRENCY` | `4` | Parallel HTTP workers per file |
+| `REPORT_PATH` | `<gold-test>/result/router-eval-report.md` | Markdown report output path |
 
 ## Input CSV
 
@@ -39,4 +41,8 @@ bash gold-test/run-router-eval.sh
 - **`data/router-gold-profile.csv`** — candidate / profile–style questions (+ one `direct_reply` control).
 - **`data/router-gold-mixed.csv`** — profile, policy, immigration, and generic follow-ups.
 
-Generated **`result/*.csv`** files are ignored by git (see `.gitignore`); re-run the script to regenerate them.
+## Report
+
+After all suites finish, **`run-router-eval.sh`** aggregates every **`result/*.csv`** that uses the standard four-column header and writes **`router-eval-report.md`** (or `REPORT_PATH`): UTC timestamp, orchestrator URL, concurrency, summary table, per-file table with **match rate** = `true / (true + false)`, and a **Bad items** table listing every row where **`route_match`** is **`false`** (source file, routes, truncated question).
+
+Generated **`result/*.csv`** and the report are ignored by git (see `.gitignore`); re-run the script to regenerate them.
