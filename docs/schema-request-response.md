@@ -226,7 +226,12 @@ Same correlation headers as `/orchestrator/answer`:
 
 When `expected_route` is set, the response includes `evaluation.route_match` and `evaluation.checks.route_match` comparing it to `decision.route`. When omitted, `evaluation.expected_route` and `evaluation.route_match` are `null` (no expectation); `checks.route_match` is still `true` (vacuous pass).
 
-**Small-talk seed (empty history):** If `history` is empty or omitted and the latest `question` matches (normalized exact equality) a `user_examples` string in `app/prompts/smalltalk_examples.json`, the response is **`direct_reply`** with that entry's `answer` (no router LLM). Then `router.prompt_source` is **`smalltalk_seed`**, `router.prompt_file` is **`null`**, and `router.smalltalk_intent` is the matched **`intent`** string. Answers in JSON may contain `__CANDIDATE_NAME__`; it is replaced at match time like prompt files.
+**Small-talk (empty history):** If `history` is empty or omitted, the server tries **two** layers before the router LLM (see [`app/intent_rewrite_router.py`](../app/intent_rewrite_router.py)):
+
+1. **Exact seed** — Normalized exact equality to a `user_examples` string in `app/prompts/smalltalk_examples.json`. Then `router.prompt_source` is **`smalltalk_seed`**.
+2. **Pattern layer** — Short utterances (length cap) that **fullmatch** a small set of regexes map to an **`intent`**; the **`answer`** is still read from the JSON row with that `intent`. Then `router.prompt_source` is **`smalltalk_pattern`**.
+
+In both cases the response is **`direct_reply`** with that `answer` (no router LLM). `router.prompt_file` is **`null`**, and `router.smalltalk_intent` is the matched **`intent`**. Answers in JSON may contain `__CANDIDATE_NAME__`; it is replaced at match time like prompt files.
 
 **Versioned router prompts** (when `router_prompt_override` is omitted): the system prompt is read from `app/prompts/{router_prompt_version}.txt` (plain text only; no separate loader module). If `router_prompt_version` is omitted, the file id defaults to `ROUTER_PROMPT_VERSION` (env) or `router-v1.00`. Version ids must match `^[a-zA-Z0-9][a-zA-Z0-9._-]*$`. If the requested file is missing, the server falls back to `router-v1.00.txt` and reports that in `router.prompt_fallback_from`. Prompt files may contain the literal placeholder `__CANDIDATE_NAME__`; it is replaced at load time with the configured candidate name.
 
@@ -243,7 +248,7 @@ When `expected_route` is set, the response includes `evaluation.route_match` and
     "model": "string",
     "temperature": 0,
     "prompt_version": "string | null",
-    "prompt_source": "versioned_file | body_override | smalltalk_seed",
+    "prompt_source": "versioned_file | body_override | smalltalk_seed | smalltalk_pattern",
     "prompt_file": "router-v1.00 | null",
     "prompt_fallback_from": "string | null",
     "smalltalk_intent": "string | null",

@@ -90,6 +90,78 @@ def _match_smalltalk_seed(latest: str) -> Optional[Tuple[str, str]]:
     return None
 
 
+def _answer_for_smalltalk_intent(intent: str) -> Optional[str]:
+    """Return rendered answer for the first JSON row with this intent, or None."""
+    key = (intent or "").strip()
+    if not key:
+        return None
+    for row in _load_smalltalk_seed():
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("intent") or "").strip() != key:
+            continue
+        answer = str(row.get("answer") or "").strip()
+        if answer:
+            return _render_stored_router_prompt(answer)
+    return None
+
+
+def _normalize_smalltalk_for_patterns(latest: str) -> str:
+    """Like seed key, then strip trailing sentence punctuation for regex fullmatch."""
+    nq = _normalize_smalltalk_key(latest)
+    if not nq:
+        return ""
+    return re.sub(r"[!?.;:,]+$", "", nq).strip()
+
+
+# Layer 2 (after exact user_examples): conservative full-string regex → intent id → answer from JSON.
+# Order matters; only inputs with len(nq) <= _SMALLTALK_PATTERN_MAX_LEN are considered.
+_SMALLTALK_PATTERN_MAX_LEN = 120
+_SMALLTALK_PATTERN_RULES: List[Tuple[re.Pattern[str], str]] = [
+    (re.compile(r"^(may|could|can)\s+i\s+know\s+your\s+name$"), "bot_name"),
+    (re.compile(r"^(please\s+)?(tell|give)\s+me\s+your\s+name$"), "bot_name"),
+    (re.compile(r"^(i\s+)?(just\s+)?(wanted|want)\s+to\s+know\s+your\s+name$"), "bot_name"),
+    (re.compile(r"^may\s+i\s+ask\s+your\s+name$"), "bot_name"),
+    (re.compile(r"^what\s+(should|do)\s+i\s+call\s+you$"), "bot_name"),
+    (re.compile(r"^what\s+do\s+you\s+call\s+yourself$"), "bot_name"),
+    (re.compile(r"^do\s+you\s+have\s+a\s+name$"), "bot_name"),
+    (re.compile(r"^who\s+are\s+you$"), "bot_name"),
+    (re.compile(r"^how\s+are\s+you\s+(doing|today|feeling|going)$"), "greeting_status"),
+    (re.compile(r"^how\s+are\s+ya$"), "greeting_status"),
+    (re.compile(r"^how\s+are\s+u$"), "greeting_status"),
+    (re.compile(r"^how\s+r\s+u$"), "greeting_status"),
+    (re.compile(r"^(how'?s|hows)\s+it\s+going$"), "greeting_status"),
+    (re.compile(r"^how\s+can\s+you\s+help(\s+me)?$"), "capabilities"),
+    (re.compile(r"^where\s+did\s+you\s+come\s+from$"), "origin"),
+]
+
+
+def _match_smalltalk_patterns(latest: str) -> Optional[Tuple[str, str]]:
+    """If normalized question matches a short-utterance pattern, return (intent, rendered_answer)."""
+    nq = _normalize_smalltalk_for_patterns(latest)
+    if not nq or len(nq) > _SMALLTALK_PATTERN_MAX_LEN:
+        return None
+    for rx, intent in _SMALLTALK_PATTERN_RULES:
+        if rx.fullmatch(nq):
+            answer = _answer_for_smalltalk_intent(intent)
+            if answer:
+                return intent, answer
+    return None
+
+
+def _match_smalltalk_any(latest: str) -> Optional[Tuple[str, str, str]]:
+    """Exact seed first, then pattern layer. Returns (intent, answer, prompt_source) or None."""
+    hit = _match_smalltalk_seed(latest)
+    if hit:
+        intent, answer = hit
+        return intent, answer, "smalltalk_seed"
+    hit = _match_smalltalk_patterns(latest)
+    if hit:
+        intent, answer = hit
+        return intent, answer, "smalltalk_pattern"
+    return None
+
+
 def _read_router_prompt_file(version_id: str) -> Tuple[str, str, Optional[str]]:
     """Return (raw_text, resolved_file_id, requested_id_if_fallback_else_None)."""
     safe = _sanitize_router_prompt_version(version_id)
@@ -330,23 +402,28 @@ async def run_intent_rewrite_router(
 
     hist = normalize_history_turns(history)
     if not hist:
-        sm = _match_smalltalk_seed(q)
+        sm = _match_smalltalk_any(q)
         if sm:
-            intent, answer = sm
+            intent, answer, prompt_source = sm
             if runtime_meta is not None:
                 runtime_meta.clear()
                 runtime_meta.update(
                     {
-                        "prompt_source": "smalltalk_seed",
+                        "prompt_source": prompt_source,
                         "prompt_file": None,
                         "prompt_requested_fallback": None,
                         "smalltalk_intent": intent,
                     }
                 )
+            log_event = (
+                "intent_router_smalltalk_seed"
+                if prompt_source == "smalltalk_seed"
+                else "intent_router_smalltalk_pattern"
+            )
             _router_log.info(
-                "intent_router_smalltalk_seed",
+                log_event,
                 extra={
-                    "event": "intent_router_smalltalk_seed",
+                    "event": log_event,
                     "gateway_meta": {"intent": intent, "question_preview": q[:80]},
                 },
             )
