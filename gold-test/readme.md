@@ -57,6 +57,8 @@ On **stdout**, the script prints only a **`File` / `Match rate`** table (per res
 - **`data/router-gold-seed-faq.csv`** — Greetings and lightweight assistant / meta questions (`direct_reply`). With **empty history**, the server may answer these from [`app/prompts/smalltalk_examples.json`](../app/prompts/smalltalk_examples.json) before the LLM (exact match on `user_examples`, then a short list of **regex patterns** that still use the same JSON answers).
 - **`data/router-gold-profile.csv`** — Candidate / profile–style questions (+ one **`direct_reply`** control).
 - **`data/router-gold-mixed.csv`** — Profile, policy, immigration, and generic follow-ups.
+- **`data/router-gold-hack.csv`** — Prompt-injection / jailbreak strings; server **`injection_guard`** should return **`reject`** (or one **`direct_reply`** denial) without the router LLM. See [intent-router.md](../docs/intent-router.md).
+- **`data/router-gold-hack.csv`** — Prompt-injection / jailbreak strings; server **`injection_guard`** should return **`reject`** (or one **`direct_reply`** denial) without the router LLM. See [intent-router.md](../docs/intent-router.md).
 
 ## Small-talk seed (not RAG)
 

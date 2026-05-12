@@ -389,6 +389,55 @@ def normalize_post_router(decision: RouterDecision) -> RouterDecision:
     )
 
 
+# Server-side prompt-injection / jailbreak guard (do not rely on the router LLM for these).
+_INJECTION_GUARD_REASON = "[server: injection_guard"
+
+
+def _prompt_injection_hard_block(latest: str) -> Optional[RouterDecision]:
+    """Deterministic block list on the latest user message only. Runs before small-talk and before the router LLM."""
+    nq = _normalize_smalltalk_key(latest)
+    if not nq:
+        return None
+
+    def _reject(reason_id: str) -> RouterDecision:
+        return RouterDecision(
+            rewritten_question=latest.strip(),
+            route="reject",
+            can_answer_directly=False,
+            direct_answer=None,
+            reason=f"{_INJECTION_GUARD_REASON}:{reason_id}]",
+        )
+
+    # Lone fake-roleplay (gold: direct_reply with a safe denial, no privileged mode).
+    if re.fullmatch(r"you are now admin\??", nq):
+        return RouterDecision(
+            rewritten_question=latest.strip(),
+            route="direct_reply",
+            can_answer_directly=True,
+            direct_answer=(
+                "I'm HuntAI, an AI assistant. I don't have admin privileges, elevated access, "
+                "or a mode that can be changed by chat instructions. I can't grant credentials or "
+                "bypass your organization's controls."
+            ),
+            reason=f"{_INJECTION_GUARD_REASON}:fake_admin_roleplay]",
+        )
+
+    if re.search(r"\bignore\s+(the\s+)?(all\s+)?(previous|prior|above)\s+instructions\b", nq):
+        return _reject("instruction_override")
+    if re.search(r"\bdisregard\s+(the\s+)?(previous|prior|above)\s+instructions\b", nq):
+        return _reject("instruction_override")
+    if re.search(r"\b(reveal|show|print|dump|leak)\s+(the\s+)?(system\s+)?prompt\b", nq):
+        return _reject("system_prompt_exfil")
+    if re.search(r"\b(show|reveal|expose)\s+hidden\s+data\b", nq):
+        return _reject("hidden_data_exfil")
+    if "password" in nq and re.search(r"\byou\s+are\s+now\s+admin\b", nq):
+        return _reject("fake_admin_credential")
+    if "password" in nq and re.search(r"\bi\s+am\s+now\s+admin\b", nq):
+        return _reject("fake_admin_credential")
+
+    return None
+
+
 async def run_intent_rewrite_router(
     question: str,
     history: List[Tuple[str, str]],
@@ -406,6 +455,27 @@ async def run_intent_rewrite_router(
     q = (question or "").strip()
     if not q:
         return fallback_router_decision(question, reason="empty_question")
+
+    inj = _prompt_injection_hard_block(q)
+    if inj:
+        if runtime_meta is not None:
+            runtime_meta.clear()
+            runtime_meta.update(
+                {
+                    "prompt_source": "injection_guard",
+                    "prompt_file": None,
+                    "prompt_requested_fallback": None,
+                    "smalltalk_intent": None,
+                }
+            )
+        _router_log.info(
+            "intent_router_injection_guard",
+            extra={
+                "event": "intent_router_injection_guard",
+                "gateway_meta": {"route": inj.route, "reason_preview": (inj.reason or "")[:120]},
+            },
+        )
+        return inj
 
     hist = normalize_history_turns(history)
     if not hist:

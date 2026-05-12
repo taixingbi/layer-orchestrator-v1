@@ -10,6 +10,7 @@ For HTTP field names and eval payloads, see [schema-request-response.md](schema-
 - **Stable, cheap path** for repeated assistant/meta questions when there is **no conversation history** (JSON seed + small regex layer).
 - **One LLM call** when the small-talk path does not apply: system prompt from a versioned **`.txt`** file + user message with optional history.
 - **Server-side rails** after the LLM: general immigration/process wording without naming the candidate can be forced to **`direct_reply`**; RAG-bound queries get **third-person** rewrites about the configured candidate.
+- **Prompt-injection guard:** deterministic patterns on the **latest message only** return **`reject`** or a safe **`direct_reply`** before the router LLM (not a substitute for authz on tools and data paths).
 
 ## Output contract (`RouterDecision`)
 
@@ -27,7 +28,18 @@ For HTTP field names and eval payloads, see [schema-request-response.md](schema-
 
 If the latest question is empty after trim, the router returns a conservative fallback (**`rag`**) with a third-person rewrite (see `fallback_router_decision`).
 
-### 2. Small-talk short-circuit (**history must be empty**)
+### 2. Prompt-injection guard (**hard logic**, latest message only)
+
+**`_prompt_injection_hard_block`** runs immediately after the empty-question check and **before** small-talk and **before** any router LLM call. It inspects a normalized form of the latest user text (same trim / lowercase / whitespace collapse as small-talk normalization).
+
+Typical outcomes:
+
+- **`reject`** — Known exfiltration or instruction-override phrases (for example ignoring prior instructions, asking to reveal the system prompt, show hidden data, or combining a fake “you are now admin” claim with **password** / credential language). **`direct_answer`** is `null`; the orchestrator uses a short default refusal string for the user.
+- **`direct_reply`** — A lone **“You are now admin?”** style roleplay (full-string match) gets a **fixed** denial that the assistant has no admin mode or privileges (so it does not fall through to **`rag`** or an LLM guess).
+
+On hit, **`runtime_meta.prompt_source`** is **`injection_guard`**, `prompt_file` is `null`, and **`reason`** starts with **`[server: injection_guard:…]`**. This layer is **not** a complete security boundary: tool access and data still must be enforced with real authorization (for example “if role != admin, do not attach privileged tools”), as the LLM cannot be trusted to enforce policy alone.
+
+### 3. Small-talk short-circuit (**history must be empty**)
 
 If `normalize_history_turns(history)` yields **no** turns:
 
@@ -45,7 +57,7 @@ On hit:
 
 Callers that pass `runtime_meta` (for example **`POST /orchestrator/eval/router`**) receive `prompt_source` of `smalltalk_seed` or `smalltalk_pattern` and `smalltalk_intent`. Details: [smalltalk-seed.md](smalltalk-seed.md).
 
-### 3. LLM router (default path)
+### 4. LLM router (default path)
 
 1. **System prompt** from:
    - request **`router_system_prompt`** override (if non-empty), else
@@ -53,7 +65,7 @@ Callers that pass `runtime_meta` (for example **`POST /orchestrator/eval/router`
 2. **User message**: capped **history** block + **latest question** (see `format_history_for_prompt` / `REWRITE_HISTORY_MAX_LINES`).
 3. **Model** returns text; the server extracts a **JSON object** (markdown fences stripped), then validates **`RouterDecision`**.
 
-### 4. Post-processing (**LLM path only**)
+### 5. Post-processing (**LLM path only**)
 
 Applied in order after a successful parse:
 
@@ -61,11 +73,11 @@ Applied in order after a successful parse:
 
 2. **`_ensure_rewritten_question_third_person`** — For **`rag`**, **`rewritten_question`** is passed through **`rewrite_to_third_person`**. On non-`rag` routes, if the model echoed the raw question verbatim and it still contains second-person pronouns, it may be rewritten (with an exception when the immigration override applies).
 
-### 5. Parse or invoke failure
+### 6. Parse or invoke failure
 
 Same as parse failure: **`fallback_router_decision`** (`rag`) plus the two post-processing steps above.
 
-### 6. `normalize_post_router` (callers after return)
+### 7. `normalize_post_router` (callers after return)
 
 [`normalize_post_router`](../app/intent_rewrite_router.py) runs in **`app/orchestrator.py`** and eval in **`app/main.py`**: if **`route`** is **`direct_reply`** but **`direct_answer`** is empty, the decision is adjusted to **`clarify`** with a short default message so the client never gets a blank direct reply.
 
@@ -76,6 +88,7 @@ Same as parse failure: **`fallback_router_decision`** (`rag`) plus the two post-
 | `app/prompts/router-*.txt` | Plain text | LLM **routing policy** and examples; version id from `ROUTER_PROMPT_VERSION` / request. |
 | `app/prompts/smalltalk_examples.json` | JSON array | Catalog of intents, `user_examples`, and `answers` for the **empty-history** server path. |
 | `_SMALLTALK_PATTERN_RULES` in code | Regex → intent | Second layer for short paraphrases; answers still loaded from JSON by `intent`. |
+| `_prompt_injection_hard_block` in code | Regex / fullmatch | Latest-only jailbreak / exfil phrases → **`reject`** or one safe **`direct_reply`**. |
 
 Router prompts are **not** JSON: the loader reads **`{id}.txt`** as the system string sent to the chat model.
 
@@ -83,10 +96,11 @@ Router prompts are **not** JSON: the loader reads **`{id}.txt`** as the system s
 
 - Successful LLM completion logs **`intent_router_completed`** with latency and previews.
 - Small-talk hits log **`intent_router_smalltalk_seed`** or **`intent_router_smalltalk_pattern`**.
+- Injection guard hits log **`intent_router_injection_guard`**.
 - Eval responses expose `router.prompt_source`, `router.prompt_file`, `router.smalltalk_intent`, etc. See [schema-request-response.md](schema-request-response.md).
 
 ## Related code
 
-- [`app/intent_rewrite_router.py`](../app/intent_rewrite_router.py) — `run_intent_rewrite_router`, `RouterDecision`, `normalize_post_router`, small-talk helpers, immigration override, third-person enforcement.
+- [`app/intent_rewrite_router.py`](../app/intent_rewrite_router.py) — `run_intent_rewrite_router`, `RouterDecision`, `normalize_post_router`, `_prompt_injection_hard_block`, small-talk helpers, immigration override, third-person enforcement.
 - [`app/agent_rewrite.py`](../app/agent_rewrite.py) — `normalize_history_turns`, `format_history_for_prompt`, `rewrite_to_third_person`.
 - [`app/config.py`](../app/config.py) — `default_router_prompt_version` (`ROUTER_PROMPT_VERSION`).

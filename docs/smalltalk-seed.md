@@ -52,7 +52,7 @@ On a hit:
 - `smalltalk_intent`: matched `intent`
 - `prompt_file` / `prompt_requested_fallback`: `null`
 
-The router **LLM is not invoked** on this path. Post-router helpers such as `_ensure_rewritten_question_third_person` and `maybe_override_rag_for_general_question` apply only to the **LLM** decision path, not to the small-talk short-circuit.
+The router **LLM is not invoked** on this path. Post-router helpers such as `_ensure_rewritten_question_third_person` and `maybe_override_rag_for_general_question` apply only to the **LLM** decision path, not to the small-talk short-circuit or the **injection guard** (see [intent-router.md](intent-router.md)).
 
 ## Packaging
 
@@ -60,8 +60,8 @@ The router **LLM is not invoked** on this path. Post-router helpers such as `_en
 
 ## API and gold tests
 
-- **`POST /orchestrator/eval/router`** returns `router.smalltalk_intent` when either small-talk path was used (`router.prompt_source` is `smalltalk_seed` or `smalltalk_pattern`). See [schema-request-response.md](schema-request-response.md) (`POST /orchestrator/eval/router`).
-- Gold inputs for seed-FAQ / small-talk rows: [`gold-test/data/router-gold-seed-faq.csv`](../gold-test/data/router-gold-seed-faq.csv). Runner and columns: [`gold-test/README.md`](../gold-test/README.md).
+- **`POST /orchestrator/eval/router`** returns `router.smalltalk_intent` when either small-talk path was used (`router.prompt_source` is `smalltalk_seed` or `smalltalk_pattern`). For **`injection_guard`**, `router.smalltalk_intent` is `null`. See [schema-request-response.md](schema-request-response.md) (`POST /orchestrator/eval/router`).
+- Gold inputs for seed-FAQ / small-talk rows: [`gold-test/data/router-gold-seed-faq.csv`](../gold-test/data/router-gold-seed-faq.csv). Prompt-injection / jailbreak smoke: [`gold-test/data/router-gold-hack.csv`](../gold-test/data/router-gold-hack.csv). Runner and columns: [`gold-test/README.md`](../gold-test/README.md).
 
 ## Router prompts
 
