@@ -21,7 +21,7 @@ from .config import gateway_llm_invoke_kwargs, get_langsmith_tags, get_llm, sett
 _router_log = logging.getLogger("layer_orchestrator.intent_router")
 
 _ROUTER_PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
-_DEFAULT_ROUTER_PROMPT_ID = "router-v1"
+_DEFAULT_ROUTER_PROMPT_ID = "router-v1.00"
 _ROUTER_PROMPT_VERSION_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
 
@@ -188,6 +188,23 @@ def maybe_override_rag_for_general_question(decision: RouterDecision, latest_que
     )
 
 
+_SECOND_PERSON_IN_QUESTION_RE = re.compile(r"\b(you|your|yourself)\b", re.IGNORECASE)
+
+
+def _ensure_rewritten_question_third_person(decision: RouterDecision, latest_question: str) -> RouterDecision:
+    """Apply deterministic you→candidate rewrite for RAG queries; fix echoed second-person on other routes."""
+    q = (latest_question or "").strip()
+    base = (decision.rewritten_question or "").strip() or q
+    if decision.route == "rag":
+        return decision.model_copy(update={"rewritten_question": rewrite_to_third_person(base)})
+    rw = (decision.rewritten_question or "").strip()
+    if q and rw.lower() == q.lower() and _SECOND_PERSON_IN_QUESTION_RE.search(q):
+        if _GENERAL_IMMIGRATION_OR_WORK_AUTH_RE.search(q) and not _latest_question_names_candidate(q):
+            return decision
+        return decision.model_copy(update={"rewritten_question": rewrite_to_third_person(q)})
+    return decision
+
+
 def _strip_json_fences(raw: str) -> str:
     t = raw.strip()
     if t.startswith("```"):
@@ -296,7 +313,7 @@ async def run_intent_rewrite_router(
                 "run_name": "intent_rewrite_router",
                 "tags": tags,
             },
-            max_tokens=512,
+            max_tokens=2048,
             **invoke_kw,
         )
         raw = (msg.content or "").strip()
@@ -309,8 +326,11 @@ async def run_intent_rewrite_router(
                     "gateway_meta": {"preview": (raw or "")[:200] or None},
                 },
             )
-            return maybe_override_rag_for_general_question(
-                fallback_router_decision(q, reason="parse_fallback"),
+            return _ensure_rewritten_question_third_person(
+                maybe_override_rag_for_general_question(
+                    fallback_router_decision(q, reason="parse_fallback"),
+                    q,
+                ),
                 q,
             )
         decision = RouterDecision.model_validate(obj)
@@ -319,6 +339,7 @@ async def run_intent_rewrite_router(
                 update={"rewritten_question": rewrite_to_third_person(q)},
             )
         decision = maybe_override_rag_for_general_question(decision, q)
+        decision = _ensure_rewritten_question_third_person(decision, q)
         _router_log.info(
             "intent_router_completed",
             extra={
@@ -342,7 +363,10 @@ async def run_intent_rewrite_router(
                 "error_message": str(e),
             },
         )
-        return maybe_override_rag_for_general_question(
-            fallback_router_decision(q, reason=f"invoke_error:{type(e).__name__}"),
+        return _ensure_rewritten_question_third_person(
+            maybe_override_rag_for_general_question(
+                fallback_router_decision(q, reason=f"invoke_error:{type(e).__name__}"),
+                q,
+            ),
             q,
         )

@@ -1,0 +1,4 @@
+question,expected_route
+Hi?,direct_reply
+Hi Taixing?,direct_reply
+How are you?,direct_reply

@@ -8,7 +8,8 @@ RESULT_DIR="${RESULT_DIR:-$GOLD_ROOT/result}"
 ORCHESTRATOR_URL="${ORCHESTRATOR_URL:-http://192.168.86.179:30184}"
 URL="${ORCHESTRATOR_URL%/}/orchestrator/eval/router"
 CONCURRENCY="${CONCURRENCY:-4}"
-REPORT_PATH="${REPORT_PATH:-$RESULT_DIR/router-eval-report.md}"
+ROUTER_PROMPT_VERSION="${ROUTER_PROMPT_VERSION:-router-v1.00}"
+REPORT_PATH="${REPORT_PATH:-$RESULT_DIR/router-eval-report-${ROUTER_PROMPT_VERSION}.md}"
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "jq is required" >&2
@@ -30,6 +31,8 @@ if ((${#inputs[@]} == 0)); then
   exit 1
 fi
 
+echo "router_prompt_version=${ROUTER_PROMPT_VERSION}" >&2
+
 process_one_csv() {
   local in_path="$1"
   local base out_path tmp_dir
@@ -44,8 +47,6 @@ process_one_csv() {
     rm -rf "$tmp_dir"
     return 0
   fi
-
-  echo "→ $in_path ($total rows) → $out_path"
 
   local row running
   row=0
@@ -68,8 +69,8 @@ process_one_csv() {
         -H "X-Request-Id: req-gold-${base}-$row" \
         -H "X-Session-Id: ses-gold" \
         -H "X-Trace-Id: trc-gold-${base}-$row" \
-        -d "$(jq -n --arg q "$question" --arg r "$expected_route" \
-          '{question: $q, expected_route: $r, router_prompt_version: "router-v1"}')")
+        -d "$(jq -n --arg q "$question" --arg r "$expected_route" --arg pv "$ROUTER_PROMPT_VERSION" \
+          '{question: $q, expected_route: $r, router_prompt_version: $pv}')")
       printf '%s' "$http" >"$tmp_dir/http$row"
     ) &
     running=$((running + 1))
@@ -84,7 +85,7 @@ process_one_csv() {
   wait
 
   {
-    echo "question,expected_route,actual_route,route_match"
+    echo "question,expected_route,actual_route,route_match,rewritten_question"
     local i q er bodyf
     for ((i = 1; i <= row; i++)); do
       IFS=$'\t' read -r q er <"$tmp_dir/meta$i" || true
@@ -97,12 +98,14 @@ process_one_csv() {
               $q,
               $er,
               ($d.route // ""),
-              ((.evaluation // {}) | .route_match | if . == null then "null" elif . then "true" else "false" end)
+              ((.evaluation // {}) | .route_match | if . == null then "null" elif . then "true" else "false" end),
+              ($d.rewritten_question // "")
             ] | @csv
           else
             [
               $q,
               $er,
+              "",
               "",
               ""
             ] | @csv
@@ -110,7 +113,7 @@ process_one_csv() {
         ' <"$bodyf"
       else
         jq -n --arg q "$q" --arg er "$er" \
-          '[$q, $er, "", ""] | @csv'
+          '[$q, $er, "", "", ""] | @csv'
       fi
     done
   } >"$out_path"
@@ -121,10 +124,10 @@ process_one_csv() {
 generate_report() {
   local generated_at
   generated_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-  python3 - "$REPORT_PATH" "$RESULT_DIR" "$URL" "$ORCHESTRATOR_URL" "$CONCURRENCY" "$generated_at" <<'PY'
+  python3 - "$REPORT_PATH" "$RESULT_DIR" "$URL" "$ORCHESTRATOR_URL" "$CONCURRENCY" "$generated_at" "$ROUTER_PROMPT_VERSION" <<'PY'
 import csv, glob, os, sys
 
-report_path, result_dir, eval_url, orch_base, conc, ts = sys.argv[1:7]
+report_path, result_dir, eval_url, orch_base, conc, ts, prompt_ver = sys.argv[1:8]
 
 per_file = []
 tot = {"rows": 0, "true": 0, "false": 0, "null": 0, "other": 0}
@@ -138,9 +141,11 @@ for path in sorted(glob.glob(os.path.join(result_dir, "*.csv"))):
         header = next(r, None)
         if not header:
             continue
-        norm = [x.strip().lstrip("\ufeff") for x in header[:4]]
-        if norm != ["question", "expected_route", "actual_route", "route_match"]:
+        norm = [x.strip().lstrip("\ufeff") for x in header]
+        want = ["question", "expected_route", "actual_route", "route_match"]
+        if norm[:4] != want:
             continue
+        has_rw = len(norm) >= 5 and norm[4] == "rewritten_question"
         for row in r:
             if len(row) < 4:
                 c["other"] += 1
@@ -149,6 +154,7 @@ for path in sorted(glob.glob(os.path.join(result_dir, "*.csv"))):
             c["rows"] += 1
             tot["rows"] += 1
             q, er, ar, rm = row[0], row[1], row[2], row[3]
+            rw = row[4] if has_rw and len(row) > 4 else ""
             m = (rm or "").strip().lower()
             if m == "true":
                 c["true"] += 1
@@ -156,7 +162,7 @@ for path in sorted(glob.glob(os.path.join(result_dir, "*.csv"))):
             elif m == "false":
                 c["false"] += 1
                 tot["false"] += 1
-                bad_items.append((name, q, er, ar, rm))
+                bad_items.append((name, q, er, ar, rw))
             elif m == "null":
                 c["null"] += 1
                 tot["null"] += 1
@@ -185,6 +191,7 @@ lines = [
     f"- **Orchestrator base:** `{orch_base}`",
     f"- **Eval endpoint:** `{eval_url}`",
     f"- **Concurrency:** {conc}",
+    f"- **Router prompt version:** `{prompt_ver}` (`app/prompts/{prompt_ver}.txt`)",
     "",
     "## Summary",
     "",
@@ -209,21 +216,27 @@ for name, c in per_file:
 lines.append("")
 lines.append("## Bad items (`route_match` = false)")
 lines.append("")
-lines.append("| Source file | expected_route | actual_route | question |")
-lines.append("|-------------|----------------|--------------|----------|")
+lines.append("| Source file | expected_route | actual_route | question | rewritten_question |")
+lines.append("|-------------|----------------|--------------|----------|--------------------|")
 if bad_items:
-    for name, q, er, ar, rm in sorted(bad_items, key=lambda x: (x[0], x[1] or "")):
+    for name, q, er, ar, rw in sorted(bad_items, key=lambda x: (x[0], x[1] or "")):
         lines.append(
-            f"| `{esc_cell(name)}` | {esc_cell(er)} | {esc_cell(ar)} | {esc_cell(q)} |"
+            f"| `{esc_cell(name)}` | {esc_cell(er)} | {esc_cell(ar)} | {esc_cell(q)} | {esc_cell(rw, max_len=220)} |"
         )
 else:
-    lines.append("| — | — | — | *none* |")
+    lines.append("| — | — | — | — | *none* |")
 lines.append("")
 
 os.makedirs(os.path.dirname(report_path) or ".", exist_ok=True)
 with open(report_path, "w", encoding="utf-8") as out:
     out.write("\n".join(lines))
-print(report_path, flush=True)
+
+# stdout: File + Match rate only (terminal summary)
+col_w = 48
+print(f"{'File':<{col_w}} Match rate", flush=True)
+for name, c in per_file:
+    print(f"{name:<{col_w}} {rate(c['true'], c['false'])}", flush=True)
+print(f"{'(all suites)':<{col_w}} {rate(tot['true'], tot['false'])}", flush=True)
 PY
 }
 
@@ -232,5 +245,3 @@ for in_path in "${inputs[@]}"; do
 done
 
 generate_report
-echo "Done. CSV outputs in $RESULT_DIR/"
-echo "Report: $REPORT_PATH"

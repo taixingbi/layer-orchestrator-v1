@@ -128,7 +128,7 @@ curl -sS -X POST "http://192.168.86.179:30184/orchestrator/eval/router" \
     "expected_route": "direct_reply",
     "router_model": "Qwen/Qwen2.5-7B-Instruct",
     "router_temperature": 0,
-    "router_prompt_version": "router-v1",
+    "router_prompt_version": "router-v1.00",
     "history": [
       {"role": "user", "content": "What is Taixing Bi US visa status?"},
       {"role": "assistant", "content": "H4 EAD. No visa sponsorship required. [1]"}
@@ -136,7 +136,7 @@ curl -sS -X POST "http://192.168.86.179:30184/orchestrator/eval/router" \
   }' | jq .
 ```
 
-The router system prompt for `router-v3` is plain text in `app/prompts/router-v3.txt` (you can still pass `router_prompt_override` for an ad-hoc prompt). Default production file is `router-v1.txt` unless `ROUTER_PROMPT_VERSION` is set.
+The alternate router prompt `router-v1.01` is plain text in `app/prompts/router-v1.01.txt` (you can still pass `router_prompt_override` for an ad-hoc prompt). Default production file is `router-v1.00.txt` unless `ROUTER_PROMPT_VERSION` is set.
 
 Response includes:
 
