@@ -56,7 +56,7 @@ The router **LLM is not invoked** on this path. Post-router helpers such as `_en
 ## API and gold tests
 
 - **`POST /orchestrator/eval/router`** returns `router.smalltalk_intent` when the seed path was used. See [schema-request-response.md](schema-request-response.md) (`POST /orchestrator/eval/router`).
-- Gold inputs for greet-style rows: [`gold-test/data/router-gold-greet.csv`](../gold-test/data/router-gold-greet.csv). Runner and columns: [`gold-test/README.md`](../gold-test/README.md).
+- Gold inputs for seed-FAQ / small-talk rows: [`gold-test/data/router-gold-seed-faq.csv`](../gold-test/data/router-gold-seed-faq.csv). Runner and columns: [`gold-test/README.md`](../gold-test/README.md).
 
 ## Router prompts
 

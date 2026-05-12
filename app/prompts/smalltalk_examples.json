@@ -51,7 +51,7 @@
   {
     "intent": "bot_name",
     "user_examples": ["What is your name?", "What's your name?", "What is your name"],
-    "answer": "I'm your personal AI assistant for this orchestrator."
+    "answer": "I'm HuntAI, your personal AI assistant for Taixing Bi."
   },
   {
     "intent": "creator",
@@ -71,7 +71,7 @@
   {
     "intent": "origin",
     "user_examples": ["Where are you from?", "Where do you come from?"],
-    "answer": "I don't have a physical location; I run as software in your AI orchestration environment."
+    "answer": "I came from __CANDIDATE_NAME__'s home in new york city."
   },
   {
     "intent": "age",
