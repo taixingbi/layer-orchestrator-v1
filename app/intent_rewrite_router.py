@@ -118,6 +118,11 @@ def _normalize_smalltalk_for_patterns(latest: str) -> str:
 # Order matters; only inputs with len(nq) <= _SMALLTALK_PATTERN_MAX_LEN are considered.
 _SMALLTALK_PATTERN_MAX_LEN = 120
 _SMALLTALK_PATTERN_RULES: List[Tuple[re.Pattern[str], str]] = [
+    (re.compile(r"^tell\s+me\s+about\s+yourself$"), "assistant_intro"),
+    (re.compile(r"^tell\s+me\s+more\s+about\s+yourself$"), "assistant_intro"),
+    (re.compile(r"^(please\s+)?introduce\s+yourself$"), "assistant_intro"),
+    (re.compile(r"^(can|could)\s+you\s+introduce\s+yourself$"), "assistant_intro"),
+    (re.compile(r"^what\s+are\s+you$"), "assistant_intro"),
     (re.compile(r"^(may|could|can)\s+i\s+know\s+your\s+name$"), "bot_name"),
     (re.compile(r"^(please\s+)?(tell|give)\s+me\s+your\s+name$"), "bot_name"),
     (re.compile(r"^(i\s+)?(just\s+)?(wanted|want)\s+to\s+know\s+your\s+name$"), "bot_name"),
