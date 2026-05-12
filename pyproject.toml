@@ -31,4 +31,4 @@ where = ["."]
 include = ["app*"]
 
 [tool.setuptools.package-data]
-app = ["prompts/*.txt"]
+app = ["prompts/*.txt", "prompts/*.json"]

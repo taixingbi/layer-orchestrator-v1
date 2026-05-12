@@ -723,6 +723,7 @@ async def orchestrator_eval_router(request: Request):
             "prompt_source": run_meta.get("prompt_source"),
             "prompt_file": run_meta.get("prompt_file"),
             "prompt_fallback_from": run_meta.get("prompt_requested_fallback"),
+            "smalltalk_intent": run_meta.get("smalltalk_intent"),
             "prompt_override_used": prompt_override_used,
         },
         "decision": {

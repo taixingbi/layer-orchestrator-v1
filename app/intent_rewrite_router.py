@@ -39,6 +39,57 @@ def _render_stored_router_prompt(raw: str) -> str:
     return raw.replace("__CANDIDATE_NAME__", name)
 
 
+_SMALLTALK_SEED_PATH = _ROUTER_PROMPTS_DIR / "smalltalk_examples.json"
+_smalltalk_seed_cache: Optional[List[Any]] = None
+
+
+def _normalize_smalltalk_key(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip().lower())
+
+
+def _load_smalltalk_seed() -> List[Any]:
+    """Parse smalltalk_examples.json once; empty list if missing or invalid."""
+    global _smalltalk_seed_cache
+    if _smalltalk_seed_cache is not None:
+        return _smalltalk_seed_cache
+    if not _SMALLTALK_SEED_PATH.is_file():
+        _router_log.warning(
+            "smalltalk_seed_missing",
+            extra={"event": "smalltalk_seed_missing", "path": str(_SMALLTALK_SEED_PATH)},
+        )
+        _smalltalk_seed_cache = []
+        return _smalltalk_seed_cache
+    try:
+        raw = json.loads(_SMALLTALK_SEED_PATH.read_text(encoding="utf-8"))
+        _smalltalk_seed_cache = raw if isinstance(raw, list) else []
+    except (json.JSONDecodeError, OSError) as e:
+        _router_log.warning(
+            "smalltalk_seed_load_failed",
+            extra={"event": "smalltalk_seed_load_failed", "error": str(e)},
+        )
+        _smalltalk_seed_cache = []
+    return _smalltalk_seed_cache
+
+
+def _match_smalltalk_seed(latest: str) -> Optional[Tuple[str, str]]:
+    """If normalized latest equals a seed user_example, return (intent, rendered_answer)."""
+    nq = _normalize_smalltalk_key(latest)
+    if not nq:
+        return None
+    for row in _load_smalltalk_seed():
+        if not isinstance(row, dict):
+            continue
+        intent = str(row.get("intent") or "unknown").strip() or "unknown"
+        answer = str(row.get("answer") or "").strip()
+        examples = row.get("user_examples")
+        if not answer or not isinstance(examples, list):
+            continue
+        for ex in examples:
+            if isinstance(ex, str) and _normalize_smalltalk_key(ex) == nq:
+                return intent, _render_stored_router_prompt(answer)
+    return None
+
+
 def _read_router_prompt_file(version_id: str) -> Tuple[str, str, Optional[str]]:
     """Return (raw_text, resolved_file_id, requested_id_if_fallback_else_None)."""
     safe = _sanitize_router_prompt_version(version_id)
@@ -148,40 +199,6 @@ _GENERAL_TOPIC_DIRECT_ANSWER = (
     "and qualified immigration counsel for case-specific advice. "
     "Use the document-backed path when you need citations from your organization's materials."
 )
-
-_GREETING_SHORTCUT_ANSWER = (
-    "Hello! Ask whenever you have a question about Taixing Bi's profile, role, work authorization, or internal materials."
-)
-
-
-def _compile_pure_greeting_patterns() -> Tuple[re.Pattern[str], ...]:
-    """Whole-message patterns for standalone greetings (no substantive ask)."""
-    parts = (CANDIDATE_NAME or "").strip().split()
-    pats: List[re.Pattern[str]] = [
-        re.compile(r"^h+i+\s*[\?!.,]*$", re.I),
-        re.compile(r"^(hello|hey)\s*[\?!.,]*$", re.I),
-        re.compile(r"^hi\s+there\s*[\?!.,]*$", re.I),
-        re.compile(r"^hello\s+there\s*[\?!.,]*$", re.I),
-        re.compile(r"^how\s+are\s+you\s*[\?!.,]*$", re.I),
-        re.compile(r"^good\s+(morning|afternoon|evening|day)\s*[\?!.,]*$", re.I),
-    ]
-    if parts:
-        fn = re.escape(parts[0])
-        opt_last = rf"(?:\s+{re.escape(parts[1])})?" if len(parts) > 1 else ""
-        pats.append(
-            re.compile(rf"^(hi|hello|hey)\s*,?\s*{fn}{opt_last}\s*[\?!.,]*$", re.I),
-        )
-    return tuple(pats)
-
-
-_PURE_GREETING_RES: Tuple[re.Pattern[str], ...] = _compile_pure_greeting_patterns()
-
-
-def _is_pure_greeting_latest(latest: str) -> bool:
-    q = (latest or "").strip()
-    if not q or len(q) > 80:
-        return False
-    return any(p.fullmatch(q) for p in _PURE_GREETING_RES)
 
 
 def _latest_question_names_candidate(q: str) -> bool:
@@ -312,27 +329,34 @@ async def run_intent_rewrite_router(
         return fallback_router_decision(question, reason="empty_question")
 
     hist = normalize_history_turns(history)
-    if not hist and _is_pure_greeting_latest(q):
-        if runtime_meta is not None:
-            runtime_meta.clear()
-            runtime_meta.update(
-                {
-                    "prompt_source": "greeting_shortcut",
-                    "prompt_file": None,
-                    "prompt_requested_fallback": None,
-                }
+    if not hist:
+        sm = _match_smalltalk_seed(q)
+        if sm:
+            intent, answer = sm
+            if runtime_meta is not None:
+                runtime_meta.clear()
+                runtime_meta.update(
+                    {
+                        "prompt_source": "smalltalk_seed",
+                        "prompt_file": None,
+                        "prompt_requested_fallback": None,
+                        "smalltalk_intent": intent,
+                    }
+                )
+            _router_log.info(
+                "intent_router_smalltalk_seed",
+                extra={
+                    "event": "intent_router_smalltalk_seed",
+                    "gateway_meta": {"intent": intent, "question_preview": q[:80]},
+                },
             )
-        _router_log.info(
-            "intent_router_greeting_shortcut",
-            extra={"event": "intent_router_greeting_shortcut", "gateway_meta": {"question_preview": q[:80]}},
-        )
-        return RouterDecision(
-            rewritten_question=q,
-            route="direct_reply",
-            can_answer_directly=True,
-            direct_answer=_GREETING_SHORTCUT_ANSWER,
-            reason="[server: greeting_only→direct_reply]",
-        )
+            return RouterDecision(
+                rewritten_question=q,
+                route="direct_reply",
+                can_answer_directly=True,
+                direct_answer=answer,
+                reason=f"[server: smalltalk:{intent}]",
+            )
 
     hist_block = format_history_for_prompt(hist, REWRITE_HISTORY_MAX_LINES)
     user_body = (

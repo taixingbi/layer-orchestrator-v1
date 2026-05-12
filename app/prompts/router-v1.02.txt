@@ -13,7 +13,7 @@ Return JSON only, with no markdown fences, no other text:
 
 Routing — evaluate in order; **use the first matching route**.
 
-0) **direct_reply (greetings only)** — If **History is empty or not provided** and the **latest message is only** a short greeting (e.g. Hi / Hello / Hey / Hi there / Good morning / How are you?), optionally with **__CANDIDATE_NAME__** or their first name and punctuation only — **no factual question** — use **direct_reply**: brief friendly **direct_answer**; **rewritten_question** may stay as the user wrote or a light paraphrase. (The server may short-circuit this without an LLM when history is empty.)
+0) **direct_reply (seed small-talk)** — If **History is empty or not provided** and the latest message **exactly matches** (normalized) a `user_examples` string in **`app/prompts/smalltalk_examples.json`**, use **direct_reply** with that entry's **answer**; **rewritten_question** may stay as the user wrote. (The server short-circuits before the LLM.)
 
 1) **rag** — Use when the answer should be **grounded in the knowledge base with citations** (not invented). Includes ANY of:
    - **Names __CANDIDATE_NAME__** and asks for factual information (role, employer, preferences, compensation, authorization, contact, profile links, skills, education, projects, publications, performance, targeting, tenure, remote/hybrid as it applies to them).

@@ -54,8 +54,15 @@ On **stdout**, the script prints only a **`File` / `Match rate`** table (per res
 
 ## Suites
 
+- **`data/router-gold-greet.csv`** — Greetings and lightweight assistant / meta questions (`direct_reply`). With **empty history**, the server may answer these from [`app/prompts/smalltalk_examples.json`](../app/prompts/smalltalk_examples.json) before the LLM (exact normalized match on `user_examples`).
 - **`data/router-gold-profile.csv`** — Candidate / profile–style questions (+ one **`direct_reply`** control).
 - **`data/router-gold-mixed.csv`** — Profile, policy, immigration, and generic follow-ups.
+
+## Small-talk seed (not RAG)
+
+- **File:** [`app/prompts/smalltalk_examples.json`](../app/prompts/smalltalk_examples.json) — JSON array of `{ "intent", "user_examples", "answer" }`.
+- **When:** Intent router runs with **empty** conversation history; the latest question is trimmed, lowercased, and internal whitespace collapsed, then compared **exactly** to each string in `user_examples` (same normalization).
+- **Effect:** Returns **`direct_reply`** with the seed **`answer`** (no router LLM). Literal **`__CANDIDATE_NAME__`** in `answer` strings is replaced with the configured candidate name at runtime.
 
 ## Report
 
