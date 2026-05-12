@@ -128,7 +128,7 @@ curl -sS -X POST "http://192.168.86.179:30184/orchestrator/eval/router" \
     "expected_route": "direct_reply",
     "router_model": "Qwen/Qwen2.5-7B-Instruct",
     "router_temperature": 0,
-    "router_prompt_version": "router-v3",
+    "router_prompt_version": "router-v1",
     "history": [
       {"role": "user", "content": "What is Taixing Bi US visa status?"},
       {"role": "assistant", "content": "H4 EAD. No visa sponsorship required. [1]"}
@@ -141,7 +141,7 @@ The router system prompt for `router-v3` is plain text in `app/prompts/router-v3
 Response includes:
 
 - `router`: effective `model`, `temperature`, `prompt_version`, `prompt_source`, `prompt_file`, optional `prompt_fallback_from`, and `prompt_override_used`
-- `decision`: router output (`rewritten_question`, `route`, `can_answer_directly`, `direct_answer`, `reason`)
+- `decision`: router output (`rewritten_question`, `route`, `answer`, `reason`) — `answer` is the router’s inline text when present (e.g. `direct_reply` or clarify/reject messaging); for `rag` it is typically null until a full answer is produced downstream.
 - `evaluation`: `expected_route`, `actual_route`, `route_match`, `all_checks_pass`, `checks` (including `route_match`), and `notes`
 
 

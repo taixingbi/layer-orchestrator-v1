@@ -603,7 +603,7 @@ def _router_eval_payload(
     if exp is not None and not checks["route_match"]:
         notes.append(f"route mismatch: expected {exp}, got {actual_route}")
     if not checks["direct_reply_has_answer"]:
-        notes.append("direct_reply route returned empty direct_answer")
+        notes.append("direct_reply route returned empty answer")
     if history and not checks["history_followup_rewritten"]:
         notes.append("history exists but rewritten_question did not change from question")
     all_checks_pass = all(checks.values())
@@ -728,8 +728,7 @@ async def orchestrator_eval_router(request: Request):
         "decision": {
             "rewritten_question": decision.rewritten_question,
             "route": decision.route,
-            "can_answer_directly": decision.can_answer_directly,
-            "direct_answer": decision.direct_answer,
+            "answer": decision.direct_answer,
             "reason": decision.reason,
         },
         "evaluation": evaluation,

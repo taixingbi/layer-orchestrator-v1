@@ -249,8 +249,7 @@ When `expected_route` is set, the response includes `evaluation.route_match` and
   "decision": {
     "rewritten_question": "string",
     "route": "rag | direct_reply | clarify | reject",
-    "can_answer_directly": false,
-    "direct_answer": "string | null",
+    "answer": "string | null",
     "reason": "string"
   },
   "evaluation": {
@@ -276,7 +275,7 @@ When `expected_route` is set, the response includes `evaluation.route_match` and
 - `has_rewrite`: rewritten question is non-empty.
 - `route_valid`: route is one of `rag`, `direct_reply`, `clarify`, `reject`.
 - `route_match` (top-level and in `checks`): when `expected_route` is provided, compares to `actual_route`; when omitted, top-level `route_match` is `null` and `checks.route_match` is `true`.
-- `direct_reply_has_answer`: when route is `direct_reply`, `direct_answer` is non-empty.
+- `direct_reply_has_answer`: when route is `direct_reply`, `decision.answer` (router inline reply) is non-empty; for `rag` / `clarify` / `reject`, `answer` may be null or carry clarify/reject text from the router.
 - `history_followup_rewritten`: if history is present, rewritten question differs from raw question.
 
 `evaluation.all_checks_pass` is `true` only when every entry in `checks` is `true`.
