@@ -2,7 +2,7 @@
 
 ## FastAPI Orchestrator
 
-FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …/v1/chat/completions`), **HTTP RAG**, and unified **`/orchestrator/answer`** (`stream=true` for SSE). Chat calls send `X-Request-Id`, `X-Session-Id`, and `X-Trace-Id` when those ids are available.
+FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …/v1/chat/completions`), **HTTP RAG**, and unified **`/orchestrator/answer`** (`stream=true` for SSE). Send correlation ids on headers (`X-Request-Id`, `X-Session-Id`, `X-Trace-Id`). Optional **`conversation_id`** may be sent in the **`/orchestrator/answer`** and **`/orchestrator/eval/router`** JSON body; if omitted or blank, the server assigns `conv_<uuidhex>` and returns **`is_new_conversation`: true**. See [schema-request-response.md](docs/schema-request-response.md).
 
 ## Layout
 
@@ -10,11 +10,14 @@ FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …
 
 ## Documentation
 
+- [Request & response schema](docs/schema-request-response.md) — JSON bodies, headers, `/orchestrator/answer`, `/orchestrator/eval/router`, SSE events, limits, `conversation_id`, and `is_new_conversation`.
 - [Gateway inference](docs/gateway-inference.md) — chat completions URL, model, headers, `curl` example, and tool-calling note.
 - [RAG query](docs/rag-query.md) — HTTP RAG `POST /v1/rag/query`, env vars, request body, and `curl` example.
 - [Small-talk seed](docs/smalltalk-seed.md) — `app/prompts/smalltalk_examples.json`, empty-history exact match then regex patterns (answers from JSON), no router LLM on hit.
-- [Intent router](docs/intent-router.md) — rewrite + route pipeline, small-talk short-circuit, LLM path, post-processing, and prompt assets.
+- [Intent router](docs/intent-router.md) — rewrite + route pipeline, injection guard, small-talk short-circuit, LLM path, post-processing, and prompt assets.
 - [Design](docs/design.md) — architecture, request flows, reliability loop, and trade-offs.
+- [Smoke / cluster examples](docs/smoke-test.md) — health, orchestrator `curl`, limits, and eval snippets.
+- [Gold router eval](gold-test/README.md) — batch CSV tests for `/orchestrator/eval/router` (optional CI / local harness).
 
 ## Setup
 
@@ -46,7 +49,7 @@ Copy or create `.env` at the **project root** (loaded by `app/config.py`). Typic
 | `MAX_REQUEST_BODY_MB` | Max request body size for `/orchestrator/answer` (default: `1`) |
 | `MAX_HISTORY_MESSAGES` | Max `history` items accepted per answer request (recommended `30-50`, default: `50`) |
 | `MAX_QUESTION_CHARS` | Max `question` length in characters (default: `8000`, about 2k tokens) |
-| `MAX_CONTEXT_CHARS` | Max total chars across `question` + all `history.content` (default: `120000`) |
+| `MAX_CONTEXT_CHARS` | Max total chars across `question` + all `history.content` + effective `conversation_id` (after optional server assignment; default: `120000`) |
 | `REQUEST_TIMEOUT_MS` | End-to-end request timeout for orchestrator answer execution (default: `30000`) |
 | `STREAM_IDLE_TIMEOUT_MS` | Max idle gap between SSE events before stream timeout (default: `30000`) |
 | `MAX_CONCURRENT_DOWNSTREAM_CALLS` | Max concurrent downstream graph/RAG executions (default: `32`; set `0` to disable cap) |
@@ -109,7 +112,8 @@ curl -N -s -X POST http://127.0.0.1:8000/orchestrator/answer \
   -H "X-Trace-Id: 12345678" \
   -d '{
     "question": "what is taixing visa status?",
-    "stream": true
+    "stream": true,
+    "conversation_id": "conv-demo-1"
   }'
 ```
 
@@ -124,7 +128,8 @@ curl -s -X POST http://127.0.0.1:8000/orchestrator/answer \
   -H "X-Request-Id: 12345678" \
   -H "X-Trace-Id: 12345678" \
   -d '{
-    "question": "what is taixing visa status?"
+    "question": "what is taixing visa status?",
+    "conversation_id": "conv-demo-1"
   }' | jq .
 ```
 

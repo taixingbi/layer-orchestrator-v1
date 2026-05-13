@@ -5,6 +5,7 @@ from datetime import datetime
 import json
 import logging
 import time
+import uuid
 from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Tuple
 
 from .config import has_langsmith_credentials, settings
@@ -17,7 +18,13 @@ from .metrics import (
 )
 from .ready_checks import run_readiness
 from .logging_config import new_request_id, setup_logging, shutdown_logging
-from .request_context import bind_pipeline_phase, bind_request_context, reset_request_context, set_http_status
+from .request_context import (
+    bind_conversation_logging_context,
+    bind_pipeline_phase,
+    bind_request_context,
+    reset_request_context,
+    set_http_status,
+)
 
 setup_logging()
 
@@ -50,7 +57,15 @@ def _stream_idle_timeout_s() -> float:
     return settings.stream_idle_timeout_ms / 1000.0
 
 
-def _validate_answer_body_limits(body: "AnswerBody", raw_size_bytes: int) -> None:
+def _resolve_effective_conversation_id(raw: Optional[str]) -> Tuple[str, bool]:
+    """Return (conversation_id, is_new). Blank/missing → new ``conv_<uuidhex>``."""
+    cid = (raw or "").strip()
+    if cid:
+        return cid, False
+    return f"conv_{uuid.uuid4().hex}", True
+
+
+def _validate_answer_body_limits(body: "AnswerBody", raw_size_bytes: int, *, conversation_id: str) -> None:
     if raw_size_bytes > _max_request_body_bytes():
         raise HTTPException(
             status_code=413,
@@ -77,7 +92,8 @@ def _validate_answer_body_limits(body: "AnswerBody", raw_size_bytes: int) -> Non
                 f"{settings.max_history_messages} (MAX_HISTORY_MESSAGES)"
             ),
         )
-    context_chars = q_len + sum(len(t.content or "") for t in (body.history or []))
+    conv_len = len(conversation_id)
+    context_chars = q_len + sum(len(t.content or "") for t in (body.history or [])) + conv_len
     if context_chars > settings.max_context_chars:
         raise HTTPException(
             status_code=400,
@@ -95,48 +111,54 @@ def _sse_stream_answer_gen(
     trace_id: Optional[str] = None,
     rag_user: Optional[Dict[str, str]] = None,
     history: Optional[List[Tuple[str, str]]] = None,
+    *,
+    conversation_id: str,
+    is_new_conversation: bool,
     request_timeout_s: Optional[float] = None,
     stream_idle_timeout_s: Optional[float] = None,
 ) -> AsyncIterator[str]:
     """Async generator for POST /orchestrator/answer with stream=true."""
 
     async def _gen():
-        ait = _answer_event_iter(
-            question,
-            session_id=session_id,
-            request_id=request_id,
-            trace_id=trace_id,
-            rag_user=rag_user,
-            history=history,
-        ).__aiter__()
-        started = time.perf_counter()
-        while True:
-            timeout_s = stream_idle_timeout_s
-            if request_timeout_s is not None:
-                remaining = request_timeout_s - (time.perf_counter() - started)
-                if remaining <= 0:
-                    inc_timeout("request")
-                    timeout_event = {"type": "error", "text": "Error: TimeoutError: request timeout exceeded"}
+        with bind_conversation_logging_context(conversation_id, is_new_conversation):
+            ait = _answer_event_iter(
+                question,
+                session_id=session_id,
+                request_id=request_id,
+                trace_id=trace_id,
+                rag_user=rag_user,
+                history=history,
+                conversation_id=conversation_id,
+                is_new_conversation=is_new_conversation,
+            ).__aiter__()
+            started = time.perf_counter()
+            while True:
+                timeout_s = stream_idle_timeout_s
+                if request_timeout_s is not None:
+                    remaining = request_timeout_s - (time.perf_counter() - started)
+                    if remaining <= 0:
+                        inc_timeout("request")
+                        timeout_event = {"type": "error", "text": "Error: TimeoutError: request timeout exceeded"}
+                        observe_pipeline_event(timeout_event)
+                        yield f"data: {json.dumps(timeout_event)}\n\n"
+                        return
+                    timeout_s = min(timeout_s, remaining) if timeout_s is not None else remaining
+                try:
+                    chunk = await asyncio.wait_for(ait.__anext__(), timeout=timeout_s)
+                except StopAsyncIteration:
+                    return
+                except asyncio.TimeoutError:
+                    if request_timeout_s is not None and (time.perf_counter() - started) >= request_timeout_s:
+                        msg = "Error: TimeoutError: request timeout exceeded"
+                        inc_timeout("request")
+                    else:
+                        msg = "Error: TimeoutError: stream idle timeout exceeded"
+                        inc_timeout("stream_idle")
+                    timeout_event = {"type": "error", "text": msg}
                     observe_pipeline_event(timeout_event)
                     yield f"data: {json.dumps(timeout_event)}\n\n"
                     return
-                timeout_s = min(timeout_s, remaining) if timeout_s is not None else remaining
-            try:
-                chunk = await asyncio.wait_for(ait.__anext__(), timeout=timeout_s)
-            except StopAsyncIteration:
-                return
-            except asyncio.TimeoutError:
-                if request_timeout_s is not None and (time.perf_counter() - started) >= request_timeout_s:
-                    msg = "Error: TimeoutError: request timeout exceeded"
-                    inc_timeout("request")
-                else:
-                    msg = "Error: TimeoutError: stream idle timeout exceeded"
-                    inc_timeout("stream_idle")
-                timeout_event = {"type": "error", "text": msg}
-                observe_pipeline_event(timeout_event)
-                yield f"data: {json.dumps(timeout_event)}\n\n"
-                return
-            yield f"data: {json.dumps(chunk)}\n\n"
+                yield f"data: {json.dumps(chunk)}\n\n"
 
     return _gen()
 
@@ -283,6 +305,8 @@ async def _answer_event_iter(
     trace_id: Optional[str],
     rag_user: Optional[Dict[str, str]] = None,
     history: Optional[List[Tuple[str, str]]] = None,
+    conversation_id: str,
+    is_new_conversation: bool,
 ) -> AsyncIterator[dict]:
     async for chunk in stream_answer_query(
         question,
@@ -291,6 +315,8 @@ async def _answer_event_iter(
         trace_id=trace_id,
         rag_user=rag_user,
         history=history,
+        conversation_id=conversation_id,
+        is_new_conversation=is_new_conversation,
     ):
         observe_pipeline_event(chunk)
         yield chunk
@@ -304,11 +330,15 @@ async def _answer_json(
     trace_id: Optional[str],
     rag_user: Optional[Dict[str, str]] = None,
     history: Optional[List[Tuple[str, str]]] = None,
+    conversation_id: str,
+    is_new_conversation: bool,
 ) -> dict:
     final: dict = {
         "request_id": request_id,
         "session_id": session_id,
         "trace_id": trace_id,
+        "conversation_id": conversation_id,
+        "is_new_conversation": is_new_conversation,
         "route": None,
         "rewrite": None,
         "answer": None,
@@ -322,11 +352,16 @@ async def _answer_json(
         trace_id=trace_id,
         rag_user=rag_user,
         history=history,
+        conversation_id=conversation_id,
+        is_new_conversation=is_new_conversation,
     ):
         t = event.get("type")
         if t == "request_id":
             final["request_id"] = event.get("request_id")
             final["session_id"] = event.get("session_id")
+            final["conversation_id"] = event.get("conversation_id")
+            if event.get("is_new_conversation") is not None:
+                final["is_new_conversation"] = event.get("is_new_conversation")
         elif t == "rewrite":
             final["rewrite"] = event.get("text")
         elif t == "route":
@@ -494,6 +529,24 @@ class AnswerBody(BaseModel):
     question: str
     stream: bool = False
     history: List[HistoryTurn] = Field(default_factory=list)
+    conversation_id: Optional[str] = Field(
+        default=None,
+        max_length=256,
+        description=(
+            "Client-owned thread id (optional). Omit, null, or whitespace → server assigns "
+            "conv_<uuidhex>; response includes effective conversation_id and is_new_conversation."
+        ),
+    )
+
+    @field_validator("conversation_id", mode="before")
+    @classmethod
+    def _blank_conversation_id_to_none(cls, v: object) -> Optional[str]:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            return s if s else None
+        raise ValueError("conversation_id must be a string or null")
 
 
 def _history_from_answer_body(body: AnswerBody) -> List[Tuple[str, str]]:
@@ -503,6 +556,14 @@ def _history_from_answer_body(body: AnswerBody) -> List[Tuple[str, str]]:
 class EvalRouterBody(BaseModel):
     question: str
     expected_route: Optional[Literal["rag", "direct_reply", "clarify", "reject"]] = None
+    conversation_id: Optional[str] = Field(
+        default=None,
+        max_length=256,
+        description=(
+            "Client-owned thread id (optional). Omit, null, or whitespace → server assigns "
+            "conv_<uuidhex>; response includes effective conversation_id and is_new_conversation."
+        ),
+    )
     router_model: Optional[str] = Field(default=None, max_length=256)
     router_temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0)
     router_prompt_version: Optional[str] = Field(
@@ -513,7 +574,7 @@ class EvalRouterBody(BaseModel):
     router_prompt_override: Optional[str] = None
     history: List[HistoryTurn] = Field(default_factory=list)
 
-    @field_validator("router_model", "router_prompt_version", mode="before")
+    @field_validator("router_model", "router_prompt_version", "conversation_id", mode="before")
     @classmethod
     def _blank_router_str_to_none(cls, v: object) -> Optional[str]:
         if v is None:
@@ -524,7 +585,7 @@ class EvalRouterBody(BaseModel):
         raise ValueError("must be a string or null")
 
 
-def _validate_eval_router_body_limits(body: EvalRouterBody) -> None:
+def _validate_eval_router_body_limits(body: EvalRouterBody, *, conversation_id: str) -> None:
     q_len = len(body.question or "")
     if q_len > settings.max_question_chars:
         raise HTTPException(
@@ -553,7 +614,8 @@ def _validate_eval_router_body_limits(body: EvalRouterBody) -> None:
                 f"{settings.max_context_chars} (MAX_CONTEXT_CHARS)"
             ),
         )
-    context_chars = q_len + sum(len(t.content or "") for t in (body.history or [])) + ov_len
+    conv_len = len(conversation_id)
+    context_chars = q_len + sum(len(t.content or "") for t in (body.history or [])) + ov_len + conv_len
     if context_chars > settings.max_context_chars:
         raise HTTPException(
             status_code=400,
@@ -621,14 +683,16 @@ def _router_eval_payload(
 async def orchestrator_answer(body: AnswerBody, request: Request):
     """Unified endpoint: stream=true returns SSE; stream=false returns aggregated JSON."""
     raw_bytes = await request.body()
-    _validate_answer_body_limits(body, len(raw_bytes))
-    raw_body = await request.json()
-    _reject_body_correlation_fields(raw_body)
-    session_id, request_id, trace_id = _header_ids(request)
-    rag_user = _header_rag_user(request)
-    hist = _history_from_answer_body(body)
-    request_timeout_s = _request_timeout_s()
-    stream_idle_timeout_s = _stream_idle_timeout_s()
+    conversation_id, is_new_conversation = _resolve_effective_conversation_id(body.conversation_id)
+    with bind_conversation_logging_context(conversation_id, is_new_conversation):
+        _validate_answer_body_limits(body, len(raw_bytes), conversation_id=conversation_id)
+        raw_body = await request.json()
+        _reject_body_correlation_fields(raw_body)
+        session_id, request_id, trace_id = _header_ids(request)
+        rag_user = _header_rag_user(request)
+        hist = _history_from_answer_body(body)
+        request_timeout_s = _request_timeout_s()
+        stream_idle_timeout_s = _stream_idle_timeout_s()
     if body.stream:
         return StreamingResponse(
             _sse_stream_answer_gen(
@@ -638,32 +702,45 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
                 trace_id=trace_id,
                 rag_user=rag_user,
                 history=hist,
+                conversation_id=conversation_id,
+                is_new_conversation=is_new_conversation,
                 request_timeout_s=request_timeout_s,
                 stream_idle_timeout_s=stream_idle_timeout_s,
             ),
             media_type="text/event-stream",
             headers=SSE_HEADERS,
         )
-    try:
-        result = await asyncio.wait_for(
-            _answer_json(
-                body.question,
-                session_id=session_id,
-                request_id=request_id,
-                trace_id=trace_id,
-                rag_user=rag_user,
-                history=hist,
-            ),
-            timeout=request_timeout_s,
-        )
-    except asyncio.TimeoutError:
-        inc_timeout("request")
-        return JSONResponse(
-            {"status": "error", "error": "request timeout exceeded"},
-            status_code=504,
-        )
-    status_code = 200 if result.get("status") == "ok" else 500
-    return JSONResponse(result, status_code=status_code)
+    with bind_conversation_logging_context(conversation_id, is_new_conversation):
+        try:
+            result = await asyncio.wait_for(
+                _answer_json(
+                    body.question,
+                    session_id=session_id,
+                    request_id=request_id,
+                    trace_id=trace_id,
+                    rag_user=rag_user,
+                    history=hist,
+                    conversation_id=conversation_id,
+                    is_new_conversation=is_new_conversation,
+                ),
+                timeout=request_timeout_s,
+            )
+        except asyncio.TimeoutError:
+            inc_timeout("request")
+            return JSONResponse(
+                {
+                    "status": "error",
+                    "error": "request timeout exceeded",
+                    "request_id": request_id,
+                    "session_id": session_id,
+                    "trace_id": trace_id,
+                    "conversation_id": conversation_id,
+                    "is_new_conversation": is_new_conversation,
+                },
+                status_code=504,
+            )
+        status_code = 200 if result.get("status") == "ok" else 500
+        return JSONResponse(result, status_code=status_code)
 
 
 @app.post("/orchestrator/eval/router")
@@ -686,55 +763,61 @@ async def orchestrator_eval_router(request: Request):
         raise HTTPException(status_code=400, detail="JSON body must be an object")
     _reject_body_correlation_fields(raw_obj)
     body = EvalRouterBody.model_validate(raw_obj)
-    _validate_eval_router_body_limits(body)
+    conversation_id, is_new_conversation = _resolve_effective_conversation_id(body.conversation_id)
+    _validate_eval_router_body_limits(body, conversation_id=conversation_id)
     session_id, request_id, trace_id = _header_ids(request)
-    hist = _history_from_eval_body(body)
-    resolved_temp = 0.0 if body.router_temperature is None else float(body.router_temperature)
-    resolved_model = (body.router_model or "").strip() or settings.llm_model
-    run_meta: Dict[str, Any] = {}
-    decision = await run_intent_rewrite_router(
-        body.question,
-        hist,
-        request_id=request_id,
-        session_id=session_id,
-        trace_id=trace_id,
-        router_model=body.router_model,
-        router_temperature=body.router_temperature,
-        router_prompt_version=body.router_prompt_version,
-        router_system_prompt=body.router_prompt_override,
-        runtime_meta=run_meta,
-    )
-    decision = normalize_post_router(decision)
-    evaluation = _router_eval_payload(
-        decision,
-        question=body.question,
-        history=hist,
-        expected_route=body.expected_route,
-    )
-    prompt_override_used = bool((body.router_prompt_override or "").strip())
-    return {
-        "request_id": request_id,
-        "session_id": session_id,
-        "trace_id": trace_id,
-        "router": {
-            "model": resolved_model,
-            "temperature": resolved_temp,
-            "prompt_version": body.router_prompt_version,
-            "prompt_source": run_meta.get("prompt_source"),
-            "prompt_file": run_meta.get("prompt_file"),
-            "prompt_fallback_from": run_meta.get("prompt_requested_fallback"),
-            "smalltalk_intent": run_meta.get("smalltalk_intent"),
-            "prompt_override_used": prompt_override_used,
-        },
-        "decision": {
-            "rewritten_question": decision.rewritten_question,
-            "route": decision.route,
-            "answer": decision.direct_answer,
-            "reason": decision.reason,
-        },
-        "evaluation": evaluation,
-        "status": "ok",
-    }
+    with bind_conversation_logging_context(conversation_id, is_new_conversation):
+        hist = _history_from_eval_body(body)
+        resolved_temp = 0.0 if body.router_temperature is None else float(body.router_temperature)
+        resolved_model = (body.router_model or "").strip() or settings.llm_model
+        run_meta: Dict[str, Any] = {}
+        decision = await run_intent_rewrite_router(
+            body.question,
+            hist,
+            request_id=request_id,
+            session_id=session_id,
+            trace_id=trace_id,
+            router_model=body.router_model,
+            router_temperature=body.router_temperature,
+            router_prompt_version=body.router_prompt_version,
+            router_system_prompt=body.router_prompt_override,
+            runtime_meta=run_meta,
+            conversation_id=conversation_id,
+            is_new_conversation=is_new_conversation,
+        )
+        decision = normalize_post_router(decision)
+        evaluation = _router_eval_payload(
+            decision,
+            question=body.question,
+            history=hist,
+            expected_route=body.expected_route,
+        )
+        prompt_override_used = bool((body.router_prompt_override or "").strip())
+        return {
+            "request_id": request_id,
+            "session_id": session_id,
+            "trace_id": trace_id,
+            "conversation_id": conversation_id,
+            "is_new_conversation": is_new_conversation,
+            "router": {
+                "model": resolved_model,
+                "temperature": resolved_temp,
+                "prompt_version": body.router_prompt_version,
+                "prompt_source": run_meta.get("prompt_source"),
+                "prompt_file": run_meta.get("prompt_file"),
+                "prompt_fallback_from": run_meta.get("prompt_requested_fallback"),
+                "smalltalk_intent": run_meta.get("smalltalk_intent"),
+                "prompt_override_used": prompt_override_used,
+            },
+            "decision": {
+                "rewritten_question": decision.rewritten_question,
+                "route": decision.route,
+                "answer": decision.direct_answer,
+                "reason": decision.reason,
+            },
+            "evaluation": evaluation,
+            "status": "ok",
+        }
 
 
 @app.post("/feedback")

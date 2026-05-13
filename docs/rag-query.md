@@ -7,7 +7,7 @@ POST {RAG_HTTP_BASE_URL}/v1/rag/query
 Content-Type: application/json
 ```
 
-The LangGraph agent exposes this as the tool **`query_knowledge_base`** (see `app/rag_http_tool.py`). `request_id` and `session_id` are injected from the orchestrator context when present.
+The LangGraph agent exposes this as the tool **`query_knowledge_base`** (see `app/rag_http_tool.py`). `request_id` and `session_id` are injected from the orchestrator context when present. The orchestrator also forwards **`conversation_id`** (JSON body and `X-Conversation-Id` / `X-Is-New-Conversation` headers) when set so the RAG service can log and trace by thread.
 
 The HTTP client **retries** transient errors (see table below). Successful responses include `rag_http_attempts` in tool metadata when surfaced by the pipeline.
 
@@ -41,9 +41,12 @@ The orchestrator sends:
 | `collection_base` | string | From `RAG_COLLECTION_BASE` |
 | `request_id` | string | From client context, or `"unknown"` |
 | `session_id` | string | From client context, or `"unknown"` |
+| `conversation_id` | string | Optional; effective orchestrator thread id (also sent as `X-Conversation-Id` when present) |
 | `k` | int | From `RAG_K` |
 | `k_max` | int | From `RAG_K_MAX` |
 | `include_retrieval_hits` | bool | From `RAG_INCLUDE_RETRIEVAL_HITS` |
+
+When **`conversation_id`** is present, the client also sends **`X-Conversation-Id`** and **`X-Is-New-Conversation`** (`true` / `false`) on the POST so the RAG service can align access logs with the orchestrator.
 
 ## Example `curl`
 

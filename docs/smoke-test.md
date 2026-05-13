@@ -30,7 +30,7 @@ curl -sS "http://192.168.86.179:30184/metrics"
 
 ## Orchestrator (non-stream JSON)
 
-Returns one aggregated JSON object. The pipeline uses a single **intent/rewrite router** LLM (`timings_ms.intent_router`), then either returns an immediate `answer` (routes `direct_reply`, `clarify`, `reject`) or runs RAG when `route` is `rag`. The `route` field is lowercase (`rag`, not `RAG`).
+Returns one aggregated JSON object. The pipeline uses a single **intent/rewrite router** LLM (`timings_ms.intent_router`) unless a **server short-circuit** applies (prompt-injection guard or empty-history small-talk; see [intent-router.md](intent-router.md)), then either returns an immediate `answer` (routes `direct_reply`, `clarify`, `reject`) or runs RAG when `route` is `rag`. The `route` field is lowercase (`rag`, not `RAG`). Optional **`conversation_id`** in the JSON body selects the thread id; if omitted or whitespace, the server assigns `conv_<uuidhex>` and sets **`is_new_conversation`**. The response always includes the effective **`conversation_id`** and **`is_new_conversation`**.
 
 ```bash
 curl -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
@@ -43,7 +43,8 @@ curl -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
   -H "X-User-Groups: engineering" \
   -H "X-User-Teams: rag-platform" \
   -d '{
-    "question": "what is taixing visa status in us?"
+    "question": "what is taixing visa status in us?",
+    "conversation_id": "conv-smoke-1"
   }' | jq .
 ```
 
@@ -59,6 +60,7 @@ curl -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
   -H "X-Trace-Id: req-124" \
   -d '{
     "question": "What does he location?",
+    "conversation_id": "conv-smoke-1",
     "history": [
       {"role": "user", "content": "What is Taixing Bi US visa status?"},
       {"role": "assistant", "content": "Taixing has H4 EAD and does not need sponsorship."}
@@ -69,7 +71,7 @@ curl -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
 ## Orchestrator (SSE with `stream=true`)
 
 `-N` turns off curl buffering so Server-Sent Events stream line-by-line.  
-`request_id`, `session_id`, and `trace_id` must be passed in headers (not request body).  
+`request_id`, `session_id`, and `trace_id` must be passed in **headers** (not in the JSON body). Optional **`conversation_id`** may be sent in the **body**; the first `{"type":"request_id",...}` event includes the effective **`conversation_id`** and **`is_new_conversation`**, and the same fields appear when the stream is aggregated to JSON.  
 Optional user context (`X-User-Id`, `X-User-Roles`, `X-User-Groups`, `X-User-Teams`) is forwarded to the RAG service on `POST /v1/rag/query`.  
 Expect `{"type":"state",...}` events during the RAG phase (`rag_query` only inside LangGraph); see [design.md](design.md). Successful streams end with `{"type":"answer",...}` (as soon as the graph returns), then phase states, then `{"type":"done"}`.
 
@@ -85,7 +87,8 @@ curl -N -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
   -H "X-User-Teams: rag-platform" \
   -d '{
     "question": "what is taixing visa status in us?",
-    "stream": true
+    "stream": true,
+    "conversation_id": "conv-smoke-1"
   }'
 ```
 
@@ -126,6 +129,7 @@ curl -sS -X POST "http://192.168.86.179:30184/orchestrator/eval/router" \
   -d '{
     "question": "What are the renewal requirements for H4 EAD?",
     "expected_route": "direct_reply",
+    "conversation_id": "conv-router-eval-1",
     "router_model": "Qwen/Qwen2.5-7B-Instruct",
     "router_temperature": 0,
     "router_prompt_version": "router-v1.00",
@@ -140,6 +144,7 @@ The alternate router prompt `router-v1.01` is plain text in `app/prompts/router-
 
 Response includes:
 
+- Top-level `request_id`, `session_id`, `trace_id`, effective **`conversation_id`**, and **`is_new_conversation`**
 - `router`: effective `model`, `temperature`, `prompt_version`, `prompt_source`, `prompt_file`, optional `prompt_fallback_from`, and `prompt_override_used`
 - `decision`: router output (`rewritten_question`, `route`, `answer`, `reason`) — `answer` is the router’s inline text when present (e.g. `direct_reply` or clarify/reject messaging); for `rag` it is typically null until a full answer is produced downstream.
 - `evaluation`: `expected_route`, `actual_route`, `route_match`, `all_checks_pass`, `checks` (including `route_match`), and `notes`
@@ -189,6 +194,8 @@ cat /tmp/orch_400_history.json
 ```
 
 ### Context limit (`400`)
+
+`MAX_CONTEXT_CHARS` applies to `len(question) + sum(history content) + len(conversation_id)` using the **effective** conversation id (including when the server assigns one because the body omitted or blanked it).
 
 ```bash
 python3 - <<'PY'

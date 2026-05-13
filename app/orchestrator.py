@@ -41,6 +41,9 @@ async def _yield_request_complete_done(
     t0: float,
     request_id: str,
     session_id: Optional[str],
+    *,
+    conversation_id: Optional[str] = None,
+    is_new_conversation: bool = False,
 ) -> AsyncIterator[dict]:
     """Terminal success: request_complete state + log + done event."""
     async with bind_pipeline_phase("request_complete"):
@@ -53,15 +56,16 @@ async def _yield_request_complete_done(
             ended_at=done_ts,
             latency_ms=0,
         )
-        _pipeline_log.info(
-            "request_completed",
-            extra={
-                "event": "request_completed",
-                "request_id": request_id,
-                "session_id": session_id or "-",
-                "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
-            },
-        )
+        cid = (conversation_id or "").strip() or None
+        extra: Dict[str, Any] = {
+            "event": "request_completed",
+            "request_id": request_id,
+            "session_id": session_id or "-",
+            "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
+        }
+        if cid:
+            extra["gateway_meta"] = {"conversation_id": cid, "is_new_conversation": bool(is_new_conversation)}
+        _pipeline_log.info("request_completed", extra=extra)
         yield {"type": "done"}
 
 
@@ -88,6 +92,8 @@ async def run_graph(
     standalone_question: Optional[str] = None,
     emit_state: Optional[Callable[..., Awaitable[None]]] = None,
     downstream_acquire_timeout_s: Optional[float] = None,
+    conversation_id: Optional[str] = None,
+    is_new_conversation: bool = False,
 ) -> Tuple[List[Any], Optional[str]]:
     """Run one phase (RAG) and return (messages, agent_graph_run_id). agent_graph_run_id from LangSmith."""
     t0 = time.perf_counter()
@@ -103,7 +109,21 @@ async def run_graph(
         async with bind_pipeline_phase("agent_graph"):
             _pipeline_log.info(
                 "graph_run_started",
-                extra={"event": "graph_run_started", "request_id": request_id or "-", "session_id": session_id or "-"},
+                extra={
+                    "event": "graph_run_started",
+                    "request_id": request_id or "-",
+                    "session_id": session_id or "-",
+                    **(
+                        {
+                            "gateway_meta": {
+                                "conversation_id": (conversation_id or "").strip(),
+                                "is_new_conversation": bool(is_new_conversation),
+                            },
+                        }
+                        if (conversation_id or "").strip()
+                        else {}
+                    ),
+                },
             )
             agent = await build_graph_agent(
                 tools_timeout_s=tools_timeout_s,
@@ -120,6 +140,9 @@ async def run_graph(
                     v = rag_user.get(key)
                     if v:
                         configurable[key] = v
+            if (conversation_id or "").strip():
+                configurable["conversation_id"] = (conversation_id or "").strip()
+                configurable["is_new_conversation"] = bool(is_new_conversation)
             if standalone_question:
                 configurable["standalone_question"] = standalone_question
             if emit_state is not None:
@@ -127,7 +150,11 @@ async def run_graph(
             config = {
                 "run_name": "agent_graph",
                 "callbacks": [callback],
-                "tags": get_langsmith_tags(request_id=request_id, session_id=session_id),
+                "tags": get_langsmith_tags(
+                    request_id=request_id,
+                    session_id=session_id,
+                    conversation_id=(conversation_id or "").strip() or None,
+                ),
                 "configurable": configurable,
             }
             try:
@@ -177,6 +204,8 @@ async def answer_query_sync(
     trace_id: Optional[str] = None,
     rag_user: Optional[Dict[str, str]] = None,
     history: Optional[List[Tuple[str, str]]] = None,
+    conversation_id: Optional[str] = None,
+    is_new_conversation: bool = False,
 ) -> str:
     """Run agent and return the final answer. Consumes stream_answer_query for single code path."""
     answer = ""
@@ -187,6 +216,8 @@ async def answer_query_sync(
         trace_id=trace_id,
         rag_user=rag_user,
         history=list(history) if history is not None else None,
+        conversation_id=conversation_id,
+        is_new_conversation=is_new_conversation,
         tools_timeout_s=tools_timeout_s,
         invoke_timeout_s=invoke_timeout_s,
     ):
@@ -205,6 +236,8 @@ async def stream_answer_query(
     trace_id: Optional[str] = None,
     rag_user: Optional[Dict[str, str]] = None,
     history: Optional[List[Tuple[str, str]]] = None,
+    conversation_id: Optional[str] = None,
+    is_new_conversation: bool = False,
     tools_timeout_s: Optional[float] = None,
     invoke_timeout_s: Optional[float] = None,
 ) -> AsyncIterator[dict]:
@@ -224,7 +257,12 @@ async def stream_answer_query(
                     "event": "request_started",
                     "request_id": request_id,
                     "session_id": session_id or "-",
-                    "gateway_meta": {"tools_timeout_s": tools_s, "invoke_timeout_s": invoke_s},
+                    "gateway_meta": {
+                        "tools_timeout_s": tools_s,
+                        "invoke_timeout_s": invoke_s,
+                        "conversation_id": (conversation_id or None),
+                        "is_new_conversation": is_new_conversation,
+                    },
                 },
             )
             _pipeline_log.debug(
@@ -240,7 +278,13 @@ async def stream_answer_query(
                     },
                 },
             )
-        yield {"type": "request_id", "session_id": session_id, "request_id": request_id}
+        yield {
+            "type": "request_id",
+            "session_id": session_id,
+            "request_id": request_id,
+            "conversation_id": conversation_id,
+            "is_new_conversation": is_new_conversation,
+        }
         async with bind_pipeline_phase("intent_router"):
             router_started_perf = time.perf_counter()
             router_started_at = utc_now_iso()
@@ -257,6 +301,8 @@ async def stream_answer_query(
                 request_id=request_id,
                 session_id=session_id,
                 trace_id=trace_id,
+                conversation_id=conversation_id,
+                is_new_conversation=is_new_conversation,
             )
             decision = normalize_post_router(decision)
             router_ended_at = utc_now_iso()
@@ -282,6 +328,14 @@ async def stream_answer_query(
                     "gateway_meta": {
                         "route": decision.route,
                         "rewritten_preview": (decision.rewritten_question or "")[:120] or None,
+                        **(
+                            {
+                                "conversation_id": (conversation_id or "").strip(),
+                                "is_new_conversation": bool(is_new_conversation),
+                            }
+                            if (conversation_id or "").strip()
+                            else {}
+                        ),
                     },
                 },
             )
@@ -301,11 +355,28 @@ async def stream_answer_query(
                     "event": "router_terminal_answer",
                     "request_id": request_id,
                     "session_id": session_id or "-",
-                    "gateway_meta": {"route": decision.route, "answer_len": len(answer_text)},
+                    "gateway_meta": {
+                        "route": decision.route,
+                        "answer_len": len(answer_text),
+                        **(
+                            {
+                                "conversation_id": (conversation_id or "").strip(),
+                                "is_new_conversation": bool(is_new_conversation),
+                            }
+                            if (conversation_id or "").strip()
+                            else {}
+                        ),
+                    },
                 },
             )
             yield {"type": "answer", "text": answer_text}
-            async for ev in _yield_request_complete_done(t0, request_id, session_id):
+            async for ev in _yield_request_complete_done(
+                t0,
+                request_id,
+                session_id,
+                conversation_id=conversation_id,
+                is_new_conversation=is_new_conversation,
+            ):
                 yield ev
             return
 
@@ -339,7 +410,21 @@ async def stream_answer_query(
             )
             _pipeline_log.info(
                 "rag_started",
-                extra={"event": "rag_started", "request_id": request_id, "session_id": session_id or "-"},
+                extra={
+                    "event": "rag_started",
+                    "request_id": request_id,
+                    "session_id": session_id or "-",
+                    **(
+                        {
+                            "gateway_meta": {
+                                "conversation_id": (conversation_id or "").strip(),
+                                "is_new_conversation": bool(is_new_conversation),
+                            },
+                        }
+                        if (conversation_id or "").strip()
+                        else {}
+                    ),
+                },
             )
             state_queue: asyncio.Queue = asyncio.Queue()
 
@@ -358,6 +443,8 @@ async def stream_answer_query(
                     standalone_question=rewritten.strip(),
                     emit_state=emit_graph_state,
                     downstream_acquire_timeout_s=request_timeout_s,
+                    conversation_id=conversation_id,
+                    is_new_conversation=is_new_conversation,
                 )
             )
             try:
@@ -399,7 +486,17 @@ async def stream_answer_query(
                         "event": "answer_emitted",
                         "request_id": request_id,
                         "session_id": session_id or "-",
-                        "gateway_meta": {"answer_len": len(graph_answer)},
+                        "gateway_meta": {
+                            "answer_len": len(graph_answer),
+                            **(
+                                {
+                                    "conversation_id": (conversation_id or "").strip(),
+                                    "is_new_conversation": bool(is_new_conversation),
+                                }
+                                if (conversation_id or "").strip()
+                                else {}
+                            ),
+                        },
                     },
                 )
                 ans_event: Dict[str, Any] = {"type": "answer", "text": graph_answer}
@@ -430,10 +527,26 @@ async def stream_answer_query(
                     "request_id": request_id,
                     "session_id": session_id or "-",
                     "latency_ms": round((time.perf_counter() - rag_started_perf) * 1000, 2),
-                    "gateway_meta": {"has_agent_graph_run_id": bool(agent_graph_run_id)},
+                    "gateway_meta": {
+                        "has_agent_graph_run_id": bool(agent_graph_run_id),
+                        **(
+                            {
+                                "conversation_id": (conversation_id or "").strip(),
+                                "is_new_conversation": bool(is_new_conversation),
+                            }
+                            if (conversation_id or "").strip()
+                            else {}
+                        ),
+                    },
                 },
             )
-        async for ev in _yield_request_complete_done(t0, request_id, session_id):
+        async for ev in _yield_request_complete_done(
+            t0,
+            request_id,
+            session_id,
+            conversation_id=conversation_id,
+            is_new_conversation=is_new_conversation,
+        ):
             yield ev
     except Exception as e:
         err_text = format_error(e)
@@ -449,18 +562,21 @@ async def stream_answer_query(
                 metadata={"error_type": type(e).__name__},
             )
             if not getattr(e, "_pipeline_logged", False):
-                _pipeline_log.error(
-                    "stream_answer_error",
-                    extra={
-                        "event": "stream_answer_error",
-                        "request_id": request_id,
-                        "session_id": session_id or "-",
-                        "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
-                        "structured_error": {"type": type(e).__name__, "message": str(e)},
-                        "error_type": type(e).__name__,
-                        "error_message": str(e),
-                    },
-                )
+                err_extra: Dict[str, Any] = {
+                    "event": "stream_answer_error",
+                    "request_id": request_id,
+                    "session_id": session_id or "-",
+                    "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
+                    "structured_error": {"type": type(e).__name__, "message": str(e)},
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                }
+                if (conversation_id or "").strip():
+                    err_extra["gateway_meta"] = {
+                        "conversation_id": (conversation_id or "").strip(),
+                        "is_new_conversation": bool(is_new_conversation),
+                    }
+                _pipeline_log.error("stream_answer_error", extra=err_extra)
             yield {"type": "error", "text": err_text}
 
 

@@ -40,6 +40,8 @@ async def build_graph_agent(
             t0 = time.perf_counter()
             cfg = (config or {}).get("configurable") or {}
             question = str(cfg.get("standalone_question") or "").strip() or first_user_text(state["messages"])
+            cid = str(cfg.get("conversation_id") or "").strip()
+            is_new = bool(cfg.get("is_new_conversation"))
             rag_started_at = utc_now_iso()
             await emit_pipeline_state(
                 config,
@@ -49,9 +51,13 @@ async def build_graph_agent(
                 started_at=rag_started_at,
                 metadata={"question_len": len(question or "")},
             )
+            gw_start: Dict[str, Any] = {"question_len": len(question or "")}
+            if cid:
+                gw_start["conversation_id"] = cid
+                gw_start["is_new_conversation"] = is_new
             _graph_log.debug(
                 "retrieve_started",
-                extra={"event": "retrieve_started", "gateway_meta": {"question_len": len(question or "")}},
+                extra={"event": "retrieve_started", "gateway_meta": gw_start},
             )
             evidence, rag_meta = await query_rag_http_with_meta(
                 question,
@@ -62,6 +68,8 @@ async def build_graph_agent(
                 user_roles=str(cfg.get("user_roles") or ""),
                 user_groups=str(cfg.get("user_groups") or ""),
                 user_teams=str(cfg.get("user_teams") or ""),
+                conversation_id=cid,
+                is_new_conversation=is_new,
             )
             _graph_log.info(
                 "rag_query_api_response",
@@ -72,6 +80,7 @@ async def build_graph_agent(
                         "evidence_len": len(evidence or ""),
                         "http_status_code": rag_meta.get("http_status_code"),
                         "rag_api_response": rag_meta.get("rag_api_response"),
+                        **({"conversation_id": cid, "is_new_conversation": is_new} if cid else {}),
                     },
                 },
             )
@@ -80,7 +89,10 @@ async def build_graph_agent(
                 extra={
                     "event": "retrieve_completed",
                     "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
-                    "gateway_meta": {"evidence_len": len(evidence or "")},
+                    "gateway_meta": {
+                        "evidence_len": len(evidence or ""),
+                        **({"conversation_id": cid, "is_new_conversation": is_new} if cid else {}),
+                    },
                 },
             )
             state_meta = {

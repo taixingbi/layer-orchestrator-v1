@@ -32,6 +32,8 @@ async def evaluate_answer(
     request_id: Optional[str] = None,
     session_id: Optional[str] = None,
     trace_id: Optional[str] = None,
+    conversation_id: Optional[str] = None,
+    is_new_conversation: bool = False,
 ) -> Tuple[bool, Optional[str]]:
     """Evaluate answer quality. Returns (passed, feedback). If passed, feedback is None.
     evidence: optional tool outputs, e.g. '[E1] ... [E2] ...' for citation checking."""
@@ -49,9 +51,16 @@ async def evaluate_answer(
             },
         },
     )
+    cid = (conversation_id or "").strip() or None
     llm = get_llm()
-    tags = get_langsmith_tags(request_id=request_id, session_id=session_id)
-    invoke_kw = gateway_llm_invoke_kwargs(request_id, session_id, trace_id)
+    tags = get_langsmith_tags(request_id=request_id, session_id=session_id, conversation_id=cid)
+    invoke_kw = gateway_llm_invoke_kwargs(
+        request_id,
+        session_id,
+        trace_id,
+        cid,
+        is_new_conversation=is_new_conversation if cid else None,
+    )
     evidence_block = f"\n\nEvidence (tool outputs), numbered as [E1], [E2], ...:\n{evidence}" if evidence else "\n\nEvidence: (none)"
     resp = await llm.ainvoke(
         JUDGE_PROMPT + f"\nQuestion: {question}\n\nAnswer: {answer}" + evidence_block,

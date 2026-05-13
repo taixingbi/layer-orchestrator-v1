@@ -20,7 +20,7 @@ This document explains the runtime design of `layer-orchestrator-v1`: components
 - `app/orchestrator.py`  
   High-level pipeline orchestrator (`stream_answer_query`, `run_graph`).
 - `app/intent_rewrite_router.py`  
-  Single LLM call returning JSON: `rewritten_question`, `route` (`rag` | `direct_reply` | `clarify` | `reject`), `can_answer_directly`, `direct_answer`, `reason`. Naming the candidate does not force a server-side route override; the model is instructed to choose `rag` vs `direct_reply` by whether the question needs document/org-grounded facts vs a general high-level reply. **Details:** [intent-router.md](intent-router.md) (small-talk short-circuit when history is empty, post-LLM overrides, `normalize_post_router`).
+  Single LLM call returning JSON: `rewritten_question`, `route` (`rag` | `direct_reply` | `clarify` | `reject`), `can_answer_directly`, `direct_answer`, `reason`. Before the LLM, the server applies a **deterministic prompt-injection guard** and (when history is empty) **small-talk** exact/pattern matches. Naming the candidate does not force a server-side route override; the model is instructed to choose `rag` vs `direct_reply` by whether the question needs document/org-grounded facts vs a general high-level reply. **Details:** [intent-router.md](intent-router.md) (injection guard, small-talk, post-LLM overrides, `normalize_post_router`).
 - `app/agent_graph.py`  
   LangGraph with a single `retrieve` node (HTTP RAG once); formatted RAG payload is the response body (no `llm_call` / judge in the graph).
 - `app/graph_judge.py` / `app/agent_answer_judge.py`  
@@ -36,12 +36,12 @@ This document explains the runtime design of `layer-orchestrator-v1`: components
 
 ## Primary Flow: `/orchestrator/answer`
 
-Field-by-field request and response schema: **[schema-request-response.md](schema-request-response.md)**.
+Field-by-field request and response schema: **[schema-request-response.md](schema-request-response.md)** (includes optional body **`conversation_id`**, effective id and **`is_new_conversation`** on responses and the first SSE event).
 
-Clients may send user context in headers (`X-User-Id`, `X-User-Roles`, `X-User-Groups`, `X-User-Teams`); the orchestrator relays them on the outbound RAG `POST /v1/rag/query` (body fields `user_id`, `user_roles`, `user_groups`, `user_teams` are rejected).
+Clients may send user context in headers (`X-User-Id`, `X-User-Roles`, `X-User-Groups`, `X-User-Teams`); the orchestrator relays them on the outbound RAG `POST /v1/rag/query`. Those fields and correlation ids (`session_id`, `request_id`, `trace_id`) are **rejected** if sent in the JSON body; **`conversation_id`** is the exception and may be sent in the body for threading.
 
-1. Initialize request ids and emit SSE `{type:"request_id"}`.
-2. **Intent / rewrite router** (one LLM): returns JSON with standalone `rewritten_question` and `route`.
+1. Initialize request ids and emit SSE `{ "type":"request_id", "request_id", "session_id", "conversation_id", "is_new_conversation" }` (`conversation_id` is the effective id; server assigns `conv_<uuidhex>` when the body omits or blanks it).
+2. **Intent / rewrite router** (one LLM when no server short-circuit): returns JSON with standalone `rewritten_question` and `route`.
 3. Emit SSE `{type:"rewrite", "text": ...}` and `{type:"route", "route": ...}` (lowercase route values; breaking change from historical `"RAG"`).
 4. Branch:
    - **`direct_reply`**: emit `answer` from `direct_answer` (incl. short general follow-ups when the router chooses it, including some named-candidate cases when the router judges them general).
@@ -70,7 +70,7 @@ Why this exists:
 
 Event types:
 
-- `request_id`
+- `request_id` — first event; includes `request_id`, `session_id`, effective `conversation_id`, and `is_new_conversation`
 - `state`
 - `rewrite`
 - `route`

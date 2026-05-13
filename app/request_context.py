@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator, Iterator, Optional
 
 _request_id: ContextVar[str] = ContextVar("request_id", default="-")
 _session_id: ContextVar[str] = ContextVar("session_id", default="-")
@@ -13,6 +13,8 @@ _http_method: ContextVar[str] = ContextVar("http_method", default="-")
 _http_path: ContextVar[str] = ContextVar("http_path", default="-")
 _http_status: ContextVar[str] = ContextVar("http_status", default="-")
 _pipeline_phase: ContextVar[str] = ContextVar("pipeline_phase", default="-")
+_conversation_id: ContextVar[str] = ContextVar("conversation_id", default="-")
+_is_new_conversation: ContextVar[str] = ContextVar("is_new_conversation", default="-")
 
 
 def get_request_id() -> str:
@@ -37,6 +39,29 @@ def get_http_status() -> str:
 
 def get_pipeline_phase() -> str:
     return _pipeline_phase.get()
+
+
+def get_conversation_id() -> str:
+    return _conversation_id.get()
+
+
+def get_is_new_conversation_flag() -> str:
+    """Returns ``true`` / ``false`` when bound; ``-`` when unknown."""
+    return _is_new_conversation.get()
+
+
+@contextmanager
+def bind_conversation_logging_context(conversation_id: str, is_new_conversation: bool) -> Iterator[None]:
+    """Bind effective thread id for JSON logs and downstream header propagation helpers."""
+    cid = (conversation_id or "").strip() or "-"
+    flag = "true" if is_new_conversation else "false"
+    t_cid = _conversation_id.set(cid)
+    t_new = _is_new_conversation.set(flag)
+    try:
+        yield
+    finally:
+        _conversation_id.reset(t_cid)
+        _is_new_conversation.reset(t_new)
 
 
 @asynccontextmanager

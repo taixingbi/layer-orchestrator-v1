@@ -174,6 +174,8 @@ async def query_rag_http(
     user_roles: str = "",
     user_groups: str = "",
     user_teams: str = "",
+    conversation_id: str = "",
+    is_new_conversation: bool = False,
 ) -> str:
     """POST /v1/rag/query and return formatted text for the LLM."""
     text, _ = await query_rag_http_with_meta(
@@ -185,6 +187,8 @@ async def query_rag_http(
         user_roles=user_roles,
         user_groups=user_groups,
         user_teams=user_teams,
+        conversation_id=conversation_id,
+        is_new_conversation=is_new_conversation,
     )
     return text
 
@@ -199,6 +203,8 @@ async def query_rag_http_with_meta(
     user_roles: str = "",
     user_groups: str = "",
     user_teams: str = "",
+    conversation_id: str = "",
+    is_new_conversation: bool = False,
 ) -> Tuple[str, Dict[str, Any]]:
     """POST /v1/rag/query and return (formatted_text, metadata)."""
     base = (settings.rag_http_base_url or "").rstrip("/")
@@ -211,6 +217,9 @@ async def query_rag_http_with_meta(
         "k_max": settings.rag_k_max,
         "include_retrieval_hits": settings.rag_include_retrieval_hits,
     }
+    cid = (conversation_id or "").strip()
+    if cid:
+        payload["conversation_id"] = cid
     url = f"{base}/v1/rag/query"
     # Prefer JSON (same as typical curl without Accept: event-stream) so the body
     # includes full `latency_ms` breakdown. SSE streams often omit or split metrics.
@@ -223,6 +232,8 @@ async def query_rag_http_with_meta(
         "X-User-Roles": user_roles or "",
         "X-User-Groups": user_groups or "",
         "X-User-Teams": user_teams or "",
+        "X-Conversation-Id": cid,
+        "X-Is-New-Conversation": ("true" if is_new_conversation else "false") if cid else "",
     }
     headers = {k: v for k, v in headers.items() if v}
     client = _shared_http_client()
@@ -284,6 +295,8 @@ def create_rag_http_tools():
         user_roles: str = "",
         user_groups: str = "",
         user_teams: str = "",
+        conversation_id: str = "",
+        is_new_conversation: bool = False,
     ) -> str:
         """Retrieve relevant knowledge from the configured vector collection (RAG). Use for questions that need factual or policy information from the knowledge base."""
         return await query_rag_http(
@@ -295,6 +308,8 @@ def create_rag_http_tools():
             user_roles=user_roles,
             user_groups=user_groups,
             user_teams=user_teams,
+            conversation_id=conversation_id,
+            is_new_conversation=is_new_conversation,
         )
 
     return [query_knowledge_base]

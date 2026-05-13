@@ -9,10 +9,16 @@ It emits **Server-Sent Events (SSE)** so clients can observe each reasoning stag
 ### ✅ 1. Request Initialization
 
 * The service **accepts or generates** a `request_id`.
-* Immediately emits:
+* Immediately emits (ids may be `null` when omitted):
 
 ```json
-{ "type": "request_id", "request_id": "<uuid>" }
+{
+  "type": "request_id",
+  "request_id": "<uuid>",
+  "session_id": "<string | null>",
+  "conversation_id": "<string>",
+  "is_new_conversation": false
+}
 ```
 
 This ID is propagated through:
@@ -26,7 +32,7 @@ This ID is propagated through:
 
 ### ✍️ 2–3. Intent / rewrite router (one LLM)
 
-One gateway call returns **JSON only**: `rewritten_question`, `route` (`rag` \| `direct_reply` \| `clarify` \| `reject`), `can_answer_directly`, `direct_answer`, `reason`. Optional conversation `history` in the request body is included in the router prompt. Naming the candidate does not trigger a hard server override; the router prompt tells the model to use `rag` for document/org-grounded needs and `direct_reply` for clearly general questions even when Taixing Bi is named. **Full pipeline (small-talk, overrides, assets):** [intent-router.md](intent-router.md).
+One gateway call returns **JSON only**: `rewritten_question`, `route` (`rag` \| `direct_reply` \| `clarify` \| `reject`), `can_answer_directly`, `direct_answer`, `reason`. Optional conversation `history` in the request body is included in the router prompt. **Before** that call, the server may short-circuit on **prompt-injection** patterns or **small-talk** seed rules (see [intent-router.md](intent-router.md)). Naming the candidate does not trigger a hard server override; the router prompt tells the model to use `rag` for document/org-grounded needs and `direct_reply` for clearly general questions even when Taixing Bi is named. **Full pipeline:** [intent-router.md](intent-router.md).
 
 SSE emissions (after the router completes):
 

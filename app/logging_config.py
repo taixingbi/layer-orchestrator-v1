@@ -11,9 +11,11 @@ from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .request_context import (
+    get_conversation_id,
     get_http_method,
     get_http_path,
     get_http_status,
+    get_is_new_conversation_flag,
     get_pipeline_phase,
     get_request_id,
     get_session_id,
@@ -71,6 +73,8 @@ class _RequestContextFilter(logging.Filter):
             record.status = "-"
         if not hasattr(record, "phase"):
             record.phase = get_pipeline_phase()
+        record.conversation_id = get_conversation_id()
+        record.is_new_conversation = get_is_new_conversation_flag()
         return True
 
 
@@ -84,6 +88,8 @@ class _JsonFormatter(logging.Formatter):
             "logger": record.name,
             "request_id": getattr(record, "request_id", "-"),
             "session_id": getattr(record, "session_id", "-"),
+            "conversation_id": getattr(record, "conversation_id", "-"),
+            "is_new_conversation": getattr(record, "is_new_conversation", "-"),
             "method": getattr(record, "method", "-"),
             "path": getattr(record, "path", "-"),
             "status": getattr(record, "status", "-"),

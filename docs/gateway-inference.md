@@ -24,6 +24,8 @@ Chat calls may include:
 - `X-Request-Id`
 - `X-Session-Id`
 - `X-Trace-Id` (defaults to the request id when not set separately)
+- `X-Conversation-Id` (effective thread id when the client supplied one or the orchestrator assigned `conv_<uuidhex>`)
+- `X-Is-New-Conversation` (`true` or `false` when `X-Conversation-Id` is sent; indicates whether the orchestrator minted a new id on this request)
 
 Values come from the incoming HTTP request when provided (e.g. `/orchestrator/answer`). The gateway may ignore or log them.
 

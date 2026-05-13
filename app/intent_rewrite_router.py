@@ -456,9 +456,17 @@ async def run_intent_rewrite_router(
     router_prompt_version: Optional[str] = None,
     router_system_prompt: Optional[str] = None,
     runtime_meta: Optional[Dict[str, Any]] = None,
+    conversation_id: Optional[str] = None,
+    is_new_conversation: bool = False,
 ) -> RouterDecision:
     """One LLM call returning RouterDecision; parse errors fall back to conservative rag."""
     q = (question or "").strip()
+    cid = (conversation_id or "").strip() or None
+    gw_thread: Dict[str, Any] = {}
+    if cid:
+        gw_thread["conversation_id"] = cid
+        gw_thread["is_new_conversation"] = bool(is_new_conversation)
+
     if not q:
         return fallback_router_decision(question, reason="empty_question")
 
@@ -478,7 +486,7 @@ async def run_intent_rewrite_router(
             "intent_router_injection_guard",
             extra={
                 "event": "intent_router_injection_guard",
-                "gateway_meta": {"route": inj.route, "reason_preview": (inj.reason or "")[:120]},
+                "gateway_meta": {"route": inj.route, "reason_preview": (inj.reason or "")[:120], **gw_thread},
             },
         )
         return inj
@@ -507,7 +515,7 @@ async def run_intent_rewrite_router(
                 log_event,
                 extra={
                     "event": log_event,
-                    "gateway_meta": {"intent": intent, "question_preview": q[:80]},
+                    "gateway_meta": {"intent": intent, "question_preview": q[:80], **gw_thread},
                 },
             )
             return RouterDecision(
@@ -534,7 +542,13 @@ async def run_intent_rewrite_router(
     if runtime_meta is not None:
         runtime_meta.clear()
         runtime_meta.update(res_meta)
-    tags = list(get_langsmith_tags(request_id=request_id, session_id=session_id))
+    tags = list(
+        get_langsmith_tags(
+            request_id=request_id,
+            session_id=session_id,
+            conversation_id=cid,
+        )
+    )
     resolved_model = (router_model or "").strip() or settings.llm_model
     tags.append(f"intent_router_model:{resolved_model}")
     if res_meta["prompt_source"] == "body_override":
@@ -545,7 +559,13 @@ async def run_intent_rewrite_router(
         fb = res_meta.get("prompt_requested_fallback")
         if fb:
             tags.append(f"router_prompt_fallback_from:{fb}")
-    invoke_kw = gateway_llm_invoke_kwargs(request_id, session_id, trace_id)
+    invoke_kw = gateway_llm_invoke_kwargs(
+        request_id,
+        session_id,
+        trace_id,
+        cid,
+        is_new_conversation=is_new_conversation if cid else None,
+    )
     try:
         msg = await llm.ainvoke(
             [SystemMessage(content=system_content), HumanMessage(content=user_body)],
@@ -563,7 +583,7 @@ async def run_intent_rewrite_router(
                 "intent_router_parse_failed",
                 extra={
                     "event": "intent_router_parse_failed",
-                    "gateway_meta": {"preview": (raw or "")[:200] or None},
+                    "gateway_meta": {"preview": (raw or "")[:200] or None, **gw_thread},
                 },
             )
             return _ensure_rewritten_question_third_person(
@@ -589,6 +609,7 @@ async def run_intent_rewrite_router(
                     "route": decision.route,
                     "reason_preview": (decision.reason or "")[:160] or None,
                     "rewritten_preview": (decision.rewritten_question or "")[:120] or None,
+                    **gw_thread,
                 },
             },
         )
@@ -601,6 +622,7 @@ async def run_intent_rewrite_router(
                 "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
                 "error_type": type(e).__name__,
                 "error_message": str(e),
+                **({"gateway_meta": gw_thread} if gw_thread else {}),
             },
         )
         return _ensure_rewritten_question_third_person(

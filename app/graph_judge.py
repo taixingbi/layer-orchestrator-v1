@@ -81,6 +81,8 @@ async def judge_node(state: AgentState, config: RunnableConfig):
             request_id=cfg.get("request_id"),
             session_id=cfg.get("session_id"),
             trace_id=cfg.get("trace_id"),
+            conversation_id=cfg.get("conversation_id"),
+            is_new_conversation=bool(cfg.get("is_new_conversation")),
         )
         will_retry = not passed and retry_count < MAX_RETRIES
         _judge_log.debug(

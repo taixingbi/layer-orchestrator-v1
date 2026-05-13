@@ -79,6 +79,9 @@ def gateway_extra_headers(
     request_id: Optional[str] = None,
     session_id: Optional[str] = None,
     trace_id: Optional[str] = None,
+    conversation_id: Optional[str] = None,
+    *,
+    is_new_conversation: Optional[bool] = None,
 ) -> Dict[str, str]:
     """Optional tracing headers on chat completion requests."""
     h: Dict[str, str] = {}
@@ -91,6 +94,11 @@ def gateway_extra_headers(
         h["X-Session-Id"] = sid
     if tid:
         h["X-Trace-Id"] = tid
+    cid = (conversation_id or "").strip()
+    if cid:
+        h["X-Conversation-Id"] = cid
+        if is_new_conversation is not None:
+            h["X-Is-New-Conversation"] = "true" if is_new_conversation else "false"
     return h
 
 
@@ -98,11 +106,20 @@ def gateway_llm_invoke_kwargs(
     request_id: Optional[str] = None,
     session_id: Optional[str] = None,
     trace_id: Optional[str] = None,
+    conversation_id: Optional[str] = None,
+    *,
+    is_new_conversation: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """Extra kwargs for chat model ainvoke when using the configured gateway."""
     if not normalized_llm_base_url():
         return {}
-    hdrs = gateway_extra_headers(request_id, session_id, trace_id)
+    hdrs = gateway_extra_headers(
+        request_id,
+        session_id,
+        trace_id,
+        conversation_id,
+        is_new_conversation=is_new_conversation,
+    )
     return {"extra_headers": hdrs} if hdrs else {}
 
 
@@ -137,6 +154,7 @@ def has_langsmith_credentials() -> bool:
 def get_langsmith_tags(
     request_id: Optional[str] = None,
     session_id: Optional[str] = None,
+    conversation_id: Optional[str] = None,
 ) -> List[str]:
     """Build tags for LangSmith traces (key:value format). Optionally include request_id and session_id."""
     tags = [
@@ -152,5 +170,8 @@ def get_langsmith_tags(
         tags.append(f"request_id:{request_id}")
     if session_id:
         tags.append(f"session_id:{session_id}")
+    cid = (conversation_id or "").strip()
+    if cid:
+        tags.append(f"conversation_id:{cid}")
     return tags
 

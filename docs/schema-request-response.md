@@ -1,6 +1,6 @@
 # Request and response schema
 
-HTTP request bodies, headers, and JSON/SSE response shapes for this service. Correlation ids (`session_id`, `request_id`, `trace_id`) and user relay fields **must** be sent on headers only; sending them in the JSON body returns **400**.
+HTTP request bodies, headers, and JSON/SSE response shapes for this service. Correlation ids (`session_id`, `request_id`, `trace_id`) and user relay fields **must** be sent on headers only; sending them in the JSON body returns **400**. Optional **`conversation_id`** (client thread id) may be sent in the JSON body for `/orchestrator/answer` and `/orchestrator/eval/router`. If omitted, null, or whitespace-only after trim, the server assigns `conv_<uuidhex>` and sets **`is_new_conversation`: true**; otherwise the client id is used and **`is_new_conversation`** is **false**. Responses include the effective **`conversation_id`** and **`is_new_conversation`**.
 
 ---
 
@@ -27,7 +27,8 @@ Response includes `X-Request-Id` (middleware).
 {
   "question": "string (required)",
   "stream": false,
-  "history": []
+  "history": [],
+  "conversation_id": "string (optional)"
 }
 ```
 
@@ -36,6 +37,7 @@ Response includes `X-Request-Id` (middleware).
 | `question` | string | — | Latest user message |
 | `stream` | boolean | `false` | `true` → SSE (`text/event-stream`); `false` → single JSON object |
 | `history` | array | `[]` | Prior turns; each item `{ "role": "user" \| "assistant", "content": "string" }` |
+| `conversation_id` | string | `null` | Optional client-owned thread id (max 256 chars after trim). Blank → server assigns `conv_<uuidhex>`; see **`is_new_conversation`** on responses |
 
 **Rejected in body (400):** `session_id`, `request_id`, `trace_id`, `user_id`, `user_roles`, `user_groups`, `user_teams`.
 
@@ -46,7 +48,7 @@ The orchestrator enforces configurable request safety limits:
 - `MAX_REQUEST_BODY_MB` (default `1`)
 - `MAX_HISTORY_MESSAGES` (default `50`)
 - `MAX_QUESTION_CHARS` (default `8000`)
-- `MAX_CONTEXT_CHARS` (default `120000`, computed as `len(question) + sum(len(history[i].content))`)
+- `MAX_CONTEXT_CHARS` (default `120000`, computed as `len(question) + sum(len(history[i].content)) + len(conversation_id)` using the **effective** conversation id after optional server assignment)
 - `REQUEST_TIMEOUT_MS` (default `30000`)
 - `STREAM_IDLE_TIMEOUT_MS` (default `30000`, stream mode only)
 
@@ -68,6 +70,8 @@ Violations and timeout behavior:
   "request_id": "string",
   "session_id": "string | null",
   "trace_id": "string",
+  "conversation_id": "string",
+  "is_new_conversation": false,
   "route": "rag" | "direct_reply" | "clarify" | "reject",
   "rewrite": "string | null",
   "answer": "string | null",
@@ -80,6 +84,8 @@ Violations and timeout behavior:
 
 | Field | When present |
 |-------|----------------|
+| `conversation_id` | Always — effective thread id (client or server `conv_<uuidhex>`) |
+| `is_new_conversation` | Always — `true` if the server assigned a new id this request |
 | `rewrite` | After router emits rewrite |
 | `answer` | After an answer is produced |
 | `citations` | RAG path only, when the RAG service returned `citations` |
@@ -149,7 +155,12 @@ Same fields as far as they were accumulated, plus:
 ```json
 {
   "status": "error",
-  "error": "request timeout exceeded"
+  "error": "request timeout exceeded",
+  "request_id": "string | null",
+  "session_id": "string | null",
+  "trace_id": "string | null",
+  "conversation_id": "string",
+  "is_new_conversation": false
 }
 ```
 
@@ -163,7 +174,7 @@ Response: **SSE**, each line `data: <json>\n\n`.
 
 | `type` | Description |
 |--------|-------------|
-| `request_id` | `{ "type": "request_id", "request_id", "session_id" }` — early correlation |
+| `request_id` | `{ "type": "request_id", "request_id", "session_id", "conversation_id", "is_new_conversation" }` — early correlation (`conversation_id` is always the effective id; omitted keys besides these may be null) |
 | `rewrite` | `{ "type": "rewrite", "text": "..." }` |
 | `route` | `{ "type": "route", "route": "rag" \| ... }` |
 | `state` | Phase progress; see **State object** below |
@@ -214,6 +225,7 @@ Same correlation headers as `/orchestrator/answer`:
 {
   "question": "string (required)",
   "expected_route": "rag | direct_reply | clarify | reject (optional)",
+  "conversation_id": "string (optional)",
   "router_model": "string (optional; default: LLM_MODEL)",
   "router_temperature": 0,
   "router_prompt_version": "string (optional; versioned prompt file id)",
@@ -237,7 +249,7 @@ In both cases the response is **`direct_reply`** with that `answer` (no router L
 
 **Versioned router prompts** (when `router_prompt_override` is omitted): the system prompt is read from `app/prompts/{router_prompt_version}.txt` (plain text only; no separate loader module). If `router_prompt_version` is omitted, the file id defaults to `ROUTER_PROMPT_VERSION` (env) or `router-v1.00`. Version ids must match `^[a-zA-Z0-9][a-zA-Z0-9._-]*$`. If the requested file is missing, the server falls back to `router-v1.00.txt` and reports that in `router.prompt_fallback_from`. Prompt files may contain the literal placeholder `__CANDIDATE_NAME__`; it is replaced at load time with the configured candidate name.
 
-`router_prompt_override` length counts toward `MAX_CONTEXT_CHARS` together with the question and history message bodies.
+`router_prompt_override` and the **effective** **`conversation_id`** length count toward `MAX_CONTEXT_CHARS` together with the question and history message bodies.
 
 ### Response (`200`)
 
@@ -246,6 +258,8 @@ In both cases the response is **`direct_reply`** with that `answer` (no router L
   "request_id": "string | null",
   "session_id": "string | null",
   "trace_id": "string | null",
+  "conversation_id": "string",
+  "is_new_conversation": false,
   "router": {
     "model": "string",
     "temperature": 0,
@@ -289,6 +303,8 @@ In both cases the response is **`direct_reply`** with that `answer` (no router L
 - `history_followup_rewritten`: if history is present, rewritten question differs from raw question.
 
 `evaluation.all_checks_pass` is `true` only when every entry in `checks` is `true`.
+
+Top-level **`conversation_id`** is always the effective thread id (client or server-assigned **`conv_<uuidhex>`**). **`is_new_conversation`** is **`true`** when the server generated a new id for this request.
 
 ---
 
