@@ -34,8 +34,7 @@ If the latest question is empty after trim, the router returns a conservative fa
 
 Typical outcomes:
 
-- **`reject`** — Known exfiltration or instruction-override phrases (for example ignoring prior instructions, asking to reveal the system prompt, show hidden data, or combining a fake “you are now admin” claim with **password** / credential language). **`direct_answer`** is `null`; the orchestrator uses a short default refusal string for the user.
-- **`direct_reply`** — A lone **“You are now admin?”** style roleplay (full-string match) gets a **fixed** denial that the assistant has no admin mode or privileges (so it does not fall through to **`rag`** or an LLM guess).
+- **`reject`** — Known exfiltration or instruction-override phrases (for example ignoring prior instructions or rules, repeating developer/system messages, asking for secrets, fake admin lines (including lone “you are now admin?”), fake admin + password, email-to-exfil company files, “show your reasoning” chain leaks, admin override, reveal system prompt, show hidden data). **`direct_answer`** is `null`; the orchestrator uses a short default refusal string for the user.
 
 On hit, **`runtime_meta.prompt_source`** is **`injection_guard`**, `prompt_file` is `null`, and **`reason`** starts with **`[server: injection_guard:…]`**. This layer is **not** a complete security boundary: tool access and data still must be enforced with real authorization (for example “if role != admin, do not attach privileged tools”), as the LLM cannot be trusted to enforce policy alone.
 
