@@ -120,7 +120,7 @@ def _sse_stream_answer_gen(
     """Async generator for POST /orchestrator/answer with stream=true."""
 
     async def _gen():
-        with bind_conversation_logging_context(conversation_id, is_new_conversation):
+        async with bind_conversation_logging_context(conversation_id, is_new_conversation):
             ait = _answer_event_iter(
                 question,
                 session_id=session_id,
@@ -686,7 +686,7 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
     raw_bytes = await request.body()
     conversation_id, is_new_conversation = _resolve_effective_conversation_id(body.conversation_id)
     request.state.conversation_id = conversation_id
-    with bind_conversation_logging_context(conversation_id, is_new_conversation):
+    async with bind_conversation_logging_context(conversation_id, is_new_conversation):
         _validate_answer_body_limits(body, len(raw_bytes), conversation_id=conversation_id)
         raw_body = await request.json()
         _reject_body_correlation_fields(raw_body)
@@ -712,7 +712,7 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
             media_type="text/event-stream",
             headers=SSE_HEADERS,
         )
-    with bind_conversation_logging_context(conversation_id, is_new_conversation):
+    async with bind_conversation_logging_context(conversation_id, is_new_conversation):
         try:
             result = await asyncio.wait_for(
                 _answer_json(
@@ -769,7 +769,7 @@ async def orchestrator_eval_router(request: Request):
     request.state.conversation_id = conversation_id
     _validate_eval_router_body_limits(body, conversation_id=conversation_id)
     session_id, request_id, trace_id = _header_ids(request)
-    with bind_conversation_logging_context(conversation_id, is_new_conversation):
+    async with bind_conversation_logging_context(conversation_id, is_new_conversation):
         hist = _history_from_eval_body(body)
         resolved_temp = 0.0 if body.router_temperature is None else float(body.router_temperature)
         resolved_model = (body.router_model or "").strip() or settings.llm_model

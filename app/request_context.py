@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
-from typing import AsyncIterator, Iterator, Optional
+from typing import AsyncIterator, Optional
 
 _request_id: ContextVar[str] = ContextVar("request_id", default="-")
 _session_id: ContextVar[str] = ContextVar("session_id", default="-")
@@ -50,9 +50,11 @@ def get_is_new_conversation_flag() -> str:
     return _is_new_conversation.get()
 
 
-@contextmanager
-def bind_conversation_logging_context(conversation_id: str, is_new_conversation: bool) -> Iterator[None]:
-    """Bind effective thread id for JSON logs and downstream header propagation helpers."""
+@asynccontextmanager
+async def bind_conversation_logging_context(
+    conversation_id: str, is_new_conversation: bool
+) -> AsyncIterator[None]:
+    """Bind effective thread id for JSON logs (async-safe; do not use sync ``contextmanager`` across ``await``)."""
     cid = (conversation_id or "").strip() or "-"
     flag = "true" if is_new_conversation else "false"
     t_cid = _conversation_id.set(cid)
