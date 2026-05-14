@@ -36,7 +36,7 @@ This document explains the runtime design of `layer-orchestrator-v1`: components
 
 ## Primary Flow: `/orchestrator/answer`
 
-Field-by-field request and response schema: **[schema-request-response.md](schema-request-response.md)** (includes optional body **`conversation_id`**, effective id and **`is_new_conversation`** on responses and the first SSE event).
+Field-by-field request and response schema: **[schema-request-response.md](schema-request-response.md)** (includes optional body **`conversation_id`**, effective id and **`is_new_conversation`** on responses and the first SSE event). Threading, logging, and downstream headers are summarized in **[conversation-id.md](conversation-id.md)**.
 
 Clients may send user context in headers (`X-User-Id`, `X-User-Roles`, `X-User-Groups`, `X-User-Teams`); the orchestrator relays them on the outbound RAG `POST /v1/rag/query`. Those fields and correlation ids (`session_id`, `request_id`, `trace_id`) are **rejected** if sent in the JSON body; **`conversation_id`** is the exception and may be sent in the body for threading.
 

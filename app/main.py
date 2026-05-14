@@ -507,14 +507,15 @@ async def _http_request_logging_middleware(request: Request, call_next):
             observe_http(method=method, path=path, status_code=int(response.status_code), latency_s=latency_ms / 1000.0)
             response.headers["X-Request-Id"] = request_id
             set_http_status(str(response.status_code))
-            _http_log.info(
-                "http_request_complete",
-                extra={
-                    "latency_ms": latency_ms,
-                    "status_code": response.status_code,
-                    "trace_id": trace_id,
-                },
-            )
+            http_extra: Dict[str, Any] = {
+                "latency_ms": latency_ms,
+                "status_code": response.status_code,
+                "trace_id": trace_id,
+            }
+            cid = getattr(request.state, "conversation_id", None)
+            if isinstance(cid, str) and cid.strip():
+                http_extra["conversation_id"] = cid.strip()
+            _http_log.info("http_request_complete", extra=http_extra)
             return response
     finally:
         reset_request_context(ctx)
@@ -684,6 +685,7 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
     """Unified endpoint: stream=true returns SSE; stream=false returns aggregated JSON."""
     raw_bytes = await request.body()
     conversation_id, is_new_conversation = _resolve_effective_conversation_id(body.conversation_id)
+    request.state.conversation_id = conversation_id
     with bind_conversation_logging_context(conversation_id, is_new_conversation):
         _validate_answer_body_limits(body, len(raw_bytes), conversation_id=conversation_id)
         raw_body = await request.json()
@@ -764,6 +766,7 @@ async def orchestrator_eval_router(request: Request):
     _reject_body_correlation_fields(raw_obj)
     body = EvalRouterBody.model_validate(raw_obj)
     conversation_id, is_new_conversation = _resolve_effective_conversation_id(body.conversation_id)
+    request.state.conversation_id = conversation_id
     _validate_eval_router_body_limits(body, conversation_id=conversation_id)
     session_id, request_id, trace_id = _header_ids(request)
     with bind_conversation_logging_context(conversation_id, is_new_conversation):

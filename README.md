@@ -11,6 +11,7 @@ FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …
 ## Documentation
 
 - [Request & response schema](docs/schema-request-response.md) — JSON bodies, headers, `/orchestrator/answer`, `/orchestrator/eval/router`, SSE events, limits, `conversation_id`, and `is_new_conversation`.
+- [Conversation id](docs/conversation-id.md) — threading, resolution, logs, and propagation to gateway + RAG.
 - [Gateway inference](docs/gateway-inference.md) — chat completions URL, model, headers, `curl` example, and tool-calling note.
 - [RAG query](docs/rag-query.md) — HTTP RAG `POST /v1/rag/query`, env vars, request body, and `curl` example.
 - [Small-talk seed](docs/smalltalk-seed.md) — `app/prompts/smalltalk_examples.json`, empty-history exact match then regex patterns (answers from JSON), no router LLM on hit.
