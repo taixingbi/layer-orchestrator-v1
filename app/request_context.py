@@ -54,26 +54,37 @@ def get_is_new_conversation_flag() -> str:
 async def bind_conversation_logging_context(
     conversation_id: str, is_new_conversation: bool
 ) -> AsyncIterator[None]:
-    """Bind effective thread id for JSON logs (async-safe; do not use sync ``contextmanager`` across ``await``)."""
+    """Bind effective thread id for JSON logs.
+
+    Restores previous values with ``ContextVar.set(previous)`` instead of ``Token.reset``,
+    so streaming / ``wait_for`` boundaries cannot raise "Token was created in a different Context".
+    """
     cid = (conversation_id or "").strip() or "-"
     flag = "true" if is_new_conversation else "false"
-    t_cid = _conversation_id.set(cid)
-    t_new = _is_new_conversation.set(flag)
+    prev_cid = _conversation_id.get()
+    prev_flag = _is_new_conversation.get()
+    _conversation_id.set(cid)
+    _is_new_conversation.set(flag)
     try:
         yield
     finally:
-        _conversation_id.reset(t_cid)
-        _is_new_conversation.reset(t_new)
+        _conversation_id.set(prev_cid)
+        _is_new_conversation.set(prev_flag)
 
 
 @asynccontextmanager
 async def bind_pipeline_phase(phase: str) -> AsyncIterator[None]:
-    """Set active pipeline phase for JSON logs (nested contexts restore previous value)."""
-    token = _pipeline_phase.set(phase or "-")
+    """Set active pipeline phase for JSON logs (nested contexts restore previous value).
+
+    Same save/restore pattern as :func:`bind_conversation_logging_context` — avoids
+    ``ContextVar.reset(token)`` failures across async generator / streaming boundaries.
+    """
+    prev = _pipeline_phase.get()
+    _pipeline_phase.set(phase or "-")
     try:
         yield
     finally:
-        _pipeline_phase.reset(token)
+        _pipeline_phase.set(prev)
 
 
 @dataclass(frozen=True)

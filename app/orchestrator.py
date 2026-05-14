@@ -46,27 +46,28 @@ async def _yield_request_complete_done(
     is_new_conversation: bool = False,
 ) -> AsyncIterator[dict]:
     """Terminal success: request_complete state + log + done event."""
+    done_ts = utc_now_iso()
+    complete_state = state_event(
+        phase="request_complete",
+        status="completed",
+        ui_message="Complete",
+        started_at=done_ts,
+        ended_at=done_ts,
+        latency_ms=0,
+    )
+    cid = (conversation_id or "").strip() or None
+    extra: Dict[str, Any] = {
+        "event": "request_completed",
+        "request_id": request_id,
+        "session_id": session_id or "-",
+        "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
+    }
+    if cid:
+        extra["gateway_meta"] = {"conversation_id": cid, "is_new_conversation": bool(is_new_conversation)}
     async with bind_pipeline_phase("request_complete"):
-        done_ts = utc_now_iso()
-        yield state_event(
-            phase="request_complete",
-            status="completed",
-            ui_message="Complete",
-            started_at=done_ts,
-            ended_at=done_ts,
-            latency_ms=0,
-        )
-        cid = (conversation_id or "").strip() or None
-        extra: Dict[str, Any] = {
-            "event": "request_completed",
-            "request_id": request_id,
-            "session_id": session_id or "-",
-            "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
-        }
-        if cid:
-            extra["gateway_meta"] = {"conversation_id": cid, "is_new_conversation": bool(is_new_conversation)}
         _pipeline_log.info("request_completed", extra=extra)
-        yield {"type": "done"}
+    yield complete_state
+    yield {"type": "done"}
 
 
 class _AgentRunIdCallback(AsyncCallbackHandler):
@@ -281,16 +282,16 @@ async def stream_answer_query(
             "conversation_id": conversation_id,
             "is_new_conversation": is_new_conversation,
         }
+        router_started_perf = time.perf_counter()
+        router_started_at = utc_now_iso()
+        yield state_event(
+            phase="intent_router",
+            status="running",
+            ui_message="Routing request...",
+            started_at=router_started_at,
+            metadata={"query_len": len(query or "")},
+        )
         async with bind_pipeline_phase("intent_router"):
-            router_started_perf = time.perf_counter()
-            router_started_at = utc_now_iso()
-            yield state_event(
-                phase="intent_router",
-                status="running",
-                ui_message="Routing request...",
-                started_at=router_started_at,
-                metadata={"query_len": len(query or "")},
-            )
             decision = await run_intent_rewrite_router(
                 query,
                 hist,
@@ -302,19 +303,6 @@ async def stream_answer_query(
             )
             decision = normalize_post_router(decision)
             router_ended_at = utc_now_iso()
-            yield state_event(
-                phase="intent_router",
-                status="completed",
-                ui_message="Route selected",
-                started_at=router_started_at,
-                ended_at=router_ended_at,
-                latency_ms=(time.perf_counter() - router_started_perf) * 1000,
-                metadata={
-                    "route": decision.route,
-                    "reason": (decision.reason or "")[:500] or None,
-                    "rewritten_len": len(decision.rewritten_question or ""),
-                },
-            )
             _pipeline_log.info(
                 "intent_router_phase_completed",
                 extra={
@@ -328,8 +316,21 @@ async def stream_answer_query(
                     },
                 },
             )
-            yield {"type": "rewrite", "text": decision.rewritten_question}
-            yield {"type": "route", "route": decision.route}
+        yield state_event(
+            phase="intent_router",
+            status="completed",
+            ui_message="Route selected",
+            started_at=router_started_at,
+            ended_at=router_ended_at,
+            latency_ms=(time.perf_counter() - router_started_perf) * 1000,
+            metadata={
+                "route": decision.route,
+                "reason": (decision.reason or "")[:500] or None,
+                "rewritten_len": len(decision.rewritten_question or ""),
+            },
+        )
+        yield {"type": "rewrite", "text": decision.rewritten_question}
+        yield {"type": "route", "route": decision.route}
 
         if decision.route != "rag":
             if decision.route == "direct_reply":
@@ -364,32 +365,32 @@ async def stream_answer_query(
 
         rewritten = (decision.rewritten_question or "").strip()
         messages = [{"role": "user", "content": rewritten}]
-        async with bind_pipeline_phase("rag"):
-            agent_graph_run_id = None
-            if not use_http_rag:
-                skipped_ts = utc_now_iso()
-                yield state_event(
-                    phase="rag",
-                    status="skipped",
-                    ui_message="RAG skipped: configuration missing",
-                    started_at=skipped_ts,
-                    ended_at=skipped_ts,
-                    latency_ms=0,
-                )
-                raise ValueError("RAG_HTTP_BASE_URL is required in FastAPI-only mode")
-            rag_started_perf = time.perf_counter()
-            rag_started_at = utc_now_iso()
+        agent_graph_run_id = None
+        if not use_http_rag:
+            skipped_ts = utc_now_iso()
             yield state_event(
                 phase="rag",
-                status="running",
-                ui_message="Running RAG phase...",
-                started_at=rag_started_at,
-                metadata={
-                    "collection": settings.rag_collection_base,
-                    "k": settings.rag_k,
-                    "k_max": settings.rag_k_max,
-                },
+                status="skipped",
+                ui_message="RAG skipped: configuration missing",
+                started_at=skipped_ts,
+                ended_at=skipped_ts,
+                latency_ms=0,
             )
+            raise ValueError("RAG_HTTP_BASE_URL is required in FastAPI-only mode")
+        rag_started_perf = time.perf_counter()
+        rag_started_at = utc_now_iso()
+        yield state_event(
+            phase="rag",
+            status="running",
+            ui_message="Running RAG phase...",
+            started_at=rag_started_at,
+            metadata={
+                "collection": settings.rag_collection_base,
+                "k": settings.rag_k,
+                "k_max": settings.rag_k_max,
+            },
+        )
+        async with bind_pipeline_phase("rag"):
             _pipeline_log.info(
                 "rag_started",
                 extra={
@@ -399,60 +400,61 @@ async def stream_answer_query(
                     **({"gateway_meta": dict(conv_gw)} if conv_gw else {}),
                 },
             )
-            state_queue: asyncio.Queue = asyncio.Queue()
+        state_queue: asyncio.Queue = asyncio.Queue()
 
-            async def emit_graph_state(**kwargs):
-                await state_queue.put(state_event(**kwargs))
+        async def emit_graph_state(**kwargs):
+            await state_queue.put(state_event(**kwargs))
 
-            graph_task = asyncio.create_task(
-                run_graph(
-                    messages,
-                    tools_s,
-                    invoke_s,
-                    request_id=request_id,
-                    session_id=session_id,
-                    trace_id=trace_id,
-                    rag_user=rag_user,
-                    standalone_question=rewritten.strip(),
-                    emit_state=emit_graph_state,
-                    downstream_acquire_timeout_s=request_timeout_s,
-                    conversation_id=conv or None,
-                    is_new_conversation=is_new_conversation,
-                )
+        graph_task = asyncio.create_task(
+            run_graph(
+                messages,
+                tools_s,
+                invoke_s,
+                request_id=request_id,
+                session_id=session_id,
+                trace_id=trace_id,
+                rag_user=rag_user,
+                standalone_question=rewritten.strip(),
+                emit_state=emit_graph_state,
+                downstream_acquire_timeout_s=request_timeout_s,
+                conversation_id=conv or None,
+                is_new_conversation=is_new_conversation,
             )
-            try:
-                while not graph_task.done():
-                    get_task = asyncio.create_task(state_queue.get())
-                    done, _ = await asyncio.wait(
-                        {graph_task, get_task},
-                        return_when=asyncio.FIRST_COMPLETED,
-                    )
-                    if get_task in done:
-                        try:
-                            ev = get_task.result()
-                        except asyncio.CancelledError:
-                            continue
-                        yield ev
-                    if graph_task in done:
-                        if not get_task.done():
-                            get_task.cancel()
-                            with contextlib.suppress(asyncio.CancelledError):
-                                await get_task
-                        break
-                while True:
+        )
+        try:
+            while not graph_task.done():
+                get_task = asyncio.create_task(state_queue.get())
+                done, _ = await asyncio.wait(
+                    {graph_task, get_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if get_task in done:
                     try:
-                        yield state_queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        break
-                messages, agent_graph_run_id = graph_task.result()
-            except BaseException:
-                if not graph_task.done():
-                    graph_task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await graph_task
-                raise
-            graph_answer = last_rag_tool_evidence(messages)
-            if graph_answer:
+                        ev = get_task.result()
+                    except asyncio.CancelledError:
+                        continue
+                    yield ev
+                if graph_task in done:
+                    if not get_task.done():
+                        get_task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await get_task
+                    break
+            while True:
+                try:
+                    yield state_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+            messages, agent_graph_run_id = graph_task.result()
+        except BaseException:
+            if not graph_task.done():
+                graph_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await graph_task
+            raise
+        graph_answer = last_rag_tool_evidence(messages)
+        if graph_answer:
+            async with bind_pipeline_phase("rag"):
                 _pipeline_log.info(
                     "answer_emitted",
                     extra={
@@ -462,27 +464,28 @@ async def stream_answer_query(
                         "gateway_meta": {"answer_len": len(graph_answer), **conv_gw},
                     },
                 )
-                ans_event: Dict[str, Any] = {"type": "answer", "text": graph_answer}
-                env = last_rag_tool_envelope(messages)
-                if env.get("citations") is not None:
-                    ans_event["citations"] = env["citations"]
-                if env.get("follow_up_questions") is not None:
-                    ans_event["follow_up_questions"] = env["follow_up_questions"]
-                yield ans_event
-            rag_ended_at = utc_now_iso()
-            yield state_event(
-                phase="rag",
-                status="completed",
-                ui_message="RAG phase completed",
-                started_at=rag_started_at,
-                ended_at=rag_ended_at,
-                latency_ms=(time.perf_counter() - rag_started_perf) * 1000,
-                metadata={
-                    "collection": settings.rag_collection_base,
-                    "k": settings.rag_k,
-                    "k_max": settings.rag_k_max,
-                },
-            )
+            ans_event: Dict[str, Any] = {"type": "answer", "text": graph_answer}
+            env = last_rag_tool_envelope(messages)
+            if env.get("citations") is not None:
+                ans_event["citations"] = env["citations"]
+            if env.get("follow_up_questions") is not None:
+                ans_event["follow_up_questions"] = env["follow_up_questions"]
+            yield ans_event
+        rag_ended_at = utc_now_iso()
+        yield state_event(
+            phase="rag",
+            status="completed",
+            ui_message="RAG phase completed",
+            started_at=rag_started_at,
+            ended_at=rag_ended_at,
+            latency_ms=(time.perf_counter() - rag_started_perf) * 1000,
+            metadata={
+                "collection": settings.rag_collection_base,
+                "k": settings.rag_k,
+                "k_max": settings.rag_k_max,
+            },
+        )
+        async with bind_pipeline_phase("rag"):
             _pipeline_log.info(
                 "rag_completed",
                 extra={
@@ -508,15 +511,6 @@ async def stream_answer_query(
         err_text = format_error(e)
         async with bind_pipeline_phase("error"):
             fail_ts = utc_now_iso()
-            yield state_event(
-                phase="request_complete",
-                status="failed",
-                ui_message="Request failed",
-                started_at=fail_ts,
-                ended_at=fail_ts,
-                latency_ms=0,
-                metadata={"error_type": type(e).__name__},
-            )
             if not getattr(e, "_pipeline_logged", False):
                 err_extra: Dict[str, Any] = {
                     "event": "stream_answer_error",
@@ -530,7 +524,16 @@ async def stream_answer_query(
                 if conv:
                     err_extra["gateway_meta"] = dict(conv_gw)
                 _pipeline_log.error("stream_answer_error", extra=err_extra)
-            yield {"type": "error", "text": err_text}
+        yield state_event(
+            phase="request_complete",
+            status="failed",
+            ui_message="Request failed",
+            started_at=fail_ts,
+            ended_at=fail_ts,
+            latency_ms=0,
+            metadata={"error_type": type(e).__name__},
+        )
+        yield {"type": "error", "text": err_text}
 
 
 def format_error(e: BaseException) -> str:
