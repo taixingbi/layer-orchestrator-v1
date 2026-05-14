@@ -74,9 +74,7 @@ class _RequestContextFilter(logging.Filter):
             record.phase = get_pipeline_phase()
         # Prefer explicit record.conversation_id (e.g. from http_request_complete + request.state).
         existing = getattr(record, "conversation_id", None)
-        if isinstance(existing, str) and existing.strip() and existing != "-":
-            pass
-        else:
+        if not (isinstance(existing, str) and existing.strip() and existing != "-"):
             record.conversation_id = get_conversation_id()
         return True
 

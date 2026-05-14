@@ -106,6 +106,7 @@ async def run_graph(
             await semaphore.acquire()
         acquired = True
     try:
+        cg = (conversation_id or "").strip()
         async with bind_pipeline_phase("agent_graph"):
             _pipeline_log.info(
                 "graph_run_started",
@@ -113,16 +114,7 @@ async def run_graph(
                     "event": "graph_run_started",
                     "request_id": request_id or "-",
                     "session_id": session_id or "-",
-                    **(
-                        {
-                            "gateway_meta": {
-                                "conversation_id": (conversation_id or "").strip(),
-                                "is_new_conversation": bool(is_new_conversation),
-                            },
-                        }
-                        if (conversation_id or "").strip()
-                        else {}
-                    ),
+                    **({"gateway_meta": {"conversation_id": cg, "is_new_conversation": bool(is_new_conversation)}} if cg else {}),
                 },
             )
             agent = await build_graph_agent(
@@ -140,8 +132,8 @@ async def run_graph(
                     v = rag_user.get(key)
                     if v:
                         configurable[key] = v
-            if (conversation_id or "").strip():
-                configurable["conversation_id"] = (conversation_id or "").strip()
+            if cg:
+                configurable["conversation_id"] = cg
                 configurable["is_new_conversation"] = bool(is_new_conversation)
             if standalone_question:
                 configurable["standalone_question"] = standalone_question
@@ -153,7 +145,7 @@ async def run_graph(
                 "tags": get_langsmith_tags(
                     request_id=request_id,
                     session_id=session_id,
-                    conversation_id=(conversation_id or "").strip() or None,
+                    conversation_id=cg or None,
                 ),
                 "configurable": configurable,
             }
@@ -249,6 +241,10 @@ async def stream_answer_query(
     t0 = time.perf_counter()
     use_http_rag = bool(settings.rag_http_base_url)
     hist = list(history) if history else []
+    conv = (conversation_id or "").strip()
+    conv_gw = (
+        {"conversation_id": conv, "is_new_conversation": bool(is_new_conversation)} if conv else {}
+    )
     try:
         async with bind_pipeline_phase("request"):
             _pipeline_log.info(
@@ -260,7 +256,7 @@ async def stream_answer_query(
                     "gateway_meta": {
                         "tools_timeout_s": tools_s,
                         "invoke_timeout_s": invoke_s,
-                        "conversation_id": (conversation_id or None),
+                        "conversation_id": conv or None,
                         "is_new_conversation": is_new_conversation,
                     },
                 },
@@ -301,7 +297,7 @@ async def stream_answer_query(
                 request_id=request_id,
                 session_id=session_id,
                 trace_id=trace_id,
-                conversation_id=conversation_id,
+                conversation_id=conv or None,
                 is_new_conversation=is_new_conversation,
             )
             decision = normalize_post_router(decision)
@@ -328,14 +324,7 @@ async def stream_answer_query(
                     "gateway_meta": {
                         "route": decision.route,
                         "rewritten_preview": (decision.rewritten_question or "")[:120] or None,
-                        **(
-                            {
-                                "conversation_id": (conversation_id or "").strip(),
-                                "is_new_conversation": bool(is_new_conversation),
-                            }
-                            if (conversation_id or "").strip()
-                            else {}
-                        ),
+                        **conv_gw,
                     },
                 },
             )
@@ -358,14 +347,7 @@ async def stream_answer_query(
                     "gateway_meta": {
                         "route": decision.route,
                         "answer_len": len(answer_text),
-                        **(
-                            {
-                                "conversation_id": (conversation_id or "").strip(),
-                                "is_new_conversation": bool(is_new_conversation),
-                            }
-                            if (conversation_id or "").strip()
-                            else {}
-                        ),
+                        **conv_gw,
                     },
                 },
             )
@@ -374,7 +356,7 @@ async def stream_answer_query(
                 t0,
                 request_id,
                 session_id,
-                conversation_id=conversation_id,
+                conversation_id=conv or None,
                 is_new_conversation=is_new_conversation,
             ):
                 yield ev
@@ -414,16 +396,7 @@ async def stream_answer_query(
                     "event": "rag_started",
                     "request_id": request_id,
                     "session_id": session_id or "-",
-                    **(
-                        {
-                            "gateway_meta": {
-                                "conversation_id": (conversation_id or "").strip(),
-                                "is_new_conversation": bool(is_new_conversation),
-                            },
-                        }
-                        if (conversation_id or "").strip()
-                        else {}
-                    ),
+                    **({"gateway_meta": dict(conv_gw)} if conv_gw else {}),
                 },
             )
             state_queue: asyncio.Queue = asyncio.Queue()
@@ -443,7 +416,7 @@ async def stream_answer_query(
                     standalone_question=rewritten.strip(),
                     emit_state=emit_graph_state,
                     downstream_acquire_timeout_s=request_timeout_s,
-                    conversation_id=conversation_id,
+                    conversation_id=conv or None,
                     is_new_conversation=is_new_conversation,
                 )
             )
@@ -486,17 +459,7 @@ async def stream_answer_query(
                         "event": "answer_emitted",
                         "request_id": request_id,
                         "session_id": session_id or "-",
-                        "gateway_meta": {
-                            "answer_len": len(graph_answer),
-                            **(
-                                {
-                                    "conversation_id": (conversation_id or "").strip(),
-                                    "is_new_conversation": bool(is_new_conversation),
-                                }
-                                if (conversation_id or "").strip()
-                                else {}
-                            ),
-                        },
+                        "gateway_meta": {"answer_len": len(graph_answer), **conv_gw},
                     },
                 )
                 ans_event: Dict[str, Any] = {"type": "answer", "text": graph_answer}
@@ -529,14 +492,7 @@ async def stream_answer_query(
                     "latency_ms": round((time.perf_counter() - rag_started_perf) * 1000, 2),
                     "gateway_meta": {
                         "has_agent_graph_run_id": bool(agent_graph_run_id),
-                        **(
-                            {
-                                "conversation_id": (conversation_id or "").strip(),
-                                "is_new_conversation": bool(is_new_conversation),
-                            }
-                            if (conversation_id or "").strip()
-                            else {}
-                        ),
+                        **conv_gw,
                     },
                 },
             )
@@ -544,7 +500,7 @@ async def stream_answer_query(
             t0,
             request_id,
             session_id,
-            conversation_id=conversation_id,
+            conversation_id=conv or None,
             is_new_conversation=is_new_conversation,
         ):
             yield ev
@@ -571,11 +527,8 @@ async def stream_answer_query(
                     "error_type": type(e).__name__,
                     "error_message": str(e),
                 }
-                if (conversation_id or "").strip():
-                    err_extra["gateway_meta"] = {
-                        "conversation_id": (conversation_id or "").strip(),
-                        "is_new_conversation": bool(is_new_conversation),
-                    }
+                if conv:
+                    err_extra["gateway_meta"] = dict(conv_gw)
                 _pipeline_log.error("stream_answer_error", extra=err_extra)
             yield {"type": "error", "text": err_text}
 

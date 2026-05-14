@@ -83,7 +83,6 @@ class _RequestContextTokens:
     method: Token[str]
     path: Token[str]
     status: Token[str]
-    phase: Token[str]
 
 
 def bind_request_context(
@@ -94,7 +93,12 @@ def bind_request_context(
     path: str,
     status: str = "-",
 ) -> _RequestContextTokens:
-    """Set context for the current task; caller must ``reset_request_context`` in ``finally``."""
+    """Set context for the current task; caller must ``reset_request_context`` in ``finally``.
+
+    Does **not** set ``pipeline_phase``: HTTP middleware ``finally`` runs before ``StreamingResponse``
+    bodies finish, so resetting ``_pipeline_phase`` there would break nested ``bind_pipeline_phase``
+    in the stream (ContextVar token / context mismatch).
+    """
     rid = request_id.strip() or "-"
     sid_raw = (session_id or "").strip() or "-"
     return _RequestContextTokens(
@@ -103,7 +107,6 @@ def bind_request_context(
         method=_http_method.set(method or "-"),
         path=_http_path.set(path or "-"),
         status=_http_status.set(status or "-"),
-        phase=_pipeline_phase.set("-"),
     )
 
 
@@ -113,7 +116,6 @@ def reset_request_context(tokens: _RequestContextTokens) -> None:
     _http_method.reset(tokens.method)
     _http_path.reset(tokens.path)
     _http_status.reset(tokens.status)
-    _pipeline_phase.reset(tokens.phase)
 
 
 def set_http_status(status: str) -> None:
