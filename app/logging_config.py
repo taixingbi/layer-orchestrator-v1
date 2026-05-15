@@ -90,6 +90,7 @@ class _JsonFormatter(logging.Formatter):
         }
         if hasattr(record, "event"):
             payload["event"] = getattr(record, "event")
+        payload["message"] = record.getMessage()
         payload.update(
             {
                 "request_id": getattr(record, "request_id", "-"),
@@ -98,7 +99,6 @@ class _JsonFormatter(logging.Formatter):
                 "method": getattr(record, "method", "-"),
                 "path": getattr(record, "path", "-"),
                 "status": getattr(record, "status", "-"),
-                "message": record.getMessage(),
             }
         )
         if record.exc_info:
