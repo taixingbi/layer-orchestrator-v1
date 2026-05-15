@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import random
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -9,6 +10,9 @@ import httpx
 from langchain_core.tools import tool
 
 from .config import settings
+
+_rag_log = logging.getLogger("layer_orchestrator.rag_http")
+_RAG_LOG_JSON_MAX_CHARS = 80_000
 
 # JSON keys tried in order for the user-visible answer string (RAG API variants).
 _RAG_ANSWER_KEYS: Tuple[str, ...] = ("answer", "response", "generated_answer", "text")
@@ -134,7 +138,7 @@ def _extract_rag_latency_ms(data: Any) -> Optional[Dict[str, Any]]:
 
 
 def _rag_api_body_for_log(data: Any) -> Dict[str, Any]:
-    """Mirror RAG JSON for logs: answer, citations, follow_up_questions, latency_ms (omit retrieval_hits)."""
+    """Mirror RAG JSON for metadata sidecars (answer, citations, follow_up_questions, latency_ms)."""
     if not isinstance(data, dict):
         return {"_shape": type(data).__name__}
     out: Dict[str, Any] = {}
@@ -147,6 +151,58 @@ def _rag_api_body_for_log(data: Any) -> Dict[str, Any]:
                 out["answer"] = data[alt]
                 break
     return out
+
+
+def _rag_payload_for_log(data: Any, *, max_chars: int = _RAG_LOG_JSON_MAX_CHARS) -> Any:
+    """Full request/response JSON for structured logs; truncate only when serialization is huge."""
+    try:
+        serialized = json.dumps(data, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        return {"_unserializable": repr(data)[:2000]}
+    if len(serialized) <= max_chars:
+        return data
+    return {
+        "_truncated": True,
+        "_original_bytes": len(serialized),
+        "_preview": serialized[:max_chars],
+    }
+
+
+def _log_rag_query_request(*, url: str, payload: Dict[str, Any], headers: Dict[str, str]) -> None:
+    _rag_log.info(
+        "rag_query_api_request",
+        extra={
+            "event": "rag_query_api_request",
+            "gateway_meta": {
+                "url": url,
+                "rag_api_request": _rag_payload_for_log(payload),
+                "rag_api_request_headers": dict(headers),
+            },
+        },
+    )
+
+
+def _log_rag_query_response(
+    *,
+    url: str,
+    http_status: int,
+    attempts: int,
+    data: Any,
+    content_type: str = "",
+) -> None:
+    _rag_log.info(
+        "rag_query_api_response",
+        extra={
+            "event": "rag_query_api_response",
+            "gateway_meta": {
+                "url": url,
+                "http_status_code": http_status,
+                "rag_http_attempts": attempts,
+                "content_type": content_type or None,
+                "rag_api_response": _rag_payload_for_log(data),
+            },
+        },
+    )
 
 
 def _rag_retry_delay_s(attempt_index: int, response: Optional[httpx.Response]) -> float:
@@ -236,6 +292,7 @@ async def query_rag_http_with_meta(
         "X-Is-New-Conversation": ("true" if is_new_conversation else "false") if cid else "",
     }
     headers = {k: v for k, v in headers.items() if v}
+    _log_rag_query_request(url=url, payload=payload, headers=headers)
     client = _shared_http_client()
     max_attempts = settings.rag_http_max_attempts
     response: Optional[httpx.Response] = None
@@ -268,6 +325,13 @@ async def query_rag_http_with_meta(
         data = _accumulate_sse_payload(events)
     else:
         data = response.json()
+    _log_rag_query_response(
+        url=url,
+        http_status=http_status,
+        attempts=attempt + 1,
+        data=data,
+        content_type=ctype,
+    )
     metadata: Dict[str, Any] = {
         "http_status_code": http_status,
         "rag_http_attempts": attempt + 1,

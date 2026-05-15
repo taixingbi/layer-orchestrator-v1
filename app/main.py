@@ -119,6 +119,17 @@ def _sse_stream_answer_gen(
 ) -> AsyncIterator[str]:
     """Async generator for POST /orchestrator/answer with stream=true."""
 
+    def _timeout_error_event(text: str) -> dict:
+        return {
+            "type": "error",
+            "text": text,
+            "session_id": session_id,
+            "request_id": request_id,
+            "trace_id": trace_id,
+            "conversation_id": conversation_id,
+            "is_new_conversation": is_new_conversation,
+        }
+
     async def _gen():
         async with bind_conversation_logging_context(conversation_id, is_new_conversation):
             ait = _answer_event_iter(
@@ -138,7 +149,9 @@ def _sse_stream_answer_gen(
                     remaining = request_timeout_s - (time.perf_counter() - started)
                     if remaining <= 0:
                         inc_timeout("request")
-                        timeout_event = {"type": "error", "text": "Error: TimeoutError: request timeout exceeded"}
+                        timeout_event = _timeout_error_event(
+                            "Error: TimeoutError: request timeout exceeded"
+                        )
                         observe_pipeline_event(timeout_event)
                         yield f"data: {json.dumps(timeout_event)}\n\n"
                         return
@@ -154,7 +167,7 @@ def _sse_stream_answer_gen(
                     else:
                         msg = "Error: TimeoutError: stream idle timeout exceeded"
                         inc_timeout("stream_idle")
-                    timeout_event = {"type": "error", "text": msg}
+                    timeout_event = _timeout_error_event(msg)
                     observe_pipeline_event(timeout_event)
                     yield f"data: {json.dumps(timeout_event)}\n\n"
                     return
@@ -359,9 +372,14 @@ async def _answer_json(
         if t == "request_id":
             final["request_id"] = event.get("request_id")
             final["session_id"] = event.get("session_id")
+            final["trace_id"] = event.get("trace_id")
             final["conversation_id"] = event.get("conversation_id")
             if event.get("is_new_conversation") is not None:
                 final["is_new_conversation"] = event.get("is_new_conversation")
+        elif t == "done":
+            for key in ("request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation"):
+                if event.get(key) is not None:
+                    final[key] = event.get(key)
         elif t == "rewrite":
             final["rewrite"] = event.get("text")
         elif t == "route":
@@ -389,6 +407,9 @@ async def _answer_json(
                 if states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
             ]
             final["timings_ms"] = _build_timings_summary(terminal_states)
+            for key in ("request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation"):
+                if event.get(key) is not None:
+                    final[key] = event.get(key)
             return {
                 **final,
                 "status": "error",

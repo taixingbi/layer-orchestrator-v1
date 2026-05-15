@@ -174,13 +174,13 @@ Response: **SSE**, each line `data: <json>\n\n`.
 
 | `type` | Description |
 |--------|-------------|
-| `request_id` | `{ "type": "request_id", "request_id", "session_id", "conversation_id", "is_new_conversation" }` — early correlation (`conversation_id` is always the effective id; omitted keys besides these may be null) |
+| `request_id` | `{ "type": "request_id", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation" }` — early correlation (`conversation_id` is always the effective id; omitted keys besides these may be null) |
 | `rewrite` | `{ "type": "rewrite", "text": "..." }` |
 | `route` | `{ "type": "route", "route": "rag" \| ... }` |
 | `state` | Phase progress; see **State object** below |
 | `answer` | `{ "type": "answer", "text": "..." }`; on RAG path may include `citations`, `follow_up_questions` when returned by RAG |
-| `done` | `{ "type": "done" }` — success end |
-| `error` | `{ "type": "error", "text": "..." }` — failure |
+| `done` | `{ "type": "done", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation" }` — success end |
+| `error` | `{ "type": "error", "text": "...", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation" }` — failure |
 
 ### State object (`type: "state"`)
 

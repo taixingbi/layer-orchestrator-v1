@@ -37,11 +37,31 @@ def _get_downstream_semaphore() -> Optional[asyncio.Semaphore]:
     return _downstream_semaphore
 
 
+def _stream_correlation_fields(
+    *,
+    session_id: Optional[str],
+    request_id: str,
+    trace_id: Optional[str],
+    conversation_id: Optional[str],
+    is_new_conversation: bool,
+) -> Dict[str, Any]:
+    """Correlation ids echoed on stream events (request_id, done, error)."""
+    cid = (conversation_id or "").strip() or None
+    return {
+        "session_id": session_id,
+        "request_id": request_id,
+        "trace_id": trace_id,
+        "conversation_id": cid,
+        "is_new_conversation": is_new_conversation,
+    }
+
+
 async def _yield_request_complete_done(
     t0: float,
     request_id: str,
     session_id: Optional[str],
     *,
+    trace_id: Optional[str] = None,
     conversation_id: Optional[str] = None,
     is_new_conversation: bool = False,
 ) -> AsyncIterator[dict]:
@@ -67,7 +87,16 @@ async def _yield_request_complete_done(
     async with bind_pipeline_phase("request_complete"):
         _pipeline_log.info("request_completed", extra=extra)
     yield complete_state
-    yield {"type": "done"}
+    yield {
+        "type": "done",
+        **_stream_correlation_fields(
+            session_id=session_id,
+            request_id=request_id,
+            trace_id=trace_id,
+            conversation_id=cid,
+            is_new_conversation=is_new_conversation,
+        ),
+    }
 
 
 class _AgentRunIdCallback(AsyncCallbackHandler):
@@ -277,10 +306,13 @@ async def stream_answer_query(
             )
         yield {
             "type": "request_id",
-            "session_id": session_id,
-            "request_id": request_id,
-            "conversation_id": conversation_id,
-            "is_new_conversation": is_new_conversation,
+            **_stream_correlation_fields(
+                session_id=session_id,
+                request_id=request_id,
+                trace_id=trace_id,
+                conversation_id=conv or conversation_id,
+                is_new_conversation=is_new_conversation,
+            ),
         }
         router_started_perf = time.perf_counter()
         router_started_at = utc_now_iso()
@@ -357,6 +389,7 @@ async def stream_answer_query(
                 t0,
                 request_id,
                 session_id,
+                trace_id=trace_id,
                 conversation_id=conv or None,
                 is_new_conversation=is_new_conversation,
             ):
@@ -503,6 +536,7 @@ async def stream_answer_query(
             t0,
             request_id,
             session_id,
+            trace_id=trace_id,
             conversation_id=conv or None,
             is_new_conversation=is_new_conversation,
         ):
@@ -533,7 +567,17 @@ async def stream_answer_query(
             latency_ms=0,
             metadata={"error_type": type(e).__name__},
         )
-        yield {"type": "error", "text": err_text}
+        yield {
+            "type": "error",
+            "text": err_text,
+            **_stream_correlation_fields(
+                session_id=session_id,
+                request_id=request_id,
+                trace_id=trace_id,
+                conversation_id=conv or conversation_id,
+                is_new_conversation=is_new_conversation,
+            ),
+        }
 
 
 def format_error(e: BaseException) -> str:

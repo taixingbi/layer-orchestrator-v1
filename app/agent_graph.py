@@ -71,15 +71,14 @@ async def build_graph_agent(
                 conversation_id=cid,
                 is_new_conversation=is_new,
             )
-            _graph_log.info(
-                "rag_query_api_response",
+            _graph_log.debug(
+                "rag_query_completed",
                 extra={
-                    "event": "rag_query_api_response",
+                    "event": "rag_query_completed",
                     "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
                     "gateway_meta": {
                         "evidence_len": len(evidence or ""),
                         "http_status_code": rag_meta.get("http_status_code"),
-                        "rag_api_response": rag_meta.get("rag_api_response"),
                         **({"conversation_id": cid, "is_new_conversation": is_new} if cid else {}),
                     },
                 },
