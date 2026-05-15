@@ -812,7 +812,9 @@ async def orchestrator_eval_router(request: Request):
             conversation_id=conversation_id,
             is_new_conversation=is_new_conversation,
         )
-        decision = normalize_post_router(decision)
+        decision = normalize_post_router(
+            decision, latest_question=body.question, history=hist
+        )
         evaluation = _router_eval_payload(
             decision,
             question=body.question,

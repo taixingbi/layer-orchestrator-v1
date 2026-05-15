@@ -78,7 +78,11 @@ Same as parse failure: **`fallback_router_decision`** (`rag`) plus the two post-
 
 ### 7. `normalize_post_router` (callers after return)
 
-[`normalize_post_router`](../app/intent_rewrite_router.py) runs in **`app/orchestrator.py`** and eval in **`app/main.py`**: if **`route`** is **`direct_reply`** but **`direct_answer`** is empty, the decision is adjusted to **`clarify`** with a short default message so the client never gets a blank direct reply.
+[`normalize_post_router`](../app/intent_rewrite_router.py) runs in **`app/orchestrator.py`** and eval in **`app/main.py`** with the latest question and history:
+
+1. **`maybe_override_direct_reply_for_kb_grounded`** — If the model chose **`direct_reply`** but the latest line names the candidate, or is an immigration/work-auth follow-up in a thread that already mentions the candidate (or uses second-person for that topic), the server switches to **`rag`** so the answer includes KB **citations** and **follow_up_questions** instead of replaying chat history.
+
+2. **Empty `direct_reply`** — If **`direct_answer`** is still empty, the decision is adjusted to **`clarify`** with a short default message so the client never gets a blank direct reply.
 
 ## Prompt assets (split responsibilities)
 

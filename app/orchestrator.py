@@ -348,7 +348,7 @@ async def stream_answer_query(
                 conversation_id=conv or None,
                 is_new_conversation=is_new_conversation,
             )
-            decision = normalize_post_router(decision)
+            decision = normalize_post_router(decision, latest_question=query, history=hist)
             router_ended_at = utc_now_iso()
             _pipeline_log.info(
                 "intent_router_phase_completed",

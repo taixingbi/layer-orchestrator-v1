@@ -297,6 +297,53 @@ def _latest_question_names_candidate(q: str) -> bool:
     return False
 
 
+def _history_mentions_candidate(history: List[Tuple[str, str]]) -> bool:
+    for _, content in history:
+        if _latest_question_names_candidate(content or ""):
+            return True
+    return False
+
+
+def _direct_reply_should_use_rag(latest_question: str, history: List[Tuple[str, str]]) -> bool:
+    """Candidate / KB-grounded asks must use rag for citations and follow-ups, even with history."""
+    q = (latest_question or "").strip()
+    if not q:
+        return False
+    if _latest_question_names_candidate(q):
+        return True
+    if not _GENERAL_IMMIGRATION_OR_WORK_AUTH_RE.search(q):
+        return False
+    if _history_mentions_candidate(history):
+        return True
+    if _SECOND_PERSON_IN_QUESTION_RE.search(q):
+        return True
+    return False
+
+
+def maybe_override_direct_reply_for_kb_grounded(
+    decision: RouterDecision,
+    latest_question: str,
+    history: Optional[List[Tuple[str, str]]] = None,
+) -> RouterDecision:
+    """If the router chose direct_reply but the ask needs KB citations, switch to rag."""
+    if decision.route != "direct_reply":
+        return decision
+    hist = list(history or [])
+    if not _direct_reply_should_use_rag(latest_question, hist):
+        return decision
+    q = (latest_question or "").strip()
+    rq = (decision.rewritten_question or "").strip() or q
+    rq = rewrite_to_third_person(rq) if q else rq
+    suffix = " [server: kb_grounded→rag]"
+    return RouterDecision(
+        rewritten_question=rq or q,
+        route="rag",
+        can_answer_directly=False,
+        direct_answer=None,
+        reason=((decision.reason or "").strip() + suffix).strip(),
+    )
+
+
 def maybe_override_rag_for_general_question(decision: RouterDecision, latest_question: str) -> RouterDecision:
     """If the router chose rag but the ask is general immigration/process and not about the candidate, use direct_reply."""
     if decision.route != "rag":
@@ -373,8 +420,16 @@ def fallback_router_decision(question: str, *, reason: str = "parse_fallback") -
     )
 
 
-def normalize_post_router(decision: RouterDecision) -> RouterDecision:
-    """Empty direct_reply answer → clarify-style response."""
+def normalize_post_router(
+    decision: RouterDecision,
+    *,
+    latest_question: str = "",
+    history: Optional[List[Tuple[str, str]]] = None,
+) -> RouterDecision:
+    """Post-router fixes: KB-grounded direct_reply → rag; empty direct_reply → clarify."""
+    decision = maybe_override_direct_reply_for_kb_grounded(
+        decision, latest_question, history
+    )
     if decision.route != "direct_reply":
         return decision
     if (decision.direct_answer or "").strip():
