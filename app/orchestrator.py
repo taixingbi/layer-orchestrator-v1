@@ -37,6 +37,21 @@ def _get_downstream_semaphore() -> Optional[asyncio.Semaphore]:
     return _downstream_semaphore
 
 
+def _answer_event(
+    text: str,
+    *,
+    citations: Optional[List[Any]] = None,
+    follow_up_questions: Optional[List[Any]] = None,
+) -> Dict[str, Any]:
+    """Answer SSE/JSON chunk; citations and follow-ups always present (empty when not from RAG)."""
+    return {
+        "type": "answer",
+        "text": text,
+        "citations": list(citations) if citations is not None else [],
+        "follow_up_questions": list(follow_up_questions) if follow_up_questions is not None else [],
+    }
+
+
 def _stream_correlation_fields(
     *,
     session_id: Optional[str],
@@ -384,7 +399,7 @@ async def stream_answer_query(
                     },
                 },
             )
-            yield {"type": "answer", "text": answer_text}
+            yield _answer_event(answer_text)
             async for ev in _yield_request_complete_done(
                 t0,
                 request_id,
@@ -497,13 +512,12 @@ async def stream_answer_query(
                         "gateway_meta": {"answer_len": len(graph_answer), **conv_gw},
                     },
                 )
-            ans_event: Dict[str, Any] = {"type": "answer", "text": graph_answer}
             env = last_rag_tool_envelope(messages)
-            if env.get("citations") is not None:
-                ans_event["citations"] = env["citations"]
-            if env.get("follow_up_questions") is not None:
-                ans_event["follow_up_questions"] = env["follow_up_questions"]
-            yield ans_event
+            yield _answer_event(
+                graph_answer,
+                citations=env.get("citations"),
+                follow_up_questions=env.get("follow_up_questions"),
+            )
         rag_ended_at = utc_now_iso()
         yield state_event(
             phase="rag",

@@ -358,6 +358,8 @@ async def _answer_json(
         "route": None,
         "rewrite": None,
         "answer": None,
+        "citations": [],
+        "follow_up_questions": [],
     }
     states_by_phase: Dict[str, dict] = {}
     state_phase_order: List[str] = []
@@ -389,10 +391,8 @@ async def _answer_json(
             final["route"] = event.get("route")
         elif t == "answer":
             final["answer"] = event.get("text")
-            if "citations" in event:
-                final["citations"] = event["citations"]
-            if "follow_up_questions" in event:
-                final["follow_up_questions"] = event["follow_up_questions"]
+            final["citations"] = event.get("citations", [])
+            final["follow_up_questions"] = event.get("follow_up_questions", [])
         elif t == "state":
             phase = event.get("phase")
             if not phase:

@@ -88,8 +88,8 @@ Violations and timeout behavior:
 | `is_new_conversation` | Always — `true` if the server assigned a new id this request |
 | `rewrite` | After router emits rewrite |
 | `answer` | After an answer is produced |
-| `citations` | RAG path only, when the RAG service returned `citations` |
-| `follow_up_questions` | RAG path only, when the RAG service returned `follow_up_questions` |
+| `citations` | Always — populated from RAG when `route` is `rag`; otherwise `[]` |
+| `follow_up_questions` | Always — populated from RAG when `route` is `rag`; otherwise `[]` |
 
 **`route`** is lowercase (intent/rewrite router output).
 
@@ -177,7 +177,7 @@ Response: **SSE**, each line `data: <json>\n\n`.
 | `request_id` | `{ "type": "request_id", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation" }` — early correlation (`conversation_id` is always the effective id; omitted keys besides these may be null) |
 | `rewrite` | `{ "type": "rewrite", "text": "..." }` |
 | `route` | `{ "type": "route", "route": "rag" \| ... }` |
-| `answer` | `{ "type": "answer", "text": "..." }`; on RAG path may include `citations`, `follow_up_questions` when returned by RAG |
+| `answer` | `{ "type": "answer", "text": "...", "citations": [], "follow_up_questions": [] }` — RAG fills arrays when the service returns them |
 | `done` | `{ "type": "done", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation" }` — success end |
 | `error` | `{ "type": "error", "text": "...", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation" }` — failure |
 
