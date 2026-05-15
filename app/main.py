@@ -171,6 +171,9 @@ def _sse_stream_answer_gen(
                     observe_pipeline_event(timeout_event)
                     yield f"data: {json.dumps(timeout_event)}\n\n"
                     return
+                # Stream clients get correlation + outcome events only; phases stay in logs/metrics.
+                if chunk.get("type") == "state":
+                    continue
                 yield f"data: {json.dumps(chunk)}\n\n"
 
     return _gen()

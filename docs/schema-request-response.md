@@ -177,28 +177,13 @@ Response: **SSE**, each line `data: <json>\n\n`.
 | `request_id` | `{ "type": "request_id", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation" }` — early correlation (`conversation_id` is always the effective id; omitted keys besides these may be null) |
 | `rewrite` | `{ "type": "rewrite", "text": "..." }` |
 | `route` | `{ "type": "route", "route": "rag" \| ... }` |
-| `state` | Phase progress; see **State object** below |
 | `answer` | `{ "type": "answer", "text": "..." }`; on RAG path may include `citations`, `follow_up_questions` when returned by RAG |
 | `done` | `{ "type": "done", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation" }` — success end |
 | `error` | `{ "type": "error", "text": "...", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation" }` — failure |
 
-### State object (`type: "state"`)
+**Phase `state` events are not sent on the SSE wire** (they remain in structured logs and Prometheus). Use non-stream JSON (`stream: false`) for `timings_ms` built from internal phase state.
 
-```json
-{
-  "type": "state",
-  "phase": "intent_router | rag | rag_query | request_complete | ...",
-  "status": "running | completed | failed | skipped",
-  "ui_message": "string",
-  "message": "string (same as ui_message)",
-  "started_at": "ISO8601 optional",
-  "ended_at": "ISO8601 optional",
-  "latency_ms": 0,
-  "metadata": {}
-}
-```
-
-Phases are emitted by the orchestrator and, during the graph, by the retrieve node (`rag_query`). Successful completion ends with `request_complete` + `done`.
+Typical successful stream sequence: `request_id` → `rewrite` → `route` → `answer` → `done`.
 
 Timeout examples in stream mode:
 
