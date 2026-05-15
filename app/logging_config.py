@@ -51,7 +51,6 @@ _EXTRA_JSON_FIELDS = (
     "status_code",
     "gateway_meta",
     "structured_error",
-    "event",
 )
 
 
@@ -87,15 +86,21 @@ class _JsonFormatter(logging.Formatter):
             "ts": datetime.fromtimestamp(record.created, tz=_LOG_TZ).isoformat(),
             "level": record.levelname,
             "logger": record.name,
-            "request_id": getattr(record, "request_id", "-"),
-            "session_id": getattr(record, "session_id", "-"),
-            "conversation_id": getattr(record, "conversation_id", "-"),
-            "method": getattr(record, "method", "-"),
-            "path": getattr(record, "path", "-"),
-            "status": getattr(record, "status", "-"),
             "phase": getattr(record, "phase", get_pipeline_phase()),
-            "message": record.getMessage(),
         }
+        if hasattr(record, "event"):
+            payload["event"] = getattr(record, "event")
+        payload.update(
+            {
+                "request_id": getattr(record, "request_id", "-"),
+                "session_id": getattr(record, "session_id", "-"),
+                "conversation_id": getattr(record, "conversation_id", "-"),
+                "method": getattr(record, "method", "-"),
+                "path": getattr(record, "path", "-"),
+                "status": getattr(record, "status", "-"),
+                "message": record.getMessage(),
+            }
+        )
         if record.exc_info:
             payload["error"] = self.formatException(record.exc_info)
         for key in _EXTRA_JSON_FIELDS:
