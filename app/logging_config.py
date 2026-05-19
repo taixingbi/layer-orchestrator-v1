@@ -40,7 +40,6 @@ _EXTRA_JSON_FIELDS = (
     "duration_ms",
     "latency_ms",
     "latency_total_ms",
-    "trace_id",
     "backend",
     "gpu",
     "reason",
@@ -94,6 +93,7 @@ class _JsonFormatter(logging.Formatter):
         payload.update(
             {
                 "request_id": getattr(record, "request_id", "-"),
+                "trace_id": getattr(record, "trace_id", "-"),
                 "session_id": getattr(record, "session_id", "-"),
                 "conversation_id": getattr(record, "conversation_id", "-"),
                 "method": getattr(record, "method", "-"),

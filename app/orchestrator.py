@@ -95,10 +95,11 @@ async def _yield_request_complete_done(
         "event": "request_completed",
         "request_id": request_id,
         "session_id": session_id or "-",
+        "trace_id": (trace_id or request_id or "-"),
         "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
     }
     if cid:
-        extra["gateway_meta"] = {"conversation_id": cid, "is_new_conversation": bool(is_new_conversation)}
+        extra["gateway_meta"] = {"is_new_conversation": bool(is_new_conversation)}
     async with bind_pipeline_phase("request_complete"):
         _pipeline_log.info("request_completed", extra=extra)
     yield complete_state
