@@ -178,12 +178,12 @@ Response: **SSE**, each line `data: <json>\n\n`.
 | `rewrite` | `{ "type": "rewrite", "text": "..." }` |
 | `route` | `{ "type": "route", "route": "rag" \| ... }` |
 | `answer` | `{ "type": "answer", "text": "...", "citations": [], "follow_up_questions": [] }` — RAG fills arrays when the service returns them |
-| `done` | `{ "type": "done", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation" }` — success end |
-| `error` | `{ "type": "error", "text": "...", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation" }` — failure |
+| `done` | `{ "type": "done", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation", "timings_ms" }` — success end; **`timings_ms`** same shape as non-stream JSON |
+| `error` | `{ "type": "error", "text": "...", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation", "timings_ms"? }` — failure; **`timings_ms`** present when terminal phase states were recorded |
 
 **Phase `state` events are not sent on the SSE wire** (they remain in structured logs and Prometheus). Use non-stream JSON (`stream: false`) for `timings_ms` built from internal phase state.
 
-Typical successful stream sequence: `request_id` → `rewrite` → `route` → `answer` → `done`.
+Typical successful stream sequence: `request_id` → `rewrite` → `route` → `answer` → `done` (with `timings_ms`).
 
 Timeout examples in stream mode:
 

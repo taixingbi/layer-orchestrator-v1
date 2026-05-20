@@ -73,7 +73,7 @@ curl -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
 `-N` turns off curl buffering so Server-Sent Events stream line-by-line.  
 `request_id`, `session_id`, and `trace_id` must be passed in **headers** (not in the JSON body). Optional **`conversation_id`** may be sent in the **body**; the first `{"type":"request_id",...}` event includes the effective **`conversation_id`** and **`is_new_conversation`**, and the same fields appear when the stream is aggregated to JSON.  
 Optional user context (`X-User-Id`, `X-User-Roles`, `X-User-Groups`, `X-User-Teams`) is forwarded to the RAG service on `POST /v1/rag/query`.  
-SSE does **not** include `{"type":"state",...}` phase events (those are logs/metrics only). Expect `request_id`, `rewrite`, `route`, `answer`, then `done`. Use `stream: false` for `timings_ms` / phase breakdown in JSON.
+SSE does **not** include `{"type":"state",...}` phase events (those are logs/metrics only). Expect `request_id`, `rewrite`, `route`, `answer`, then `done` with **`timings_ms`** (same shape as non-stream). Phase breakdown is not streamed line-by-line; timings are aggregated on `done`.
 
 ```bash
 curl -N -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \

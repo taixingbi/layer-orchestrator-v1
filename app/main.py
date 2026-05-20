@@ -142,6 +142,8 @@ def _sse_stream_answer_gen(
                 conversation_id=conversation_id,
                 is_new_conversation=is_new_conversation,
             ).__aiter__()
+            states_by_phase: Dict[str, dict] = {}
+            state_phase_order: List[str] = []
             started = time.perf_counter()
             while True:
                 timeout_s = stream_idle_timeout_s
@@ -173,7 +175,26 @@ def _sse_stream_answer_gen(
                     return
                 # Stream clients get correlation + outcome events only; phases stay in logs/metrics.
                 if chunk.get("type") == "state":
+                    phase = chunk.get("phase")
+                    if phase:
+                        incoming = _state_slice_from_event(chunk)
+                        if phase not in states_by_phase:
+                            state_phase_order.append(phase)
+                            states_by_phase[phase] = incoming
+                        else:
+                            states_by_phase[phase] = _merge_phase_states(
+                                states_by_phase[phase], incoming
+                            )
                     continue
+                if chunk.get("type") in ("done", "error"):
+                    terminal_states = [
+                        states_by_phase[p]
+                        for p in state_phase_order
+                        if states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
+                    ]
+                    timings_ms = _build_timings_summary(terminal_states)
+                    if timings_ms:
+                        chunk = {**chunk, "timings_ms": timings_ms}
                 yield f"data: {json.dumps(chunk)}\n\n"
 
     return _gen()
