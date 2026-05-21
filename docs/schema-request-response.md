@@ -78,6 +78,21 @@ Violations and timeout behavior:
   "citations": [],
   "follow_up_questions": [],
   "latency_ms": {},
+  "usage": {
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "total_tokens": 0,
+    "intent_router": {
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0
+    },
+    "rag": {
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0
+    }
+  },
   "status": "ok"
 }
 ```
@@ -90,6 +105,7 @@ Violations and timeout behavior:
 | `answer` | After an answer is produced |
 | `citations` | Always — populated from RAG when `route` is `rag`; otherwise `[]` |
 | `follow_up_questions` | Always — populated from RAG when `route` is `rag`; otherwise `[]` |
+| `usage` | Always — flat token totals plus optional nested `intent_router` / `rag` (see below) |
 
 **`route`** is lowercase (intent/rewrite router output).
 
@@ -116,6 +132,18 @@ Built from terminal `state` phases only (`completed`, `failed`, or `skipped`). T
 - `rag.service` — RAG HTTP JSON `latency_ms` breakdown when available (e.g. `embed`, `retrieve`, `chat`, `total`, …).
 
 Use **`latency_ms.total`** for end-to-end wall time (milliseconds).
+
+### `usage` (token counts)
+
+Aggregated OpenAI-style usage for the request. Flat fields sum all phases that reported usage.
+
+| Key | Meaning |
+|-----|---------|
+| `prompt_tokens` | Sum across phases |
+| `completion_tokens` | Sum across phases |
+| `total_tokens` | Sum across phases |
+| `intent_router` | Router LLM (`POST …/v1/chat/completions`) when the router ran an LLM call; omitted on small-talk short-circuit |
+| `rag` | RAG HTTP `POST /v1/rag/query` when `route` is `rag` and the service returned `usage`; omitted if RAG ran but upstream sent no usage |
 
 ### Error (`500`)
 
@@ -177,12 +205,12 @@ Response: **SSE**, each line `data: <json>\n\n`.
 | `rewrite` | `{ "type": "rewrite", "text": "..." }` |
 | `route` | `{ "type": "route", "route": "rag" \| ... }` |
 | `answer` | `{ "type": "answer", "text": "...", "citations": [], "follow_up_questions": [] }` — RAG fills arrays when the service returns them |
-| `done` | `{ "type": "done", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation", "latency_ms" }` — success end; **`latency_ms`** same shape as non-stream JSON |
-| `error` | `{ "type": "error", "text": "...", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation", "latency_ms"? }` — failure; **`latency_ms`** present when terminal phase states were recorded |
+| `done` | `{ "type": "done", …, "latency_ms", "usage" }` — success end; **`latency_ms`** and **`usage`** same shape as non-stream JSON |
+| `error` | `{ "type": "error", "text": "...", …, "latency_ms"?, "usage" }` — failure; **`latency_ms`** / **`usage`** when recorded before failure |
 
 **Phase `state` events are not sent on the SSE wire** (they remain in structured logs and Prometheus). Use non-stream JSON (`stream: false`) for `latency_ms` built from internal phase state.
 
-Typical successful stream sequence: `request_id` → `rewrite` → `route` → `answer` → `done` (with `latency_ms`).
+Typical successful stream sequence: `request_id` → `rewrite` → `route` → `answer` → `done` (with `latency_ms` and `usage`).
 
 Timeout examples in stream mode:
 

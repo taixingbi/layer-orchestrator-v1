@@ -17,6 +17,7 @@ from .agent_rewrite import (
     rewrite_to_third_person,
 )
 from .config import gateway_llm_invoke_kwargs, get_langsmith_tags, get_llm, settings
+from .usage import usage_from_langchain_message
 
 _router_log = logging.getLogger("layer_orchestrator.intent_router")
 
@@ -238,6 +239,7 @@ class RouterDecision(BaseModel):
     can_answer_directly: bool = False
     direct_answer: Optional[str] = None
     reason: str = ""
+    router_usage: Optional[Dict[str, int]] = None
 
     @field_validator("route", mode="before")
     @classmethod
@@ -632,6 +634,7 @@ async def run_intent_rewrite_router(
             **invoke_kw,
         )
         raw = (msg.content or "").strip()
+        router_usage = usage_from_langchain_message(msg)
         obj = _extract_json_object(raw)
         if not obj:
             _router_log.warning(
@@ -655,17 +658,22 @@ async def run_intent_rewrite_router(
             )
         decision = maybe_override_rag_for_general_question(decision, q)
         decision = _ensure_rewritten_question_third_person(decision, q)
+        if router_usage:
+            decision = decision.model_copy(update={"router_usage": router_usage})
+        gw_completed: Dict[str, Any] = {
+            "route": decision.route,
+            "reason_preview": (decision.reason or "")[:160] or None,
+            "rewritten_preview": (decision.rewritten_question or "")[:120] or None,
+            **gw_thread,
+        }
+        if router_usage:
+            gw_completed["router_usage"] = router_usage
         _router_log.info(
             "intent_router_completed",
             extra={
                 "event": "intent_router_completed",
                 "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
-                "gateway_meta": {
-                    "route": decision.route,
-                    "reason_preview": (decision.reason or "")[:160] or None,
-                    "rewritten_preview": (decision.rewritten_question or "")[:120] or None,
-                    **gw_thread,
-                },
+                "gateway_meta": gw_completed,
             },
         )
         return decision

@@ -16,6 +16,7 @@ from .intent_rewrite_router import (
 )
 from .pipeline_state import state_event, utc_now_iso
 from .request_context import bind_pipeline_phase
+from .usage import build_usage_payload, normalize_usage
 from .utils import last_rag_tool_envelope, last_rag_tool_evidence
 
 _pipeline_log = logging.getLogger("layer_orchestrator.pipeline")
@@ -79,6 +80,7 @@ async def _yield_request_complete_done(
     trace_id: Optional[str] = None,
     conversation_id: Optional[str] = None,
     is_new_conversation: bool = False,
+    usage: Optional[Dict[str, Any]] = None,
 ) -> AsyncIterator[dict]:
     """Terminal success: request_complete state + log + done event."""
     done_ts = utc_now_iso()
@@ -103,7 +105,7 @@ async def _yield_request_complete_done(
     async with bind_pipeline_phase("request_complete"):
         _pipeline_log.info("request_completed", extra=extra)
     yield complete_state
-    yield {
+    done_event: Dict[str, Any] = {
         "type": "done",
         **_stream_correlation_fields(
             session_id=session_id,
@@ -113,6 +115,9 @@ async def _yield_request_complete_done(
             is_new_conversation=is_new_conversation,
         ),
     }
+    if usage is not None:
+        done_event["usage"] = usage
+    yield done_event
 
 
 class _AgentRunIdCallback(AsyncCallbackHandler):
@@ -291,6 +296,8 @@ async def stream_answer_query(
     conv_gw = (
         {"conversation_id": conv, "is_new_conversation": bool(is_new_conversation)} if conv else {}
     )
+    intent_router_usage: Optional[Dict[str, int]] = None
+    rag_usage: Optional[Dict[str, int]] = None
     try:
         async with bind_pipeline_phase("request"):
             _pipeline_log.info(
@@ -350,6 +357,7 @@ async def stream_answer_query(
                 is_new_conversation=is_new_conversation,
             )
             decision = normalize_post_router(decision, latest_question=query, history=hist)
+            intent_router_usage = decision.router_usage
             router_ended_at = utc_now_iso()
             _pipeline_log.info(
                 "intent_router_phase_completed",
@@ -401,6 +409,7 @@ async def stream_answer_query(
                 },
             )
             yield _answer_event(answer_text)
+            request_usage = build_usage_payload(intent_router=intent_router_usage)
             async for ev in _yield_request_complete_done(
                 t0,
                 request_id,
@@ -408,6 +417,7 @@ async def stream_answer_query(
                 trace_id=trace_id,
                 conversation_id=conv or None,
                 is_new_conversation=is_new_conversation,
+                usage=request_usage,
             ):
                 yield ev
             return
@@ -495,6 +505,7 @@ async def stream_answer_query(
                 except asyncio.QueueEmpty:
                     break
             messages, agent_graph_run_id = graph_task.result()
+            rag_usage = normalize_usage(last_rag_tool_envelope(messages).get("usage"))
         except BaseException:
             if not graph_task.done():
                 graph_task.cancel()
@@ -547,6 +558,7 @@ async def stream_answer_query(
                     },
                 },
             )
+        request_usage = build_usage_payload(intent_router=intent_router_usage, rag=rag_usage)
         async for ev in _yield_request_complete_done(
             t0,
             request_id,
@@ -554,6 +566,7 @@ async def stream_answer_query(
             trace_id=trace_id,
             conversation_id=conv or None,
             is_new_conversation=is_new_conversation,
+            usage=request_usage,
         ):
             yield ev
     except Exception as e:
@@ -582,7 +595,7 @@ async def stream_answer_query(
             latency_ms=0,
             metadata={"error_type": type(e).__name__},
         )
-        yield {
+        err_event: Dict[str, Any] = {
             "type": "error",
             "text": err_text,
             **_stream_correlation_fields(
@@ -593,6 +606,8 @@ async def stream_answer_query(
                 is_new_conversation=is_new_conversation,
             ),
         }
+        err_event["usage"] = build_usage_payload(intent_router=intent_router_usage, rag=rag_usage)
+        yield err_event
 
 
 def format_error(e: BaseException) -> str:

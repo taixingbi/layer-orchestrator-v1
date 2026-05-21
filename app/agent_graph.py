@@ -121,13 +121,16 @@ async def build_graph_agent(
                 ],
             )
             sidecar = (rag_meta or {}).get("rag_tool_sidecar") or {}
+            rag_envelope: Dict[str, Any] = dict(sidecar) if sidecar else {}
+            if (rag_meta or {}).get("usage"):
+                rag_envelope["usage"] = rag_meta["usage"]
             tool_kw: Dict[str, Any] = {
                 "content": evidence,
                 "tool_call_id": tid,
                 "name": "query_knowledge_base",
             }
-            if sidecar:
-                tool_kw["additional_kwargs"] = {"rag_envelope": sidecar}
+            if rag_envelope:
+                tool_kw["additional_kwargs"] = {"rag_envelope": rag_envelope}
             tool_msg = ToolMessage(**tool_kw)
             return {"messages": [synthetic, tool_msg]}
 

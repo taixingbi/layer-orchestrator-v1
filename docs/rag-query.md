@@ -72,6 +72,7 @@ The tool accepts normal JSON from your service. For the LLM it prefers, in order
 
 - Top-level string fields: `answer`, `response`, `generated_answer`, `text`
 - `retrieval_hits` or `hits` (included in the tool result when present)
+- `usage` (optional) — OpenAI-style `{ "prompt_tokens", "completion_tokens", "total_tokens" }`; forwarded on orchestrator **`usage.rag`** when present
 
 If none of those match, the **full JSON** is stringified (capped in length) so the model still sees the payload.
 

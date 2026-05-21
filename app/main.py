@@ -36,6 +36,7 @@ from .langsmith_feedback import FEEDBACK_TYPES, FeedbackBody, submit_langsmith_f
 from .agent_rewrite import normalize_history_turns
 from .intent_rewrite_router import RouterDecision, normalize_post_router, run_intent_rewrite_router
 from .orchestrator import stream_answer_query
+from .usage import build_usage_payload
 
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 _http_log = logging.getLogger("layer_orchestrator.http")
@@ -377,6 +378,7 @@ async def _answer_json(
         "answer": None,
         "citations": [],
         "follow_up_questions": [],
+        "usage": build_usage_payload(),
     }
     states_by_phase: Dict[str, dict] = {}
     state_phase_order: List[str] = []
@@ -402,6 +404,8 @@ async def _answer_json(
             for key in ("request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation"):
                 if event.get(key) is not None:
                     final[key] = event.get(key)
+            if event.get("usage") is not None:
+                final["usage"] = event.get("usage")
         elif t == "rewrite":
             final["rewrite"] = event.get("text")
         elif t == "route":
@@ -430,6 +434,8 @@ async def _answer_json(
             for key in ("request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation"):
                 if event.get(key) is not None:
                     final[key] = event.get(key)
+            if event.get("usage") is not None:
+                final["usage"] = event.get("usage")
             return {
                 **final,
                 "status": "error",
