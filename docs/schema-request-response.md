@@ -77,7 +77,7 @@ Violations and timeout behavior:
   "answer": "string | null",
   "citations": [],
   "follow_up_questions": [],
-  "timings_ms": {},
+  "latency_ms": {},
   "status": "ok"
 }
 ```
@@ -93,7 +93,7 @@ Violations and timeout behavior:
 
 **`route`** is lowercase (intent/rewrite router output).
 
-### `timings_ms` (non-stream aggregation)
+### `latency_ms` (non-stream aggregation)
 
 Built from terminal `state` phases only (`completed`, `failed`, or `skipped`). Typical keys:
 
@@ -101,8 +101,7 @@ Built from terminal `state` phases only (`completed`, `failed`, or `skipped`). T
 |-----|---------|
 | `total` | Wall time across those phases (from earliest `started_at` to latest `ended_at`), milliseconds |
 | `intent_router` | Router LLM phase latency |
-| `rag` | Object; see below |
-| `request_complete` | Marker phase; event often uses `latency_ms: 0` — use `total` for end-to-end |
+| `rag` | Object; see below (omitted when route is not `rag`) |
 
 **`rag`** (when RAG ran):
 
@@ -116,7 +115,7 @@ Built from terminal `state` phases only (`completed`, `failed`, or `skipped`). T
 - `rag.total` — orchestrator-side timing for the LangGraph `rag_query` phase.
 - `rag.service` — RAG HTTP JSON `latency_ms` breakdown when available (e.g. `embed`, `retrieve`, `chat`, `total`, …).
 
-There is **no** top-level `latency_ms`; use **`timings_ms.total`**.
+Use **`latency_ms.total`** for end-to-end wall time (milliseconds).
 
 ### Error (`500`)
 
@@ -129,7 +128,7 @@ Same fields as far as they were accumulated, plus:
 }
 ```
 
-`timings_ms` may still be present if terminal state events were recorded.
+`latency_ms` may still be present if terminal state events were recorded.
 
 ### Validation / timeout errors
 
@@ -178,12 +177,12 @@ Response: **SSE**, each line `data: <json>\n\n`.
 | `rewrite` | `{ "type": "rewrite", "text": "..." }` |
 | `route` | `{ "type": "route", "route": "rag" \| ... }` |
 | `answer` | `{ "type": "answer", "text": "...", "citations": [], "follow_up_questions": [] }` — RAG fills arrays when the service returns them |
-| `done` | `{ "type": "done", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation", "timings_ms" }` — success end; **`timings_ms`** same shape as non-stream JSON |
-| `error` | `{ "type": "error", "text": "...", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation", "timings_ms"? }` — failure; **`timings_ms`** present when terminal phase states were recorded |
+| `done` | `{ "type": "done", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation", "latency_ms" }` — success end; **`latency_ms`** same shape as non-stream JSON |
+| `error` | `{ "type": "error", "text": "...", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation", "latency_ms"? }` — failure; **`latency_ms`** present when terminal phase states were recorded |
 
-**Phase `state` events are not sent on the SSE wire** (they remain in structured logs and Prometheus). Use non-stream JSON (`stream: false`) for `timings_ms` built from internal phase state.
+**Phase `state` events are not sent on the SSE wire** (they remain in structured logs and Prometheus). Use non-stream JSON (`stream: false`) for `latency_ms` built from internal phase state.
 
-Typical successful stream sequence: `request_id` → `rewrite` → `route` → `answer` → `done` (with `timings_ms`).
+Typical successful stream sequence: `request_id` → `rewrite` → `route` → `answer` → `done` (with `latency_ms`).
 
 Timeout examples in stream mode:
 
@@ -397,4 +396,4 @@ Example metric families exposed:
 
 ## RAG alignment ( `route: "rag"` )
 
-When the upstream RAG HTTP service returns JSON with `answer`, `citations`, and `follow_up_questions`, the orchestrator mirrors **`answer`** (verbatim string), **`citations`**, and **`follow_up_questions`** on the non-stream JSON response and on the streaming **`answer`** event when those fields exist. Downstream RAG latency detail appears under **`timings_ms.rag.service`** when present.
+When the upstream RAG HTTP service returns JSON with `answer`, `citations`, and `follow_up_questions`, the orchestrator mirrors **`answer`** (verbatim string), **`citations`**, and **`follow_up_questions`** on the non-stream JSON response and on the streaming **`answer`** event when those fields exist. Downstream RAG latency detail appears under **`latency_ms.rag.service`** when present.

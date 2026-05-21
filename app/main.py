@@ -192,9 +192,9 @@ def _sse_stream_answer_gen(
                         for p in state_phase_order
                         if states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
                     ]
-                    timings_ms = _build_timings_summary(terminal_states)
-                    if timings_ms:
-                        chunk = {**chunk, "timings_ms": timings_ms}
+                    latency_ms = _build_latency_ms_summary(terminal_states)
+                    if latency_ms:
+                        chunk = {**chunk, "latency_ms": latency_ms}
                 yield f"data: {json.dumps(chunk)}\n\n"
 
     return _gen()
@@ -300,7 +300,7 @@ def _compute_total_timing(states: List[dict]) -> Optional[float]:
     return None
 
 
-def _build_timings_summary(states: List[dict]) -> dict:
+def _build_latency_ms_summary(states: List[dict]) -> dict:
     by_phase: Dict[str, dict] = {}
     for s in states:
         phase = s.get("phase")
@@ -326,10 +326,6 @@ def _build_timings_summary(states: List[dict]) -> dict:
         if isinstance(rag_service, dict):
             rag_obj["service"] = rag_service
         timings["rag"] = rag_obj
-
-    req_complete = by_phase.get("request_complete", {}).get("latency_ms")
-    if req_complete is not None:
-        timings["request_complete"] = req_complete
 
     return timings
 
@@ -430,7 +426,7 @@ async def _answer_json(
                 for p in state_phase_order
                 if states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
             ]
-            final["timings_ms"] = _build_timings_summary(terminal_states)
+            final["latency_ms"] = _build_latency_ms_summary(terminal_states)
             for key in ("request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation"):
                 if event.get(key) is not None:
                     final[key] = event.get(key)
@@ -444,7 +440,7 @@ async def _answer_json(
         for p in state_phase_order
         if states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
     ]
-    final["timings_ms"] = _build_timings_summary(terminal_states)
+    final["latency_ms"] = _build_latency_ms_summary(terminal_states)
     return {
         **final,
         "status": "ok",
