@@ -337,12 +337,14 @@ def maybe_override_direct_reply_for_kb_grounded(
     rq = (decision.rewritten_question or "").strip() or q
     rq = rewrite_to_third_person(rq) if q else rq
     suffix = " [server: kb_grounded→rag]"
-    return RouterDecision(
-        rewritten_question=rq or q,
-        route="rag",
-        can_answer_directly=False,
-        direct_answer=None,
-        reason=((decision.reason or "").strip() + suffix).strip(),
+    return decision.model_copy(
+        update={
+            "rewritten_question": rq or q,
+            "route": "rag",
+            "can_answer_directly": False,
+            "direct_answer": None,
+            "reason": ((decision.reason or "").strip() + suffix).strip(),
+        },
     )
 
 
@@ -437,12 +439,13 @@ def normalize_post_router(
     if (decision.direct_answer or "").strip():
         return decision
     msg = f"Please add more detail. ({decision.reason or 'Unclear request.'})"
-    return RouterDecision(
-        rewritten_question=decision.rewritten_question,
-        route="clarify",
-        can_answer_directly=False,
-        direct_answer=msg,
-        reason=(decision.reason or "") + " [server: empty direct_reply → clarify]",
+    return decision.model_copy(
+        update={
+            "route": "clarify",
+            "can_answer_directly": False,
+            "direct_answer": msg,
+            "reason": (decision.reason or "") + " [server: empty direct_reply → clarify]",
+        },
     )
 
 

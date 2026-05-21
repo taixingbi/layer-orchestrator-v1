@@ -84,28 +84,58 @@ def _format_rag_response(data: Any) -> str:
     return "\n\n".join(parts)
 
 
-def _accumulate_sse_payload(raw_events: List[str]) -> Any:
-    """Best-effort SSE data aggregation into a JSON-like payload."""
+def _parse_sse_response_text(text: str) -> Dict[str, Any]:
+    """Aggregate RAG SSE (event: / data:) into a JSON-like payload."""
+    payload: Dict[str, Any] = {}
     text_chunks: List[str] = []
     retrieval_hits: Any = None
-    latency_ms: Any = None
-    last_obj: Any = None
-    for raw in raw_events:
-        item = raw.strip()
-        if not item or item == "[DONE]":
+    citations: Any = None
+    follow_up_questions: Any = None
+    usage: Any = None
+    latency_ms: Dict[str, Any] = {}
+    current_event: Optional[str] = None
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            current_event = None
+            continue
+        if stripped.startswith("event:"):
+            current_event = stripped[6:].strip()
+            continue
+        if not stripped.startswith("data:"):
+            continue
+        raw = stripped[5:].strip()
+        if not raw or raw == "[DONE]":
             continue
         try:
-            obj = json.loads(item)
+            obj = json.loads(raw)
         except json.JSONDecodeError:
-            text_chunks.append(item)
+            if current_event in (None, "answer_delta"):
+                text_chunks.append(raw)
             continue
-        last_obj = obj
-        if isinstance(obj, dict):
+
+        ev = current_event
+        if ev == "answer_delta" and isinstance(obj, dict):
+            chunk_text = obj.get("text")
+            if isinstance(chunk_text, str):
+                text_chunks.append(chunk_text)
+        elif ev == "citations" and isinstance(obj, dict):
+            citations = obj.get("items", obj)
+        elif ev == "follow_up_questions" and isinstance(obj, dict):
+            follow_up_questions = obj.get("items", obj)
+        elif ev == "usage":
+            usage = obj
+        elif ev == "latency" and isinstance(obj, dict):
+            phase = obj.get("phase")
+            ms = obj.get("ms")
+            if phase is not None and ms is not None:
+                latency_ms[str(phase)] = ms
+        elif isinstance(obj, dict):
             for key in _RAG_ANSWER_KEYS:
                 val = obj.get(key)
                 if isinstance(val, str) and val:
                     text_chunks.append(val)
-            # Common chunk styles.
             if obj.get("type") in ("token", "chunk", "delta"):
                 chunk_text = obj.get("text") or obj.get("delta") or obj.get("content")
                 if isinstance(chunk_text, str) and chunk_text:
@@ -114,17 +144,24 @@ def _accumulate_sse_payload(raw_events: List[str]) -> Any:
                 retrieval_hits = obj.get("retrieval_hits")
             elif "hits" in obj:
                 retrieval_hits = obj.get("hits")
-            if "latency_ms" in obj:
-                latency_ms = obj.get("latency_ms")
-    if text_chunks or retrieval_hits is not None:
-        payload = {
-            "text": "".join(text_chunks).strip(),
-            "retrieval_hits": retrieval_hits,
-        }
-        if latency_ms is not None:
-            payload["latency_ms"] = latency_ms
-        return payload
-    return last_obj if last_obj is not None else {"text": ""}
+            if "latency_ms" in obj and isinstance(obj.get("latency_ms"), dict):
+                latency_ms.update(obj["latency_ms"])
+            if "usage" in obj:
+                usage = obj.get("usage")
+
+    if text_chunks:
+        payload["answer"] = "".join(text_chunks).strip()
+    if retrieval_hits is not None:
+        payload["retrieval_hits"] = retrieval_hits
+    if citations is not None:
+        payload["citations"] = citations
+    if follow_up_questions is not None:
+        payload["follow_up_questions"] = follow_up_questions
+    if usage is not None:
+        payload["usage"] = usage
+    if latency_ms:
+        payload["latency_ms"] = latency_ms
+    return payload
 
 
 def _extract_rag_latency_ms(data: Any) -> Optional[Dict[str, Any]]:
@@ -319,11 +356,7 @@ async def query_rag_http_with_meta(
     http_status = response.status_code
     ctype = (response.headers.get("content-type") or "").lower()
     if "text/event-stream" in ctype:
-        events: List[str] = []
-        for line in response.text.splitlines():
-            if line.startswith("data:"):
-                events.append(line[5:].strip())
-        data = _accumulate_sse_payload(events)
+        data = _parse_sse_response_text(response.text)
     else:
         data = response.json()
     _log_rag_query_response(

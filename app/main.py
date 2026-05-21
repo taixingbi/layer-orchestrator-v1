@@ -382,6 +382,7 @@ async def _answer_json(
     }
     states_by_phase: Dict[str, dict] = {}
     state_phase_order: List[str] = []
+    terminal_usage: Optional[dict] = None
     async for event in _answer_event_iter(
         question,
         session_id=session_id,
@@ -404,8 +405,10 @@ async def _answer_json(
             for key in ("request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation"):
                 if event.get(key) is not None:
                     final[key] = event.get(key)
-            if event.get("usage") is not None:
-                final["usage"] = event.get("usage")
+            usage = event.get("usage")
+            if usage is not None:
+                terminal_usage = usage
+                final["usage"] = usage
         elif t == "rewrite":
             final["rewrite"] = event.get("text")
         elif t == "route":
@@ -414,6 +417,10 @@ async def _answer_json(
             final["answer"] = event.get("text")
             final["citations"] = event.get("citations", [])
             final["follow_up_questions"] = event.get("follow_up_questions", [])
+            usage = event.get("usage")
+            if usage is not None:
+                terminal_usage = usage
+                final["usage"] = usage
         elif t == "state":
             phase = event.get("phase")
             if not phase:
@@ -434,8 +441,10 @@ async def _answer_json(
             for key in ("request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation"):
                 if event.get(key) is not None:
                     final[key] = event.get(key)
-            if event.get("usage") is not None:
-                final["usage"] = event.get("usage")
+            usage = event.get("usage")
+            if usage is not None:
+                terminal_usage = usage
+                final["usage"] = usage
             return {
                 **final,
                 "status": "error",
@@ -447,6 +456,8 @@ async def _answer_json(
         if states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
     ]
     final["latency_ms"] = _build_latency_ms_summary(terminal_states)
+    if terminal_usage is not None:
+        final["usage"] = terminal_usage
     return {
         **final,
         "status": "ok",

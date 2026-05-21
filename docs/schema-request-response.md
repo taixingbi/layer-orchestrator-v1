@@ -143,7 +143,7 @@ Aggregated OpenAI-style usage for the request. Flat fields sum all phases that r
 | `completion_tokens` | Sum across phases |
 | `total_tokens` | Sum across phases |
 | `intent_router` | Router LLM (`POST …/v1/chat/completions`) when the router ran an LLM call; omitted on small-talk short-circuit |
-| `rag` | RAG HTTP `POST /v1/rag/query` when `route` is `rag` and the service returned `usage`; omitted if RAG ran but upstream sent no usage |
+| `rag` | RAG HTTP `POST /v1/rag/query` when `route` is `rag` and the service returned `usage`; flat totals plus optional `chat` / `follow_up_chat` breakdown when upstream sends nested usage |
 
 ### Error (`500`)
 

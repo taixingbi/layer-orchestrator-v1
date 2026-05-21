@@ -16,7 +16,7 @@ from .intent_rewrite_router import (
 )
 from .pipeline_state import state_event, utc_now_iso
 from .request_context import bind_pipeline_phase
-from .usage import build_usage_payload, normalize_usage
+from .usage import build_usage_payload
 from .utils import last_rag_tool_envelope, last_rag_tool_evidence
 
 _pipeline_log = logging.getLogger("layer_orchestrator.pipeline")
@@ -43,14 +43,18 @@ def _answer_event(
     *,
     citations: Optional[List[Any]] = None,
     follow_up_questions: Optional[List[Any]] = None,
+    usage: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Answer SSE/JSON chunk; citations and follow-ups always present (empty when not from RAG)."""
-    return {
+    event: Dict[str, Any] = {
         "type": "answer",
         "text": text,
         "citations": list(citations) if citations is not None else [],
         "follow_up_questions": list(follow_up_questions) if follow_up_questions is not None else [],
     }
+    if usage is not None:
+        event["usage"] = usage
+    return event
 
 
 def _stream_correlation_fields(
@@ -408,8 +412,8 @@ async def stream_answer_query(
                     },
                 },
             )
-            yield _answer_event(answer_text)
             request_usage = build_usage_payload(intent_router=intent_router_usage)
+            yield _answer_event(answer_text, usage=request_usage)
             async for ev in _yield_request_complete_done(
                 t0,
                 request_id,
@@ -505,7 +509,7 @@ async def stream_answer_query(
                 except asyncio.QueueEmpty:
                     break
             messages, agent_graph_run_id = graph_task.result()
-            rag_usage = normalize_usage(last_rag_tool_envelope(messages).get("usage"))
+            rag_usage = last_rag_tool_envelope(messages).get("usage")
         except BaseException:
             if not graph_task.done():
                 graph_task.cancel()
@@ -513,6 +517,7 @@ async def stream_answer_query(
                     await graph_task
             raise
         graph_answer = last_rag_tool_evidence(messages)
+        request_usage = build_usage_payload(intent_router=intent_router_usage, rag=rag_usage)
         if graph_answer:
             async with bind_pipeline_phase("rag"):
                 _pipeline_log.info(
@@ -529,6 +534,7 @@ async def stream_answer_query(
                 graph_answer,
                 citations=env.get("citations"),
                 follow_up_questions=env.get("follow_up_questions"),
+                usage=request_usage,
             )
         rag_ended_at = utc_now_iso()
         yield state_event(
@@ -558,7 +564,6 @@ async def stream_answer_query(
                     },
                 },
             )
-        request_usage = build_usage_payload(intent_router=intent_router_usage, rag=rag_usage)
         async for ev in _yield_request_complete_done(
             t0,
             request_id,
