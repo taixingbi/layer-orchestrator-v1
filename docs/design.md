@@ -17,12 +17,16 @@ This document explains the runtime design of `layer-orchestrator-v1`: components
   - `POST /feedback`
   - `GET /health` (liveness; config only)
   - `GET /ready` (readiness; probes LLM gateway and RAG HTTP)
-- `app/orchestrator.py`  
-  High-level pipeline orchestrator (`stream_answer_query`, `run_graph`).
+- `app/core/pipeline.py`  
+  High-level pipeline (`stream_answer_query`): rewrite → route → internal intent | MCP/Tavily tool → answer.
 - `app/intent_rewrite_router.py`  
-  Single LLM call returning JSON: `rewritten_question`, `route` (`rag` | `direct_reply` | `clarify` | `reject`), `can_answer_directly`, `direct_answer`, `reason`. Before the LLM, the server applies a **deterministic prompt-injection guard** and (when history is empty) **small-talk** exact/pattern matches. Naming the candidate does not force a server-side route override; the model is instructed to choose `rag` vs `direct_reply` by whether the question needs document/org-grounded facts vs a general high-level reply. **Details:** [intent-router.md](intent-router.md) (injection guard, small-talk, post-LLM overrides, `normalize_post_router`).
+  Single LLM call returning JSON: `rewritten_question`, `route`, optional `route_detail`, `direct_answer`, `reason`. Pre-LLM: injection guard, small-talk seed. Post-LLM: KB-grounded overrides. See [intent-router.md](intent-router.md).
+- `app/intents/`  
+  Deterministic internal intents (`identity`, `greeting`, `help`, `capabilities`).
+- `app/tools/`  
+  `user_profile` (MCP `rag_query` or HTTP RAG), `github_repo_search` (MCP `ask_repo`), `web_search` (Tavily).
 - `app/agent_graph.py`  
-  LangGraph with a single `retrieve` node (HTTP RAG once); formatted RAG payload is the response body (no `llm_call` / judge in the graph).
+  Legacy LangGraph path (retained; pipeline uses direct tool dispatch by default).
 - `app/graph_judge.py` / `app/agent_answer_judge.py`  
   Unused by the current graph; retained for optional future quality loops.
 - `app/agent_graph_state.py` / `app/graph_emit.py`  
@@ -42,12 +46,13 @@ Clients may send user context in headers (`X-User-Id`, `X-User-Roles`, `X-User-G
 
 1. Initialize request ids and emit SSE `{ "type":"request_id", "request_id", "session_id", "conversation_id", "is_new_conversation" }` (`conversation_id` is the effective id; server assigns `conv_<uuidhex>` when the body omits or blanks it).
 2. **Intent / rewrite router** (one LLM when no server short-circuit): returns JSON with standalone `rewritten_question` and `route`.
-3. Emit SSE `{type:"rewrite", "text": ...}` and `{type:"route", "route": ...}` (lowercase route values; breaking change from historical `"RAG"`).
+3. Emit SSE `{type:"rewrite", "text": ...}` and `{type:"route", "route": ..., "route_detail": ...}` (lowercase route values).
 4. Branch:
-   - **`direct_reply`**: emit `answer` from `direct_answer` (incl. short general follow-ups when the router chooses it, including some named-candidate cases when the router judges them general).
-   - **`clarify`**: emit `answer` prompting the user (from `direct_answer` or a default).
-   - **`reject`**: emit `answer` with refusal text.
-   - **`rag`**: run LangGraph `retrieve` with `rewritten_question`; API `answer` is the RAG tool payload (formatted string from `rag_http_tool`).
+   - **`internal_intent`** (`identity`, `greeting`, `help`, `capabilities`): static answer from `app/intents/`.
+   - **`direct_reply` / `clarify` / `reject`**: legacy routes mapped to internal intents; emit `answer` from `direct_answer`.
+   - **`tool:user_profile`**: MCP `rag_query` or HTTP RAG; legacy flat `route` is `rag`.
+   - **`tool:github_repo_search`**: MCP `ask_repo`; flat `route` is `tool`.
+   - **`tool:web_search`**: Tavily search; flat `route` is `tool`.
 5. Emit completion state or error event; successful streams end with `{type:"done"}`.
 
 ## LangGraph Design

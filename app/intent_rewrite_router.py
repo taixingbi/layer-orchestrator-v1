@@ -228,18 +228,19 @@ def _resolve_router_system_content(
     }
 
 
-_VALID_ROUTES = frozenset({"rag", "direct_reply", "clarify", "reject"})
+_VALID_ROUTES = frozenset({"rag", "direct_reply", "clarify", "reject", "tool"})
 
 
 class RouterDecision(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     rewritten_question: str = ""
-    route: Literal["rag", "direct_reply", "clarify", "reject"] = "rag"
+    route: Literal["rag", "direct_reply", "clarify", "reject", "tool"] = "rag"
     can_answer_directly: bool = False
     direct_answer: Optional[str] = None
     reason: str = ""
     router_usage: Optional[Dict[str, int]] = None
+    route_detail: Optional[Dict[str, Any]] = None
 
     @field_validator("route", mode="before")
     @classmethod
@@ -655,6 +656,8 @@ async def run_intent_rewrite_router(
                 q,
             )
         decision = RouterDecision.model_validate(obj)
+        if isinstance(obj.get("route_detail"), dict):
+            decision = decision.model_copy(update={"route_detail": obj["route_detail"]})
         if not (decision.rewritten_question or "").strip():
             decision = decision.model_copy(
                 update={"rewritten_question": rewrite_to_third_person(q)},

@@ -32,6 +32,14 @@ class Settings:
 
     # RAG via HTTP: base URL only; code POSTs to /v1/rag/query
     rag_http_base_url: Optional[str] = os.getenv("RAG_HTTP_BASE_URL")
+    # MCP tool services (when USE_MCP_TOOLS=true for user_profile)
+    use_mcp_tools: bool = os.getenv("USE_MCP_TOOLS", "false").lower() == "true"
+    mcp_rag_base_url: Optional[str] = os.getenv("MCP_RAG_BASE_URL") or os.getenv("RAG_HTTP_BASE_URL")
+    mcp_github_base_url: Optional[str] = os.getenv("MCP_GITHUB_BASE_URL")
+    # Tavily web search
+    tavily_api_key: Optional[str] = os.getenv("TAVILY_API_KEY")
+    tavily_search_depth: str = os.getenv("TAVILY_SEARCH_DEPTH", "advanced")
+    tavily_max_results: int = max(1, min(20, int(os.getenv("TAVILY_MAX_RESULTS", "5"))))
     rag_collection_base: str = os.getenv("RAG_COLLECTION_BASE", "taixing_knowledge")
     rag_k: int = int(os.getenv("RAG_K", "5"))
     rag_k_max: int = int(os.getenv("RAG_K_MAX", "40"))

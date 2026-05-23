@@ -18,6 +18,7 @@ dependencies = [
   "langgraph",
   "httpx",
   "prometheus-client>=0.25.0",
+  "tavily-python>=0.5.0",
 ]
 
 [project.optional-dependencies]
@@ -35,3 +36,4 @@ app = ["prompts/*.txt", "prompts/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"

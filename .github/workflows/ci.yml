@@ -31,4 +31,5 @@ jobs:
         env:
           RAG_HTTP_BASE_URL: http://localhost:30183
           LLM_GATEWAY_BASE_URL: http://localhost:30180
+          TAVILY_API_KEY: test-key-for-ci
         run: pytest

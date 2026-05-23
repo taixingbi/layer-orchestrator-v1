@@ -145,6 +145,20 @@ Aggregated OpenAI-style usage for the request. Flat fields sum all phases that r
 | `intent_router` | Router LLM (`POST …/v1/chat/completions`) when the router ran an LLM call; omitted on small-talk short-circuit |
 | `rag` | RAG HTTP `POST /v1/rag/query` when `route` is `rag` and the service returned `usage`; flat totals plus optional `chat` / `follow_up_chat` breakdown when upstream sends nested usage |
 
+### `route_detail` (nested route)
+
+Emitted alongside legacy flat `route` on the `route` SSE event and non-stream JSON.
+
+| `route_detail.type` | `route_detail.name` | Legacy `route` |
+|---------------------|---------------------|----------------|
+| `internal_intent` | `identity`, `greeting`, `help`, `capabilities` | `direct_reply` |
+| `internal_intent` | `clarify` | `clarify` |
+| `internal_intent` | `reject` | `reject` |
+| `tool` | `user_profile` | `rag` |
+| `tool` | `github_repo_search`, `web_search` | `tool` |
+
+Tool `web_search` uses **Tavily** (`TAVILY_API_KEY`). Tools `user_profile` and `github_repo_search` use **MCP** when `USE_MCP_TOOLS=true` (`MCP_RAG_BASE_URL`, `MCP_GITHUB_BASE_URL`).
+
 ### Error (`500`)
 
 Same fields as far as they were accumulated, plus:
@@ -203,7 +217,8 @@ Response: **SSE**, each line `data: <json>\n\n`.
 |--------|-------------|
 | `request_id` | `{ "type": "request_id", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation" }` — early correlation (`conversation_id` is always the effective id; omitted keys besides these may be null) |
 | `rewrite` | `{ "type": "rewrite", "text": "..." }` |
-| `route` | `{ "type": "route", "route": "rag" \| ... }` |
+| `route` | `{ "type": "route", "route": "rag" \| "direct_reply" \| "clarify" \| "reject" \| "tool", "route_detail": { ... } }` |
+| `answer_delta` | `{ "type": "answer_delta", "text": "..." }` — optional streamed chunks from MCP tools |
 | `answer` | `{ "type": "answer", "text": "...", "citations": [], "follow_up_questions": [] }` — RAG fills arrays when the service returns them |
 | `done` | `{ "type": "done", …, "latency_ms", "usage" }` — success end; **`latency_ms`** and **`usage`** same shape as non-stream JSON |
 | `error` | `{ "type": "error", "text": "...", …, "latency_ms"?, "usage" }` — failure; **`latency_ms`** / **`usage`** when recorded before failure |

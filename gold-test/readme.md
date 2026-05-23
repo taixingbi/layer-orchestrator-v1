@@ -41,6 +41,8 @@ On **stdout**, the script prints only a **`File` / `Match rate`** table (per res
 | `ROUTER_PROMPT_VERSION` | `router-v1.00` | JSON **`router_prompt_version`** on each eval request |
 | `REPORT_PATH` | `<gold-test>/result/router-eval-report-<ROUTER_PROMPT_VERSION>.md` | Markdown report path (embeds prompt version unless overridden) |
 
+Eval responses now include `decision.route_detail` (nested) alongside legacy `decision.route`. Optional CSV columns for future suites: `expected_route_detail_type`, `expected_tool_name`.
+
 ## Input CSV
 
 - **Header (required):** `question,expected_route`
