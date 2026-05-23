@@ -7,7 +7,7 @@ Greetings and lightweight **assistant / meta** questions are answered from **str
 | Item | Location |
 |------|----------|
 | Seed catalog | [`app/prompts/smalltalk_examples.json`](../app/prompts/smalltalk_examples.json) |
-| Loader and match | [`app/intent_rewrite_router.py`](../app/intent_rewrite_router.py) (`_load_smalltalk_seed`, `_match_smalltalk_seed`, `_match_smalltalk_patterns`, `_match_smalltalk_any`, `run_intent_rewrite_router`) |
+| Loader and match | [`app/core/intent_router.py`](../app/core/intent_router.py) (`_load_smalltalk_seed`, `_match_smalltalk_seed`, `_match_smalltalk_patterns`, `_match_smalltalk_any`, `run_intent_rewrite_router`) |
 
 Each array element is an object:
 

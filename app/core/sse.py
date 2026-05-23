@@ -8,9 +8,9 @@ import time
 from datetime import datetime
 from typing import AsyncIterator, Dict, List, Optional, Tuple
 
-from ..metrics import inc_timeout, observe_pipeline_event
-from ..request_context import bind_conversation_logging_context
-from ..usage import build_usage_payload
+from ..observability.metrics import inc_timeout, observe_pipeline_event
+from ..observability.context import bind_conversation_logging_context
+from ..observability.usage import build_usage_payload
 from .pipeline import stream_answer_query
 
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}

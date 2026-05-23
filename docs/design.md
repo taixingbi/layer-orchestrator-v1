@@ -2,102 +2,111 @@
 
 This document explains the runtime design of `layer-orchestrator-v1`: components, request flows, reliability loops, and key trade-offs.
 
+## Package layout
+
+```
+app/
+  main.py, config.py, orchestrator.py   # entry + settings + compat re-exports
+  api/          # FastAPI route handlers
+  core/         # pipeline, router, rewrite, SSE, state
+  clients/      # outbound HTTP (RAG, readiness)
+  graph/        # legacy LangGraph (unused by default pipeline)
+  observability/  # logging, context, metrics, usage, feedback
+  intents/      # deterministic internal intents
+  tools/        # user_profile, github_repo_search, web_search
+  schemas/      # request/response/route models
+  prompts/      # router prompts + small-talk seed
+```
+
 ## Goals
 
 - Provide a single API for question answering over Taixing-focused knowledge.
-- Keep responses observable (SSE events + structured logs).
-- Prefer grounded answers (RAG retrieval text returned as the user-visible answer when `route` is `rag`; no separate answer synthesis LLM in the graph).
-- Keep integration simple with OpenAI-compatible inference gateways.
+- Keep responses observable (SSE events + structured logs + Prometheus).
+- Prefer grounded answers (RAG retrieval text returned as the user-visible answer when legacy `route` is `rag`; no separate answer synthesis LLM in the default pipeline).
+- Keep integration simple with OpenAI-compatible inference gateways and optional MCP tool services.
 
 ## Runtime Components
 
 - `app/main.py`  
   FastAPI entrypoint. Exposes:
   - `POST /orchestrator/answer` (set `stream=true` for SSE, default aggregated JSON)
+  - `POST /orchestrator/eval/router`
   - `POST /feedback`
   - `GET /health` (liveness; config only)
   - `GET /ready` (readiness; probes LLM gateway and RAG HTTP)
+  - `GET /metrics` (Prometheus)
+- `app/api/routes.py`  
+  HTTP handlers; validation, SSE vs JSON aggregation.
 - `app/core/pipeline.py`  
-  High-level pipeline (`stream_answer_query`): rewrite → route → internal intent | MCP/Tavily tool → answer.
-- `app/intent_rewrite_router.py`  
+  Primary orchestration (`stream_answer_query`): rewrite → route → internal intent | tool → answer.
+- `app/core/router.py`  
+  Router integration: `RouterDecision` → `route_detail`, deterministic intent pre-check.
+- `app/core/intent_router.py`  
   Single LLM call returning JSON: `rewritten_question`, `route`, optional `route_detail`, `direct_answer`, `reason`. Pre-LLM: injection guard, small-talk seed. Post-LLM: KB-grounded overrides. See [intent-router.md](intent-router.md).
+- `app/core/rewrite.py`  
+  Third-person normalization, history caps, prompt formatting.
+- `app/core/sse.py`  
+  SSE wire format and non-stream JSON aggregation (`latency_ms`, `usage`).
+- `app/core/state.py`  
+  Shared `state` event shape for pipeline phases.
 - `app/intents/`  
   Deterministic internal intents (`identity`, `greeting`, `help`, `capabilities`).
 - `app/tools/`  
   `user_profile` (MCP `rag_query` or HTTP RAG), `github_repo_search` (MCP `ask_repo`), `web_search` (Tavily).
-- `app/agent_graph.py`  
-  Legacy LangGraph path (retained; pipeline uses direct tool dispatch by default).
-- `app/graph_judge.py` / `app/agent_answer_judge.py`  
-  Unused by the current graph; retained for optional future quality loops.
-- `app/agent_graph_state.py` / `app/graph_emit.py`  
-  Shared graph state type and SSE `emit_state` helper.
-- `app/rag_http_tool.py`  
+- `app/clients/rag_http.py`  
   HTTP client for `POST {RAG_HTTP_BASE_URL}/v1/rag/query`.
-- `app/agent_rewrite.py`  
-  Third-person normalization (`rewrite_to_third_person`), history caps, and `history_snippet_for_answer` / `format_history_for_prompt` for the router and RAG configurable context.
-- `app/logging_config.py` + `app/request_context.py`  
-  Structured JSON logging with request/session context; shipped by external collectors (for example Alloy).
+- `app/clients/ready.py`  
+  Readiness probes for LLM gateway and RAG.
+- `app/graph/`  
+  Legacy LangGraph path (retained; **not used** by `app/core/pipeline.py`).
+- `app/observability/`  
+  Structured JSON logging, request context, Prometheus metrics, token usage, LangSmith feedback.
 
 ## Primary Flow: `/orchestrator/answer`
 
 Field-by-field request and response schema: **[schema-request-response.md](schema-request-response.md)** (includes optional body **`conversation_id`**, effective id and **`is_new_conversation`** on responses and the first SSE event). Threading, logging, and downstream headers are summarized in **[conversation-id.md](conversation-id.md)**.
 
-Clients may send user context in headers (`X-User-Id`, `X-User-Roles`, `X-User-Groups`, `X-User-Teams`); the orchestrator relays them on the outbound RAG `POST /v1/rag/query`. Those fields and correlation ids (`session_id`, `request_id`, `trace_id`) are **rejected** if sent in the JSON body; **`conversation_id`** is the exception and may be sent in the body for threading.
+Clients may send user context in headers (`X-User-Id`, `X-User-Roles`, `X-User-Groups`, `X-User-Teams`); the orchestrator relays them on outbound RAG `POST /v1/rag/query`. Those fields and correlation ids (`session_id`, `request_id`, `trace_id`) are **rejected** if sent in the JSON body; **`conversation_id`** is the exception and may be sent in the body for threading.
 
 1. Initialize request ids and emit SSE `{ "type":"request_id", "request_id", "session_id", "conversation_id", "is_new_conversation" }` (`conversation_id` is the effective id; server assigns `conv_<uuidhex>` when the body omits or blanks it).
-2. **Intent / rewrite router** (one LLM when no server short-circuit): returns JSON with standalone `rewritten_question` and `route`.
-3. Emit SSE `{type:"rewrite", "text": ...}` and `{type:"route", "route": ..., "route_detail": ...}` (lowercase route values).
-4. Branch:
+2. **Intent / rewrite router** (one LLM when no server short-circuit): `resolve_route` may match deterministic internal intents first; otherwise `run_intent_rewrite_router` returns JSON with standalone `rewritten_question` and `route` / `route_detail`.
+3. Emit SSE `{type:"rewrite", "text": ...}` and `{type:"route", "route": ..., "route_detail": ...}` (lowercase legacy route values).
+4. Branch via **direct tool dispatch** in `app/core/pipeline.py`:
    - **`internal_intent`** (`identity`, `greeting`, `help`, `capabilities`): static answer from `app/intents/`.
    - **`direct_reply` / `clarify` / `reject`**: legacy routes mapped to internal intents; emit `answer` from `direct_answer`.
    - **`tool:user_profile`**: MCP `rag_query` or HTTP RAG; legacy flat `route` is `rag`.
    - **`tool:github_repo_search`**: MCP `ask_repo`; flat `route` is `tool`.
    - **`tool:web_search`**: Tavily search; flat `route` is `tool`.
-5. Emit completion state or error event; successful streams end with `{type:"done"}`.
+5. Emit completion or error event; successful streams end with `{type:"done"}` (includes aggregated `latency_ms` and `usage`).
 
-## LangGraph Design
+Detailed SSE sequence: **[architecture.md](architecture.md)**.
 
-### A) Deterministic HTTP RAG mode
+## HTTP RAG path (`tool:user_profile`)
 
-Used when `RAG_HTTP_BASE_URL` is set and the router chose `route: "rag"`.
+When the router selects `user_profile`, the pipeline calls RAG directly:
 
-- Node `retrieve` calls HTTP RAG once and appends synthetic `AIMessage` + `ToolMessage` (evidence) for a stable message transcript.
-- The orchestrator reads the last tool message body as the user-facing `answer` (no graph-level answer or judge LLM).
+- **Default:** `app/tools/user_profile.py` → `query_rag_http_with_meta` in `app/clients/rag_http.py` → `POST /v1/rag/query`.
+- **Optional MCP:** when `USE_MCP_TOOLS=true`, MCP `rag_query` on `MCP_RAG_BASE_URL` (falls back to `RAG_HTTP_BASE_URL`).
 
-Why this exists:
-
-- Avoids tool-calling protocol requirements on gateways that reject `tool_choice=auto/required` without parser flags.
-- Router consolidates rewrite + routing into one gateway call before optional RAG.
+The user-facing `answer` is the RAG service response text. No orchestrator answer LLM runs after retrieval.
 
 ## Data Contracts
 
 ### SSE events (`/orchestrator/answer` with `stream=true`)
 
-Event types:
+**Wire events** (client-visible):
 
-- `request_id` — first event; includes `request_id`, `session_id`, effective `conversation_id`, and `is_new_conversation`
-- `state`
-- `rewrite`
-- `route`
-- `answer`
-- `error`
-- `done` (success only; emitted after the final `request_complete` state)
+- `request_id`, `rewrite`, `route`, `answer_delta`, `answer`, `error`, `done`
 
-After LangGraph returns on a `rag` path, `answer` is emitted immediately (correlate runs with JSON/header `trace_id`), then the orchestrator emits the `rag` phase `completed` state and remaining lifecycle events.
+**Internal `state` events** (logs, metrics, non-stream aggregation only — **not** sent on the SSE wire):
 
-`state` events include `phase`, `status` (`running`, `completed`, `failed`, `skipped`), `ui_message`, optional timestamps, `latency_ms`, and `metadata`. High-level orchestrator phases include **`intent_router`** (single LLM rewrite+route), **`rag`**, and **`request_complete`**. During the LangGraph RAG phase, the only granular phase emitted is `rag_query` (HTTP RAG retrieve). Non-stream JSON includes one entry per `phase` with a **terminal** status (`completed`, `failed`, `skipped`). A prior `running` event for the same phase is **merged** into that entry (e.g. `started_at` from `running`, `ended_at` / `latency_ms` / `ui_message` from the terminal event, `metadata` shallow-merged). Pure `running` phases are omitted. Non-stream JSON (and stream `done.latency_ms`) include a top-level `latency_ms` object with end-to-end `total`, `intent_router`, and nested `rag` timing where `rag.total` is the orchestrator wall timing for `rag_query` and `rag.service` is the RAG service breakdown from `rag_query.metadata.rag_latency_ms` (the marker `request_complete` phase is not included in `latency_ms`).
+- Phases: `intent_router`, `rag`, `tool`, `request_complete`
 
-### RAG HTTP request (`app/rag_http_tool.py`)
+Non-stream JSON (and stream `done.latency_ms`) include a top-level `latency_ms` object with end-to-end `total`, `intent_router`, and nested `rag` or `tool` timing.
 
-Payload:
+### RAG HTTP request (`app/clients/rag_http.py`)
 
-- `question`
-- `collection_base`
-- `request_id`
-- `session_id`
-- `k`
-- `k_max`
-- `include_retrieval_hits`
+Payload: `question`, `collection_base`, `k`, `k_max`, `include_retrieval_hits`, optional `conversation_id`. Correlation and user fields travel on headers.
 
 ### Feedback (`POST /feedback`)
 
@@ -105,31 +114,23 @@ Accepts user rating + optional type/comment and forwards to LangSmith when crede
 
 ## Observability
 
-- Structured JSON logs with:
-  - `request_id`, `session_id`, `method`, `path`, `status`, `phase` (pipeline step such as `intent_router`, `rag`, `rag_query`, `http`, or `-` when unset)
-  - latency fields and error metadata when available
-  - Before each RAG HTTP call, INFO `rag_query_api_request` with `gateway_meta.rag_api_request` (JSON body) and `rag_api_request_headers`
-  - After each successful RAG HTTP call, INFO `rag_query_api_response` with `gateway_meta.rag_api_response` (full parsed JSON; truncated only when serialization exceeds ~80k chars) plus `http_status_code`, `content_type`, `rag_http_attempts`
-- Request context propagated via middleware/contextvars.
-- Logs are written as JSON to stderr and can be collected/shipped by Alloy.
-- LangSmith tags include model/project/request/session context.
+- Structured JSON logs via `app/observability/logging.py` and `app/observability/context.py`
+- Prometheus metrics at `/metrics`
+- LangSmith tags when tracing is enabled
 
 ## Configuration Strategy
 
-- `LLM_GATEWAY_BASE_URL` is required for model calls.
-- `RAG_HTTP_BASE_URL` is required and drives deterministic HTTP RAG graph execution.
-- Timeouts:
-  - `TOOLS_TIMEOUT_S` for RAG HTTP client timeout
-  - `INVOKE_TIMEOUT_S` for graph invoke timeout
+- `LLM_GATEWAY_BASE_URL` is required for router model calls.
+- `RAG_HTTP_BASE_URL` is required for HTTP RAG (and as MCP RAG fallback base).
+- Optional: `USE_MCP_TOOLS`, `MCP_GITHUB_BASE_URL`, `TAVILY_API_KEY`.
 
 ## Failure Handling
 
 - Pipeline catches errors and emits SSE `{type:"error"}`.
-- Exception groups are unwrapped to the first meaningful root cause.
-- Logging includes structured error fields for triage.
+- RAG HTTP retries transient failures with exponential backoff.
 
 ## Trade-offs
 
-- Deterministic HTTP RAG path favors compatibility and predictability over dynamic tool routing.
-- Answers on the `rag` path are verbatim RAG-formatted tool text: tone and length follow the RAG service (`_format_rag_response` in `rag_http_tool`), not a dedicated answer model.
-- One router LLM replaces separate intent + rewrite calls; router JSON parse failures conservatively fall back to `rag`.
+- Direct tool dispatch favors compatibility and lower latency over dynamic LangGraph tool routing.
+- Answers on the `rag` path are verbatim RAG-formatted tool text.
+- One router LLM replaces separate intent + rewrite calls; parse failures conservatively fall back to `rag`.

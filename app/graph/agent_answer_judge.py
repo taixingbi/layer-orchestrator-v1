@@ -3,7 +3,7 @@ import logging
 import time
 from typing import Optional, Tuple
 
-from .config import gateway_llm_invoke_kwargs, get_langsmith_tags, get_llm
+from ..config import gateway_llm_invoke_kwargs, get_langsmith_tags, get_llm
 
 JUDGE_PROMPT = """You are a strict judge.
 

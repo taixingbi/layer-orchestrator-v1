@@ -11,7 +11,7 @@ import httpx
 
 from ..config import settings
 from ..schemas.tool import ToolResult
-from ..usage import usage_from_rag_json
+from ..observability.usage import usage_from_rag_json
 
 _mcp_log = logging.getLogger("layer_orchestrator.mcp")
 _client: Optional[httpx.AsyncClient] = None

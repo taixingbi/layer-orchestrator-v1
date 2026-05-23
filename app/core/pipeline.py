@@ -8,9 +8,9 @@ from builtins import BaseExceptionGroup
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from ..config import settings
-from ..intent_rewrite_router import normalize_post_router, run_intent_rewrite_router
-from ..pipeline_state import state_event, utc_now_iso
-from ..request_context import bind_pipeline_phase
+from ..intents.registry import resolve_intent_answer
+from .state import state_event, utc_now_iso
+from ..observability.context import bind_pipeline_phase
 from ..schemas.route import (
     InternalIntentRoute,
     RouteDetail,
@@ -21,8 +21,13 @@ from ..schemas.route import (
 from ..tools.github_repo_search import run_github_repo_search
 from ..tools.user_profile import run_user_profile
 from ..tools.web_search import run_web_search
-from ..usage import build_usage_payload
-from .router import decision_to_route_detail, resolve_route
+from ..observability.usage import build_usage_payload
+from .router import (
+    decision_to_route_detail,
+    normalize_post_router,
+    resolve_route,
+    run_intent_rewrite_router,
+)
 
 _pipeline_log = logging.getLogger("layer_orchestrator.pipeline")
 _downstream_semaphore: Optional[asyncio.Semaphore] = None
@@ -278,11 +283,9 @@ async def stream_answer_query(
                 route_detail = decision_to_route_detail(decision)
                 rewrite_text = (decision.rewritten_question or query or "").strip()
                 direct_answer = decision.direct_answer
-                if decision.route in ("direct_reply", "clarify", "reject") and isinstance(
+                if decision.route in ("direct_reply", "clarify", "reject") and not isinstance(
                     route_detail, ToolRoute
                 ):
-                    pass
-                elif decision.route in ("direct_reply", "clarify", "reject"):
                     name = decision.route if decision.route != "direct_reply" else "help"
                     route_detail = InternalIntentRoute(
                         name=name if name in ("clarify", "reject") else "help",
@@ -313,8 +316,6 @@ async def stream_answer_query(
         if isinstance(route_detail, InternalIntentRoute):
             answer_text = _internal_answer(route_detail, direct_answer=direct_answer)
             if route_detail.name in ("identity", "greeting", "help", "capabilities") and not answer_text:
-                from ..intents.registry import resolve_intent_answer
-
                 answer_text = resolve_intent_answer(route_detail.name) or answer_text
             yield _answer_event(answer_text, usage=request_usage)
             async for ev in _yield_request_complete_done(
@@ -347,8 +348,19 @@ async def stream_answer_query(
 
             sem = _get_downstream_semaphore()
             if sem is not None:
-                await sem.acquire()
-            try:
+                async with sem:
+                    answer_text, citations, follow_ups, t_usage, t_latency = await _run_tool(
+                        route_detail,
+                        rewrite_text,
+                        request_id=request_id,
+                        session_id=session_id,
+                        trace_id=trace_id,
+                        rag_user=rag_user,
+                        conversation_id=conv,
+                        is_new_conversation=is_new_conversation,
+                        emit_delta=_emit_delta,
+                    )
+            else:
                 answer_text, citations, follow_ups, t_usage, t_latency = await _run_tool(
                     route_detail,
                     rewrite_text,
@@ -360,9 +372,6 @@ async def stream_answer_query(
                     is_new_conversation=is_new_conversation,
                     emit_delta=_emit_delta,
                 )
-            finally:
-                if sem is not None:
-                    sem.release()
 
             for d in delta_events:
                 yield d

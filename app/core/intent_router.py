@@ -9,19 +9,19 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from .agent_rewrite import (
+from .rewrite import (
     CANDIDATE_NAME,
     REWRITE_HISTORY_MAX_LINES,
     format_history_for_prompt,
     normalize_history_turns,
     rewrite_to_third_person,
 )
-from .config import gateway_llm_invoke_kwargs, get_langsmith_tags, get_llm, settings
-from .usage import usage_from_langchain_message
+from ..config import gateway_llm_invoke_kwargs, get_langsmith_tags, get_llm, settings
+from ..observability.usage import usage_from_langchain_message
 
 _router_log = logging.getLogger("layer_orchestrator.intent_router")
 
-_ROUTER_PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
+_ROUTER_PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 _DEFAULT_ROUTER_PROMPT_ID = "router-v1.00"
 _ROUTER_PROMPT_VERSION_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 

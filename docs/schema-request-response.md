@@ -72,7 +72,8 @@ Violations and timeout behavior:
   "trace_id": "string",
   "conversation_id": "string",
   "is_new_conversation": false,
-  "route": "rag" | "direct_reply" | "clarify" | "reject",
+  "route": "rag" | "direct_reply" | "clarify" | "reject" | "tool",
+  "route_detail": { "type": "tool", "name": "user_profile" },
   "rewrite": "string | null",
   "answer": "string | null",
   "citations": [],
@@ -118,6 +119,7 @@ Built from terminal `state` phases only (`completed`, `failed`, or `skipped`). T
 | `total` | Wall time across those phases (from earliest `started_at` to latest `ended_at`), milliseconds |
 | `intent_router` | Router LLM phase latency |
 | `rag` | Object; see below (omitted when route is not `rag`) |
+| `tool` | Wall time for non-RAG tool phases (`github_repo_search`, `web_search`), milliseconds |
 
 **`rag`** (when RAG ran):
 
@@ -128,7 +130,7 @@ Built from terminal `state` phases only (`completed`, `failed`, or `skipped`). T
 }
 ```
 
-- `rag.total` — orchestrator-side timing for the LangGraph `rag_query` phase.
+- `rag.total` — orchestrator-side timing for the `rag` phase (HTTP RAG or MCP `user_profile`).
 - `rag.service` — RAG HTTP JSON `latency_ms` breakdown when available (e.g. `embed`, `retrieve`, `chat`, `total`, …).
 
 Use **`latency_ms.total`** for end-to-end wall time (milliseconds).
@@ -251,7 +253,7 @@ Same correlation headers as `/orchestrator/answer`:
 ```json
 {
   "question": "string (required)",
-  "expected_route": "rag | direct_reply | clarify | reject (optional)",
+  "expected_route": "rag | direct_reply | clarify | reject | tool (optional)",
   "conversation_id": "string (optional)",
   "router_model": "string (optional; default: LLM_MODEL)",
   "router_temperature": 0,
@@ -267,7 +269,7 @@ When `expected_route` is set, the response includes `evaluation.route_match` and
 
 **Prompt-injection guard (latest message, hard logic):** Before the router LLM and before small-talk, the server may match normalized patterns for known jailbreak / exfil attempts and return **`reject`**. Then `router.prompt_source` is **`injection_guard`**, `router.prompt_file` is **`null`**, and `router.smalltalk_intent` is **`null`**. This does not replace authorization on tools or data; see [intent-router.md](intent-router.md).
 
-**Small-talk (empty history):** If the injection guard does not apply and `history` is empty or omitted, the server tries **two** layers before the router LLM (see [`app/intent_rewrite_router.py`](../app/intent_rewrite_router.py)):
+**Small-talk (empty history):** If the injection guard does not apply and `history` is empty or omitted, the server tries **two** layers before the router LLM (see [`app/core/intent_router.py`](../app/core/intent_router.py)):
 
 1. **Exact seed** — Normalized exact equality to a `user_examples` string in `app/prompts/smalltalk_examples.json`. Then `router.prompt_source` is **`smalltalk_seed`**.
 2. **Pattern layer** — Short utterances (length cap) that **fullmatch** a small set of regexes map to an **`intent`**; the **`answer`** is still read from the JSON row with that `intent`. Then `router.prompt_source` is **`smalltalk_pattern`**.
@@ -299,7 +301,9 @@ In both cases the response is **`direct_reply`** with that `answer` (no router L
   },
   "decision": {
     "rewritten_question": "string",
-    "route": "rag | direct_reply | clarify | reject",
+    "route": "rag | direct_reply | clarify | reject | tool",
+    "route_detail": { "type": "tool", "name": "user_profile" },
+    "legacy_route": "rag",
     "answer": "string | null",
     "reason": "string"
   },
@@ -324,7 +328,7 @@ In both cases the response is **`direct_reply`** with that `answer` (no router L
 ### Evaluation checks
 
 - `has_rewrite`: rewritten question is non-empty.
-- `route_valid`: route is one of `rag`, `direct_reply`, `clarify`, `reject`.
+- `route_valid`: route is one of `rag`, `direct_reply`, `clarify`, `reject`, `tool`.
 - `route_match` (top-level and in `checks`): when `expected_route` is provided, compares to `actual_route`; when omitted, top-level `route_match` is `null` and `checks.route_match` is `true`.
 - `direct_reply_has_answer`: when route is `direct_reply`, `decision.answer` (router inline reply) is non-empty; for `rag` / `clarify` / `reject`, `answer` may be null or carry clarify/reject text from the router.
 - `history_followup_rewritten`: if history is present, rewritten question differs from raw question.
@@ -431,7 +435,7 @@ Example metric families exposed:
 - `orchestrator_http_request_duration_seconds` (histogram)
 - `orchestrator_route_decisions_total` (labels: `route`)
 - `orchestrator_router_duration_seconds` (histogram)
-- `orchestrator_rag_duration_seconds` (histogram; from `rag_query` phase)
+- `orchestrator_rag_duration_seconds` (histogram; from completed `rag` phase)
 - `orchestrator_pipeline_errors_total`
 - `orchestrator_timeouts_total` (labels include timeout kind)
 

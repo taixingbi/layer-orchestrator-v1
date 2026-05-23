@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, List, Optional
 
-from ..usage import build_usage_payload
+from ..observability.usage import build_usage_payload
 
 
 def empty_answer_response(

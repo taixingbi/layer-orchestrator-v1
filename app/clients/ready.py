@@ -8,7 +8,7 @@ from typing import Any, Dict, Tuple
 
 import httpx
 
-from .config import gateway_extra_headers, normalized_llm_base_url, settings
+from ..config import gateway_extra_headers, normalized_llm_base_url, settings
 
 _READINESS_RID = "readiness-check"
 _READINESS_Q = "."

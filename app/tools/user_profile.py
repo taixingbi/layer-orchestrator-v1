@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, Optional
 
 from ..config import settings
-from ..rag_http_tool import query_rag_http_with_meta
+from ..clients.rag_http import query_rag_http_with_meta
 from ..schemas.tool import ToolResult
-from ..usage import usage_from_rag_json
+from ..observability.usage import usage_from_rag_json
 from .mcp_client import call_mcp_tool
 
 

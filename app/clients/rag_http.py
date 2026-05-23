@@ -9,8 +9,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 from langchain_core.tools import tool
 
-from .config import settings
-from .usage import usage_from_rag_json
+from ..config import settings
+from ..observability.usage import usage_from_rag_json
 
 _rag_log = logging.getLogger("layer_orchestrator.rag_http")
 _RAG_LOG_JSON_MAX_CHARS = 80_000

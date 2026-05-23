@@ -6,7 +6,7 @@ from typing import Literal, Optional
 from langsmith import Client
 from pydantic import BaseModel, Field
 
-from .config import has_langsmith_credentials
+from ..config import has_langsmith_credentials
 
 LANGSMITH_FEEDBACK_KEY = "user_rating"
 

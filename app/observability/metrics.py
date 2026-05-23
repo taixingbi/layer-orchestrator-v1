@@ -84,7 +84,7 @@ def observe_pipeline_event(event: dict) -> None:
         if status == "completed" and latency_s is not None:
             if phase == "intent_router":
                 ORCHESTRATOR_ROUTER_DURATION_SECONDS.observe(latency_s)
-            elif phase == "rag_query":
+            elif phase in ("rag", "rag_query"):
                 ORCHESTRATOR_RAG_DURATION_SECONDS.observe(latency_s)
         return
     if et == "error":

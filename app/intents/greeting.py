@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Optional, Tuple
 
-from ..agent_rewrite import CANDIDATE_NAME
+from ..core.rewrite import CANDIDATE_NAME
 
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 _SEED_PATH = _PROMPTS_DIR / "smalltalk_examples.json"

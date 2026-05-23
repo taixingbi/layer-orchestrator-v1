@@ -49,11 +49,11 @@ curl -N http://192.168.86.179:30180/v1/chat/completions \
   }'
 ```
 
-If this works, use the same host and model in `LLM_GATEWAY_BASE_URL` and `LLM_MODEL`. Most agent steps use **non-streaming** completions unless LangChain enables streaming for a call.
+If this works, use the same host and model in `LLM_GATEWAY_BASE_URL` and `LLM_MODEL`. The **intent router** uses **non-streaming** chat completions. The legacy LangGraph code under `app/graph/` used tool calling; the **default pipeline** does not invoke that graph.
 
-## Tool calling
+## Tool calling (legacy graph only)
 
-The RAG agent uses **`bind_tools`**. The model and server must return **`tool_calls` / function-calling** in the chat completion payload where applicable, or tool rounds will fail.
+The compiled LangGraph agent in `app/graph/` used **`bind_tools`**. That path is **not** used by `app/core/pipeline.py`. Production RAG runs via direct HTTP (`app/clients/rag_http.py`) or MCP (`USE_MCP_TOOLS=true`).
 
 ## See also
 

@@ -4,9 +4,9 @@ import logging
 import time
 
 from .config import settings
-from .logging_config import new_request_id, setup_logging, shutdown_logging
-from .metrics import observe_http
-from .request_context import (
+from .observability.logging import new_request_id, setup_logging, shutdown_logging
+from .observability.metrics import observe_http
+from .observability.context import (
     bind_pipeline_phase,
     bind_request_context,
     reset_request_context,
@@ -34,7 +34,7 @@ async def _lifespan(_app: FastAPI):
     try:
         yield
     finally:
-        from .rag_http_tool import aclose_rag_http_client
+        from .clients.rag_http import aclose_rag_http_client
         from .tools.mcp_client import aclose_mcp_client
 
         await aclose_rag_http_client()

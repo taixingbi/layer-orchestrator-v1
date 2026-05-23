@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
-from ..intent_rewrite_router import (
+from .intent_router import (
     RouterDecision,
     normalize_post_router,
     run_intent_rewrite_router,

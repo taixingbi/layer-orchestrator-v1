@@ -1,7 +1,7 @@
 """Unit tests for usage normalization and RAG SSE parsing."""
 
-from app.rag_http_tool import _parse_sse_response_text
-from app.usage import build_usage_payload, usage_from_rag_json
+from app.clients.rag_http import _parse_sse_response_text
+from app.observability.usage import build_usage_payload, usage_from_rag_json
 
 
 def test_usage_from_rag_json_nested():

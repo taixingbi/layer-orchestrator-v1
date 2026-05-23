@@ -1,6 +1,6 @@
 # Intent router (rewrite + route)
 
-This document describes how **`run_intent_rewrite_router`** in [`app/intent_rewrite_router.py`](../app/intent_rewrite_router.py) chooses **`route`** (`rag` | `direct_reply` | `clarify` | `reject`), fills **`direct_answer`** when applicable, and produces **`rewritten_question`** for downstream RAG or clients.
+This document describes how **`run_intent_rewrite_router`** in [`app/core/intent_router.py`](../app/core/intent_router.py) chooses **`route`** (`rag` | `direct_reply` | `clarify` | `reject`), fills **`direct_answer`** when applicable, and produces **`rewritten_question`** for downstream RAG or clients.
 
 For HTTP field names and eval payloads, see [schema-request-response.md](schema-request-response.md). For empty-history FAQ/greetings without an LLM, see [smalltalk-seed.md](smalltalk-seed.md).
 
@@ -17,7 +17,7 @@ For HTTP field names and eval payloads, see [schema-request-response.md](schema-
 | Field | Role |
 |-------|------|
 | `rewritten_question` | Standalone query string; for **`rag`**, expected to be search-friendly and third person about the candidate where applicable. |
-| `route` | `rag` → LangGraph + HTTP RAG; `direct_reply` / `clarify` / `reject` → final answer path without the RAG graph (see [architecture.md](architecture.md)). |
+| `route` | `rag` → HTTP RAG / MCP `user_profile`; `direct_reply` / `clarify` / `reject` → final answer without tools; `tool` → GitHub MCP or Tavily (see [architecture.md](architecture.md)). |
 | `can_answer_directly` | Whether the model believes a direct string answer is appropriate (aligned with `direct_reply` / `clarify` usage). |
 | `direct_answer` | User-visible answer body when the route supplies one; may be `null` on `rag`. |
 | `reason` | Short model or server annotation (eval and logs). |
@@ -78,7 +78,7 @@ Same as parse failure: **`fallback_router_decision`** (`rag`) plus the two post-
 
 ### 7. `normalize_post_router` (callers after return)
 
-[`normalize_post_router`](../app/intent_rewrite_router.py) runs in **`app/orchestrator.py`** and eval in **`app/main.py`** with the latest question and history:
+[`normalize_post_router`](../app/core/intent_router.py) runs in **`app/core/pipeline.py`** (and **`POST /orchestrator/eval/router`**) with the latest question and history:
 
 1. **`maybe_override_direct_reply_for_kb_grounded`** — If the model chose **`direct_reply`** but the latest line names the candidate, or is an immigration/work-auth follow-up in a thread that already mentions the candidate (or uses second-person for that topic), the server switches to **`rag`** so the answer includes KB **citations** and **follow_up_questions** instead of replaying chat history.
 
@@ -104,6 +104,7 @@ Router prompts are **not** JSON: the loader reads **`{id}.txt`** as the system s
 
 ## Related code
 
-- [`app/intent_rewrite_router.py`](../app/intent_rewrite_router.py) — `run_intent_rewrite_router`, `RouterDecision`, `normalize_post_router`, `_prompt_injection_hard_block`, small-talk helpers, immigration override, third-person enforcement.
-- [`app/agent_rewrite.py`](../app/agent_rewrite.py) — `normalize_history_turns`, `format_history_for_prompt`, `rewrite_to_third_person`.
+- [`app/core/pipeline.py`](../app/core/pipeline.py) — production orchestration: `stream_answer_query`, tool dispatch, SSE event generation.
+- [`app/core/intent_router.py`](../app/core/intent_router.py) — `run_intent_rewrite_router`, `RouterDecision`, `normalize_post_router`, injection guard, small-talk helpers, immigration override, third-person enforcement.
+- [`app/core/rewrite.py`](../app/core/rewrite.py) — `normalize_history_turns`, `format_history_for_prompt`, `rewrite_to_third_person`.
 - [`app/config.py`](../app/config.py) — `default_router_prompt_version` (`ROUTER_PROMPT_VERSION`).

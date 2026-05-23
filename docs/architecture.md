@@ -1,160 +1,177 @@
-## 🔄 `/orchestrator/answer` (`stream=true`) — SSE Execution Flow
+## `/orchestrator/answer` — execution flow
 
-This endpoint provides a **streaming, reliability-first orchestration pipeline** for answering questions using RAG tools.
+This endpoint provides a **streaming, reliability-first orchestration pipeline** for answering questions over Taixing-focused knowledge.
 
-It emits **Server-Sent Events (SSE)** so clients can observe each reasoning stage in real time.
+It emits **Server-Sent Events (SSE)** when `stream=true` so clients can observe rewrite, route, and answer stages in real time.
 
 ---
 
-### ✅ 1. Request Initialization
+### 1. Request initialization
 
-* The service **accepts or generates** a `request_id`.
-* Immediately emits (ids may be `null` when omitted):
+* The service **accepts or generates** correlation ids from headers (`X-Request-Id`, `X-Session-Id`, `X-Trace-Id`).
+* Optional **`conversation_id`** in the JSON body selects the thread id; blank → server assigns `conv_<uuidhex>`.
+* Immediately emits:
 
 ```json
 {
   "type": "request_id",
   "request_id": "<uuid>",
   "session_id": "<string | null>",
+  "trace_id": "<string>",
   "conversation_id": "<string>",
   "is_new_conversation": false
 }
 ```
 
-This ID is propagated through:
-
-* LangGraph runs
-* RAG HTTP query requests
-* LangSmith traces
-* Feedback API
+These ids propagate through router LLM calls, tool/RAG HTTP requests, structured logs, and optional LangSmith traces.
 
 ---
 
-### ✍️ 2–3. Intent / rewrite router (one LLM)
+### 2–3. Intent / rewrite router (one LLM when no short-circuit)
 
-One gateway call returns **JSON only**: `rewritten_question`, `route` (`rag` \| `direct_reply` \| `clarify` \| `reject`), `can_answer_directly`, `direct_answer`, `reason`. Optional conversation `history` in the request body is included in the router prompt. **Before** that call, the server may short-circuit on **prompt-injection** patterns or **small-talk** seed rules (see [intent-router.md](intent-router.md)). Naming the candidate does not trigger a hard server override; the router prompt tells the model to use `rag` for document/org-grounded needs and `direct_reply` for clearly general questions even when Taixing Bi is named. **Full pipeline:** [intent-router.md](intent-router.md).
+One gateway call returns **JSON only**: `rewritten_question`, `route`, optional nested `route_detail`, `direct_answer`, `reason`.
 
-SSE emissions (after the router completes):
+**Before** that call, the server may short-circuit on:
+
+- **Deterministic internal intents** (`identity`, `greeting`, `help`, `capabilities`) via `app/intents/` — checked in `app/core/pipeline.py` **before** `run_intent_rewrite_router` is invoked (`resolve_route`)
+- Inside **`run_intent_rewrite_router`** (`app/core/intent_router.py`): **prompt-injection guard** → `reject`; **empty-history small-talk seed** → `direct_reply` (no router LLM)
+
+See [intent-router.md](intent-router.md) for the full pipeline.
+
+SSE emissions (after routing completes):
 
 ```json
 { "type": "rewrite", "text": "<rewritten question>" }
-{ "type": "route", "route": "rag" }
+{ "type": "route", "route": "rag", "route_detail": { "type": "tool", "name": "user_profile" } }
 ```
 
-`route` is lowercase. For `direct_reply`, `clarify`, or `reject`, the pipeline returns `direct_answer` (or a default) as the final `answer` and skips LangGraph.
+`route` is the **legacy flat** string (`rag`, `direct_reply`, `clarify`, `reject`, `tool`). Nested `route_detail` names the concrete handler.
 
 ---
 
-### ⚙️ 4. RAG execution (when `route` is `rag`)
+### 4. Branch: internal intent | direct answer | tool
 
-When `RAG_HTTP_BASE_URL` is set and the router chose `rag`, the orchestrator runs LangGraph once.
+After routing, `app/core/pipeline.py` dispatches **directly** (no LangGraph on the default path):
 
----
+| `route_detail` | Handler | Legacy `route` |
+|----------------|---------|----------------|
+| `internal_intent` (`identity`, `greeting`, `help`, `capabilities`, `clarify`, `reject`) | Static or router `direct_answer` | `direct_reply`, `clarify`, or `reject` |
+| `tool:user_profile` | HTTP RAG (`POST /v1/rag/query`) or MCP `rag_query` when `USE_MCP_TOOLS=true` | `rag` |
+| `tool:github_repo_search` | MCP `ask_repo` | `tool` |
+| `tool:web_search` | Tavily search | `tool` |
 
-### 🧠 5. `run_graph()` — LangGraph Agent Execution
-
-The RAG phase invokes `run_graph()` only on the `rag` path:
-
-#### a. Runs HTTP RAG once inside LangGraph
-
-```
-retrieve → POST /v1/rag/query → evidence as answer payload
-```
-
-#### b. Captures the **root LangSmith run_id** (internal / logs only)
-
-The graph callback records the LangSmith root run id for **server logs and observability**. Clients correlate requests with **`trace_id`** (header `X-Trace-Id` / JSON `trace_id`); **`POST /feedback`** accepts `trace_id`, `request_id`, or `agent_graph_run_id` (LangSmith UUID) for `create_feedback`.
+Tool phases emit internal `state` events (`phase`: `rag` or `tool`) for logs, metrics, and non-stream `latency_ms` aggregation. **SSE clients do not receive `state` events**; they see `rewrite` → `route` → optional `answer_delta` → `answer` → `done`.
 
 ---
 
-### 📤 6. Final Answer Emission
-
-After the phase completes:
+### 5. Final answer emission
 
 ```json
 {
   "type": "answer",
-  "text": "<final answer>"
+  "text": "<final answer>",
+  "citations": [],
+  "follow_up_questions": [],
+  "usage": {}
 }
 ```
 
+On the `rag` path, `text` is verbatim RAG-formatted retrieval output (no separate answer-synthesis LLM in the pipeline).
+
 ---
 
-### 🏁 7. Completion or Failure Signal
+### 6. Completion or failure
 
 Success:
 
 ```json
-{ "type": "done" }
+{ "type": "done", "latency_ms": {}, "usage": {} }
 ```
 
 Failure:
 
 ```json
-{ "type": "error", "message": "<reason>" }
+{ "type": "error", "text": "<reason>" }
 ```
 
 ---
 
-## 📡 Event Stream Example
+## Event stream example (SSE)
 
 ```
 request_id  → trace identity established
 rewrite     → normalized query
 route       → execution plan chosen
-state       → phase progress updates
-answer      → RAG-formatted retrieval text, or router `direct_reply` / `clarify` / `reject` text
-done        → stream completed
+answer_delta→ optional MCP streaming chunks
+answer      → final text (+ citations / follow-ups from RAG or web search)
+done        → stream completed (latency_ms + usage)
 ```
 
----
-
-## 🧩 Why This Architecture Exists
-
-This flow is intentionally designed to solve common LLM production failures:
-
-| Problem                    | Solution in This Pipeline                       |
-| -------------------------- | ----------------------------------------------- |
-| Hallucination              | Single RAG hop; user-visible text is RAG output (no extra answer LLM in graph) |
-| Wrong data source          | Single RAG tool (no routing)                    |
-| Unobservable failures      | SSE phase visibility                            |
-| Weak retrieval queries     | Router rewrites to a standalone search query   |
-| User feedback disconnected | `trace_id` / `request_id` / optional LangSmith UUID on `/feedback` |
+Phase `state` events are **internal only** (structured logs, Prometheus, non-stream JSON aggregation).
 
 ---
 
-## 🗺️ Simplified Sequence Diagram
+## Why this architecture exists
+
+| Problem | Solution in this pipeline |
+| -------- | ------------------------- |
+| Hallucination | RAG path returns retrieval text verbatim; no answer LLM after retrieve |
+| Gateway tool-calling quirks | Direct HTTP RAG / MCP dispatch instead of LangGraph tool loops |
+| Unobservable failures | SSE lifecycle + structured JSON logs + `/metrics` |
+| Weak retrieval queries | Router rewrites to a standalone search query |
+| User feedback disconnected | `trace_id` / `request_id` on `/feedback` |
+
+---
+
+## Sequence diagram
+
 ```mermaid
 sequenceDiagram
   participant Client
   participant API
   participant Router as IntentRewriteRouter
-  participant Graph as LangGraph (run_graph)
-  participant RAG as RAG HTTP Service
+  participant Tools as Tool dispatch
+  participant RAG as RAG HTTP / MCP
   participant LangSmith
 
   Client->>API: POST /orchestrator/answer {"stream": true}
   API-->>Client: SSE {type:"request_id"}
 
-  API->>Router: one LLM JSON rewrite plus route
-  Router-->>API: rewritten_question route
-  API-->>Client: SSE {type:"rewrite"}
-  API-->>Client: SSE {type:"route"}
+  alt server short-circuit (intent / small-talk / injection)
+    API-->>Client: SSE {type:"rewrite"}
+    API-->>Client: SSE {type:"route"}
+  else LLM router
+    API->>Router: one LLM JSON rewrite + route
+    Router-->>API: rewritten_question, route_detail
+    API-->>Client: SSE {type:"rewrite"}
+    API-->>Client: SSE {type:"route"}
+  end
 
-  alt route is rag
-    API->>Graph: run_graph
-    Graph->>RAG: POST /v1/rag/query
+  alt route_detail is user_profile
+    API->>Tools: run_user_profile
+    Tools->>RAG: POST /v1/rag/query (or MCP rag_query)
+    RAG-->>Tools: answer + citations
+  else route_detail is github_repo_search or web_search
+    API->>Tools: run_github_repo_search / run_web_search
+    Tools-->>API: answer
+  else internal_intent or direct_reply
+    API-->>API: static / direct_answer
   end
 
   API-->>Client: SSE {type:"answer"}
   API-->>Client: SSE {type:"done"}
 
   opt user provides feedback
-    Client->>API: POST /feedback (trace_id or run_id, rating, comment)
-    API->>LangSmith: create_feedback(run_id, payload)
-    LangSmith-->>API: stored
+    Client->>API: POST /feedback (trace_id or request_id, rating)
+    API->>LangSmith: create_feedback (when configured)
   end
 ```
+
+---
+
+## Legacy LangGraph (`app/graph/`)
+
+A compiled LangGraph with a single `retrieve` node remains under **`app/graph/`** for compatibility experiments. **The production pipeline in `app/core/pipeline.py` does not invoke it.** Judge nodes are likewise unused.
 
 ---
 

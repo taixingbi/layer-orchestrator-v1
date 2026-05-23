@@ -25,11 +25,11 @@ from ..core.normalize import (
 )
 from ..core.router import decision_to_route_detail, normalize_post_router, run_intent_rewrite_router
 from ..core.sse import SSE_HEADERS, answer_json, sse_stream_answer_gen
-from ..intent_rewrite_router import RouterDecision
-from ..langsmith_feedback import FEEDBACK_TYPES, FeedbackBody, submit_langsmith_feedback
-from ..metrics import inc_timeout, metrics_content_type, metrics_payload
-from ..ready_checks import run_readiness
-from ..request_context import bind_conversation_logging_context
+from ..core.intent_router import RouterDecision
+from ..observability.feedback import FEEDBACK_TYPES, FeedbackBody, submit_langsmith_feedback
+from ..observability.metrics import inc_timeout, metrics_content_type, metrics_payload
+from ..clients.ready import run_readiness
+from ..observability.context import bind_conversation_logging_context
 from ..schemas.request import (
     AnswerBody,
     EvalRouterBody,
@@ -101,7 +101,10 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
     request.state.conversation_id = conversation_id
     async with bind_conversation_logging_context(conversation_id, is_new_conversation):
         validate_answer_body_limits(body, len(raw_bytes), conversation_id=conversation_id)
-        raw_body = await request.json()
+        try:
+            raw_body = json.loads(raw_bytes)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="invalid JSON body")
         reject_body_correlation_fields(raw_body)
         session_id, request_id, trace_id = header_ids(request)
         rag_user = header_rag_user(request)

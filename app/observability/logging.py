@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from .request_context import (
+from .context import (
     get_conversation_id,
     get_http_method,
     get_http_path,
