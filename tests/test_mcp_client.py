@@ -1,6 +1,12 @@
 """MCP SSE parsing fixtures from tmp.md examples."""
 
-from app.tools.mcp_client import _accumulate_github_sse, _accumulate_progress_events
+import pytest
+
+from app.tools.mcp_client import (
+    _accumulate_github_sse,
+    _accumulate_progress_events,
+    _parse_mcp_sse_lines,
+)
 
 
 def test_accumulate_progress_rag_mcp_style():
@@ -27,3 +33,24 @@ data: {"ok": true, "answer": "## Title", "citations": []}
     merged = _accumulate_github_sse(sse)
     assert merged.get("answer") == "## Title"
     assert merged.get("ok") is True
+
+
+@pytest.mark.asyncio
+async def test_parse_mcp_sse_lines_streams_deltas():
+    sse_lines = [
+        "event: message",
+        'data: {"params": {"message": "{\\"type\\": \\"answer_delta\\", \\"text\\": \\"Hi\\"}"}}',
+        "",
+        "event: message",
+        'data: {"params": {"message": "{\\"type\\": \\"answer_delta\\", \\"text\\": \\" there\\"}"}}',
+        "",
+    ]
+    deltas: list[str] = []
+
+    async def _lines():
+        for line in sse_lines:
+            yield line
+
+    result = await _parse_mcp_sse_lines(_lines(), on_delta=deltas.append)
+    assert deltas == ["Hi", " there"]
+    assert result.answer == "Hi there"

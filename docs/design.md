@@ -85,8 +85,10 @@ Detailed SSE sequence: **[architecture.md](architecture.md)**.
 
 When the router selects `user_profile`, the pipeline calls RAG directly:
 
-- **Default:** `app/tools/user_profile.py` → `query_rag_http_with_meta` in `app/clients/rag_http.py` → `POST /v1/rag/query`.
-- **Optional MCP:** when `USE_MCP_TOOLS=true`, MCP `rag_query` on `MCP_RAG_BASE_URL` (falls back to `RAG_HTTP_BASE_URL`).
+- **Default:** `app/tools/user_profile.py` → MCP `rag_query` with `stream: true` when `MCP_RAG_BASE_URL` is set (`USE_MCP_RAG=true`, default).
+- **HTTP fallback:** `USE_MCP_RAG=false` → `query_rag_http_with_meta` in `app/clients/rag_http.py` (single JSON response, no token streaming).
+
+With MCP + `stream=true` on `/orchestrator/answer`, the orchestrator forwards **`answer_delta`** SSE events as tokens arrive, then a final **`answer`** with citations and usage.
 
 The user-facing `answer` is the RAG service response text. No orchestrator answer LLM runs after retrieval.
 

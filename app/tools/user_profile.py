@@ -1,14 +1,18 @@
-"""User profile tool via MCP rag_query or HTTP RAG fallback."""
+"""User profile tool via MCP rag_query (stream) or HTTP RAG fallback."""
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional
+from typing import Callable, Dict, Optional
 
-from ..config import settings
+from ..config import mcp_rag_enabled, settings
 from ..clients.rag_http import query_rag_http_with_meta
 from ..schemas.tool import ToolResult
 from ..observability.usage import usage_from_rag_json
 from .mcp_client import call_mcp_tool
+
+
+def _use_mcp_rag() -> bool:
+    return mcp_rag_enabled()
 
 
 async def run_user_profile(
@@ -22,9 +26,9 @@ async def run_user_profile(
     is_new_conversation: bool = False,
     on_delta: Optional[Callable[[str], None]] = None,
 ) -> ToolResult:
-    if settings.use_mcp_tools and settings.mcp_rag_base_url:
-        return await call_mcp_tool(
-            base_url=settings.mcp_rag_base_url,
+    if _use_mcp_rag():
+        result = await call_mcp_tool(
+            base_url=settings.mcp_rag_base_url or "",
             tool_name="rag_query",
             arguments={
                 "question": question,
@@ -39,8 +43,13 @@ async def run_user_profile(
             trace_id=trace_id,
             rag_user=rag_user,
             conversation_id=conversation_id,
+            stream=True,
             on_delta=on_delta,
         )
+        meta = dict(result.metadata or {})
+        meta["transport"] = "mcp_rag"
+        result.metadata = meta
+        return result
     text, meta = await query_rag_http_with_meta(
         question,
         request_id,

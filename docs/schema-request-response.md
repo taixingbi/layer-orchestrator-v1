@@ -159,7 +159,7 @@ Emitted alongside legacy flat `route` on the `route` SSE event and non-stream JS
 | `tool` | `user_profile` | `rag` |
 | `tool` | `github_repo_search`, `web_search` | `tool` |
 
-Tool `web_search` uses **Tavily** (`TAVILY_API_KEY`). Tools `user_profile` and `github_repo_search` use **MCP** when `USE_MCP_TOOLS=true` (`MCP_RAG_BASE_URL`, `MCP_GITHUB_BASE_URL`).
+Tool `web_search` uses **Tavily** (`TAVILY_API_KEY`). Tool `user_profile` uses **MCP `rag_query` with stream** when `MCP_RAG_BASE_URL` is set (`USE_MCP_RAG=true`, default). Set `USE_MCP_RAG=false` for buffered HTTP RAG. Tool `github_repo_search` uses **MCP** when `USE_MCP_TOOLS=true` (`MCP_GITHUB_BASE_URL`).
 
 ### Error (`500`)
 
@@ -220,14 +220,14 @@ Response: **SSE**, each line `data: <json>\n\n`.
 | `request_id` | `{ "type": "request_id", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation" }` — early correlation (`conversation_id` is always the effective id; omitted keys besides these may be null) |
 | `rewrite` | `{ "type": "rewrite", "text": "..." }` |
 | `route` | `{ "type": "route", "route": "rag" \| "direct_reply" \| "clarify" \| "reject" \| "tool", "route_detail": { ... } }` |
-| `answer_delta` | `{ "type": "answer_delta", "text": "..." }` — optional streamed chunks from MCP tools |
+| `answer_delta` | `{ "type": "answer_delta", "text": "..." }` — streamed token/chunk events from MCP `rag_query` (and other MCP tools); emitted **as they arrive** before `answer` |
 | `answer` | `{ "type": "answer", "text": "...", "citations": [], "follow_up_questions": [] }` — RAG fills arrays when the service returns them |
 | `done` | `{ "type": "done", …, "latency_ms", "usage" }` — success end; **`latency_ms`** and **`usage`** same shape as non-stream JSON |
 | `error` | `{ "type": "error", "text": "...", …, "latency_ms"?, "usage" }` — failure; **`latency_ms`** / **`usage`** when recorded before failure |
 
 **Phase `state` events are not sent on the SSE wire** (they remain in structured logs and Prometheus). Use non-stream JSON (`stream: false`) for `latency_ms` built from internal phase state.
 
-Typical successful stream sequence: `request_id` → `rewrite` → `route` → `answer` → `done` (with `latency_ms` and `usage`).
+Typical successful stream sequence (RAG via MCP): `request_id` → `rewrite` → `route` → `answer_delta` (×N) → `answer` → `done`. HTTP RAG fallback skips `answer_delta` and emits one `answer`.
 
 Timeout examples in stream mode:
 

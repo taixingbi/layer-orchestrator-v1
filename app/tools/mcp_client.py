@@ -74,6 +74,19 @@ def _parse_mcp_progress_message(message: str) -> Optional[Dict[str, Any]]:
     return obj if isinstance(obj, dict) else None
 
 
+def _emit_progress_event(
+    inner: Dict[str, Any],
+    *,
+    progress_events: List[Dict[str, Any]],
+    on_delta: Optional[Callable[[str], None]],
+) -> None:
+    progress_events.append(inner)
+    if inner.get("type") == "answer_delta":
+        chunk = inner.get("text") or ""
+        if on_delta and chunk:
+            on_delta(chunk)
+
+
 def _accumulate_progress_events(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Merge MCP progress JSON events (RAG MCP style) into one payload."""
     text_chunks: List[str] = []
@@ -171,6 +184,97 @@ def _payload_to_tool_result(data: Dict[str, Any]) -> ToolResult:
     )
 
 
+def _emit_events_from_list(
+    events: List[Dict[str, Any]],
+    *,
+    on_delta: Optional[Callable[[str], None]],
+) -> Dict[str, Any]:
+    progress: List[Dict[str, Any]] = []
+    for ev in events:
+        if isinstance(ev, dict):
+            _emit_progress_event(ev, progress_events=progress, on_delta=on_delta)
+    return _accumulate_progress_events(progress)
+
+
+async def _parse_mcp_sse_lines(
+    lines: AsyncIterator[str],
+    *,
+    on_delta: Optional[Callable[[str], None]] = None,
+) -> ToolResult:
+    progress_events: List[Dict[str, Any]] = []
+    github_deltas: List[str] = []
+    current_event: Optional[str] = None
+
+    async for raw_line in lines:
+        stripped = raw_line.strip()
+        if not stripped:
+            current_event = None
+            continue
+        if stripped.startswith("event:"):
+            current_event = stripped[6:].strip()
+            continue
+        if not stripped.startswith("data:"):
+            continue
+        raw = stripped[5:].strip()
+        if not raw:
+            continue
+        try:
+            obj = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if current_event == "message" and isinstance(obj, dict):
+            params = obj.get("params") or {}
+            msg = params.get("message")
+            inner = _parse_mcp_progress_message(msg) if isinstance(msg, str) else None
+            if inner:
+                _emit_progress_event(inner, progress_events=progress_events, on_delta=on_delta)
+        elif current_event == "delta" and isinstance(obj, dict):
+            chunk = obj.get("text") or ""
+            github_deltas.append(chunk)
+            if on_delta and chunk:
+                on_delta(chunk)
+        elif current_event == "done" and isinstance(obj, dict):
+            if obj.get("answer"):
+                return _payload_to_tool_result(obj)
+
+    if progress_events:
+        merged = _accumulate_progress_events(progress_events)
+        return _payload_to_tool_result(merged)
+    if github_deltas:
+        return _payload_to_tool_result({"answer": "".join(github_deltas)})
+    return ToolResult(answer="")
+
+
+async def _tool_result_from_json_payload(
+    data: Any,
+    *,
+    on_delta: Optional[Callable[[str], None]] = None,
+) -> ToolResult:
+    if not isinstance(data, dict):
+        return ToolResult(answer=json.dumps(data, default=str)[:50000])
+    if "result" not in data:
+        return ToolResult(answer=json.dumps(data, default=str)[:50000])
+    result = data["result"]
+    if not isinstance(result, dict):
+        return ToolResult(answer=json.dumps(data, default=str)[:50000])
+    content = result.get("content")
+    if isinstance(content, list) and content:
+        text = content[0].get("text") if isinstance(content[0], dict) else None
+        if text:
+            try:
+                inner = json.loads(text)
+                if isinstance(inner, dict) and inner.get("events"):
+                    merged = _emit_events_from_list(inner["events"], on_delta=on_delta)
+                    return _payload_to_tool_result(merged)
+            except json.JSONDecodeError:
+                return ToolResult(answer=str(text))
+    sc = result.get("structuredContent")
+    if isinstance(sc, dict) and sc.get("events"):
+        merged = _emit_events_from_list(sc["events"], on_delta=on_delta)
+        return _payload_to_tool_result(merged)
+    return ToolResult(answer=json.dumps(data, default=str)[:50000])
+
+
 async def call_mcp_tool(
     *,
     base_url: str,
@@ -184,7 +288,7 @@ async def call_mcp_tool(
     stream: bool = True,
     on_delta: Optional[Callable[[str], None]] = None,
 ) -> ToolResult:
-    """POST /v1/mcp tools/call and aggregate streamed or JSON result."""
+    """POST /v1/mcp tools/call; stream SSE lines and invoke on_delta per answer_delta."""
     base = (base_url or "").strip().rstrip("/")
     if not base:
         raise ValueError("MCP base URL is not set")
@@ -208,75 +312,17 @@ async def call_mcp_tool(
         "mcp_tool_call",
         extra={
             "event": "mcp_tool_call",
-            "gateway_meta": {"url": url, "tool": tool_name},
+            "gateway_meta": {"url": url, "tool": tool_name, "stream": stream},
         },
     )
-    response = await client.post(url, json=payload, headers=headers)
-    response.raise_for_status()
-    ctype = (response.headers.get("content-type") or "").lower()
-    if "text/event-stream" in ctype:
-        progress_events: List[Dict[str, Any]] = []
-        github_deltas: List[str] = []
-        current_event: Optional[str] = None
-        for line in response.text.splitlines():
-            stripped = line.strip()
-            if not stripped:
-                current_event = None
-                continue
-            if stripped.startswith("event:"):
-                current_event = stripped[6:].strip()
-                continue
-            if not stripped.startswith("data:"):
-                continue
-            raw = stripped[5:].strip()
-            if not raw:
-                continue
-            try:
-                obj = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
-            if current_event == "message" and isinstance(obj, dict):
-                params = obj.get("params") or {}
-                msg = params.get("message")
-                inner = _parse_mcp_progress_message(msg) if isinstance(msg, str) else None
-                if inner:
-                    progress_events.append(inner)
-                    if inner.get("type") == "answer_delta":
-                        chunk = inner.get("text") or ""
-                        if on_delta and chunk:
-                            on_delta(chunk)
-            elif current_event == "delta" and isinstance(obj, dict):
-                chunk = obj.get("text") or ""
-                github_deltas.append(chunk)
-                if on_delta and chunk:
-                    on_delta(chunk)
-            elif current_event == "done" and isinstance(obj, dict):
-                if obj.get("answer"):
-                    return _payload_to_tool_result(obj)
-        if progress_events:
-            merged = _accumulate_progress_events(progress_events)
-            return _payload_to_tool_result(merged)
-        if github_deltas:
-            return _payload_to_tool_result({"answer": "".join(github_deltas)})
-        gh = _accumulate_github_sse(response.text)
-        return _payload_to_tool_result(gh)
-    data = response.json()
-    if isinstance(data, dict) and "result" in data:
-        result = data["result"]
-        if isinstance(result, dict):
-            content = result.get("content")
-            if isinstance(content, list) and content:
-                text = content[0].get("text") if isinstance(content[0], dict) else None
-                if text:
-                    try:
-                        inner = json.loads(text)
-                        if isinstance(inner, dict) and inner.get("events"):
-                            merged = _accumulate_progress_events(inner["events"])
-                            return _payload_to_tool_result(merged)
-                    except json.JSONDecodeError:
-                        return ToolResult(answer=str(text))
-            sc = result.get("structuredContent")
-            if isinstance(sc, dict) and sc.get("events"):
-                merged = _accumulate_progress_events(sc["events"])
-                return _payload_to_tool_result(merged)
-    return ToolResult(answer=json.dumps(data, default=str)[:50000])
+    async with client.stream("POST", url, json=payload, headers=headers) as response:
+        response.raise_for_status()
+        ctype = (response.headers.get("content-type") or "").lower()
+        if "text/event-stream" in ctype:
+            return await _parse_mcp_sse_lines(response.aiter_lines(), on_delta=on_delta)
+        body = await response.aread()
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return ToolResult(answer=body.decode("utf-8", errors="replace")[:50000])
+    return await _tool_result_from_json_payload(data, on_delta=on_delta)

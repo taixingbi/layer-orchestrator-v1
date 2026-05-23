@@ -167,9 +167,11 @@ async def _run_tool(
     is_new_conversation: bool,
     emit_delta,
 ) -> Tuple[str, List[Any], List[Any], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    from ..config import mcp_rag_enabled
+
     name = detail.name
     if name == "user_profile":
-        if not (settings.use_mcp_tools and settings.mcp_rag_base_url) and not settings.rag_http_base_url:
+        if not mcp_rag_enabled() and not settings.rag_http_base_url:
             raise ValueError("RAG is not configured (RAG_HTTP_BASE_URL or MCP_RAG_BASE_URL)")
         result = await run_user_profile(
             question,
@@ -340,16 +342,29 @@ async def stream_answer_query(
                 started_at=tool_started,
                 metadata={"tool": route_detail.name},
             )
-            delta_events: List[dict] = []
+            delta_queue: asyncio.Queue[Optional[str]] = asyncio.Queue()
 
             def _emit_delta(chunk: str) -> None:
                 if chunk:
-                    delta_events.append(_answer_delta_event(chunk))
+                    delta_queue.put_nowait(chunk)
 
-            sem = _get_downstream_semaphore()
-            if sem is not None:
-                async with sem:
-                    answer_text, citations, follow_ups, t_usage, t_latency = await _run_tool(
+            async def _tool_task() -> Tuple[str, List[Any], List[Any], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+                sem = _get_downstream_semaphore()
+                try:
+                    if sem is not None:
+                        async with sem:
+                            return await _run_tool(
+                                route_detail,
+                                rewrite_text,
+                                request_id=request_id,
+                                session_id=session_id,
+                                trace_id=trace_id,
+                                rag_user=rag_user,
+                                conversation_id=conv,
+                                is_new_conversation=is_new_conversation,
+                                emit_delta=_emit_delta,
+                            )
+                    return await _run_tool(
                         route_detail,
                         rewrite_text,
                         request_id=request_id,
@@ -360,21 +375,16 @@ async def stream_answer_query(
                         is_new_conversation=is_new_conversation,
                         emit_delta=_emit_delta,
                     )
-            else:
-                answer_text, citations, follow_ups, t_usage, t_latency = await _run_tool(
-                    route_detail,
-                    rewrite_text,
-                    request_id=request_id,
-                    session_id=session_id,
-                    trace_id=trace_id,
-                    rag_user=rag_user,
-                    conversation_id=conv,
-                    is_new_conversation=is_new_conversation,
-                    emit_delta=_emit_delta,
-                )
+                finally:
+                    delta_queue.put_nowait(None)
 
-            for d in delta_events:
-                yield d
+            task = asyncio.create_task(_tool_task())
+            while True:
+                chunk = await delta_queue.get()
+                if chunk is None:
+                    break
+                yield _answer_delta_event(chunk)
+            answer_text, citations, follow_ups, t_usage, t_latency = await task
 
             tool_usage = t_usage
             rag_part = tool_usage if route_detail.name == "user_profile" else None

@@ -55,8 +55,9 @@ Copy or create `.env` at the **project root** (loaded by `app/config.py`). Typic
 | `RAG_K`, `RAG_K_MAX`, `RAG_INCLUDE_RETRIEVAL_HITS` | RAG request fields (defaults: `5`, `40`, `true`) |
 | `RAG_HTTP_MAX_ATTEMPTS` | Max POST attempts per RAG call for transient errors (default: `3`; set to `1` to disable retry) |
 | `RAG_HTTP_RETRY_BACKOFF_S` | Base delay (seconds) for exponential backoff between RAG retries (default: `0.5`) |
-| `USE_MCP_TOOLS` | `true` to route `user_profile` / `github_repo_search` through MCP JSON-RPC instead of direct HTTP RAG (default: `false`) |
-| `MCP_RAG_BASE_URL` | MCP origin for `rag_query` (defaults to `RAG_HTTP_BASE_URL`) |
+| `USE_MCP_RAG` | `true` (default) to call MCP `rag_query` with stream when `MCP_RAG_BASE_URL` is set; `false` forces HTTP RAG |
+| `MCP_RAG_BASE_URL` | MCP origin for streaming `rag_query` (defaults to `RAG_HTTP_BASE_URL`) |
+| `USE_MCP_TOOLS` | `true` to route `github_repo_search` through MCP `ask_repo` (default: `false`) |
 | `MCP_GITHUB_BASE_URL` | MCP origin for `ask_repo` |
 | `TAVILY_API_KEY` | Required for `web_search` tool route |
 | `TAVILY_SEARCH_DEPTH` | Tavily search depth (default: `advanced`) |

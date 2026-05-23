@@ -56,7 +56,7 @@ After routing, `app/core/pipeline.py` dispatches **directly** (no LangGraph on t
 | `route_detail` | Handler | Legacy `route` |
 |----------------|---------|----------------|
 | `internal_intent` (`identity`, `greeting`, `help`, `capabilities`, `clarify`, `reject`) | Static or router `direct_answer` | `direct_reply`, `clarify`, or `reject` |
-| `tool:user_profile` | HTTP RAG (`POST /v1/rag/query`) or MCP `rag_query` when `USE_MCP_TOOLS=true` | `rag` |
+| `tool:user_profile` | MCP `rag_query` (stream) or HTTP RAG when `USE_MCP_RAG=false` | `rag` |
 | `tool:github_repo_search` | MCP `ask_repo` | `tool` |
 | `tool:web_search` | Tavily search | `tool` |
 

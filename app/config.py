@@ -32,8 +32,10 @@ class Settings:
 
     # RAG via HTTP: base URL only; code POSTs to /v1/rag/query
     rag_http_base_url: Optional[str] = os.getenv("RAG_HTTP_BASE_URL")
-    # MCP tool services (when USE_MCP_TOOLS=true for user_profile)
+    # MCP tool services (github_repo_search when USE_MCP_TOOLS=true)
     use_mcp_tools: bool = os.getenv("USE_MCP_TOOLS", "false").lower() == "true"
+    # MCP RAG (rag_query with stream) — default on when MCP_RAG_BASE_URL is set; set USE_MCP_RAG=false for HTTP RAG only
+    use_mcp_rag: bool = os.getenv("USE_MCP_RAG", "true").lower() != "false"
     mcp_rag_base_url: Optional[str] = os.getenv("MCP_RAG_BASE_URL") or os.getenv("RAG_HTTP_BASE_URL")
     mcp_github_base_url: Optional[str] = os.getenv("MCP_GITHUB_BASE_URL")
     # Tavily web search
@@ -71,6 +73,13 @@ class Settings:
 
 
 settings = Settings()
+
+
+def mcp_rag_enabled() -> bool:
+    """True when user_profile should call MCP rag_query with stream (USE_MCP_RAG=false to force HTTP)."""
+    if not settings.use_mcp_rag:
+        return False
+    return bool((settings.mcp_rag_base_url or "").strip())
 
 
 def normalized_llm_base_url() -> Optional[str]:
