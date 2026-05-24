@@ -62,7 +62,7 @@ Copy or create `.env` at the **project root** (loaded by `app/config.py`). Typic
 | `TAVILY_API_KEY` | Required for `web_search` tool route |
 | `TAVILY_SEARCH_DEPTH` | Tavily search depth (default: `advanced`) |
 | `TAVILY_MAX_RESULTS` | Max Tavily results (default: `5`) |
-| `ROUTER_PROMPT_VERSION` | Intent router prompt file id under `app/prompts/` (default: `router-v1.00`) |
+| `ROUTER_PROMPT_VERSION` | Intent router prompt file id under `app/prompts/` (default: `router-v3.00`) |
 | `MAX_REQUEST_BODY_MB` | Max request body size for `/orchestrator/answer` (default: `1`) |
 | `MAX_HISTORY_MESSAGES` | Max `history` items accepted per answer request (recommended `30-50`, default: `50`) |
 | `MAX_QUESTION_CHARS` | Max `question` length in characters (default: `8000`, about 2k tokens) |

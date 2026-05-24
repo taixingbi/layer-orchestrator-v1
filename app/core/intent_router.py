@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from .github_route import match_github_repo_search
 from .rewrite import (
     CANDIDATE_NAME,
     REWRITE_HISTORY_MAX_LINES,
@@ -18,6 +19,7 @@ from .rewrite import (
 )
 from ..config import gateway_llm_invoke_kwargs, get_langsmith_tags, get_llm, settings
 from ..observability.usage import usage_from_langchain_message
+from ..schemas.route import ToolRoute, parse_route_detail
 
 _router_log = logging.getLogger("layer_orchestrator.intent_router")
 
@@ -425,13 +427,40 @@ def fallback_router_decision(question: str, *, reason: str = "parse_fallback") -
     )
 
 
+def maybe_override_for_github_repo(
+    decision: RouterDecision,
+    latest_question: str,
+) -> RouterDecision:
+    """If the ask is HuntAI/layer repo architecture, force github_repo_search (overrides rag/direct_reply)."""
+    if decision.route == "tool":
+        parsed = parse_route_detail(getattr(decision, "route_detail", None))
+        if isinstance(parsed, ToolRoute) and parsed.name == "github_repo_search":
+            return decision
+    if decision.route in ("clarify", "reject"):
+        return decision
+    hit = match_github_repo_search(latest_question)
+    if hit is None:
+        return decision
+    suffix = " [server: github_repo_keyword→tool]"
+    return decision.model_copy(
+        update={
+            "route": "tool",
+            "route_detail": hit.model_dump(exclude_none=True),
+            "can_answer_directly": False,
+            "direct_answer": None,
+            "reason": ((decision.reason or "").strip() + suffix).strip(),
+        },
+    )
+
+
 def normalize_post_router(
     decision: RouterDecision,
     *,
     latest_question: str = "",
     history: Optional[List[Tuple[str, str]]] = None,
 ) -> RouterDecision:
-    """Post-router fixes: KB-grounded direct_reply → rag; empty direct_reply → clarify."""
+    """Post-router fixes: github repo keywords; KB-grounded direct_reply → rag; empty direct_reply → clarify."""
+    decision = maybe_override_for_github_repo(decision, latest_question)
     decision = maybe_override_direct_reply_for_kb_grounded(
         decision, latest_question, history
     )

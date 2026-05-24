@@ -34,6 +34,7 @@ One gateway call returns **JSON only**: `rewritten_question`, `route`, optional 
 **Before** that call, the server may short-circuit on:
 
 - **Deterministic internal intents** (`identity`, `greeting`, `help`, `capabilities`) via `app/intents/` — checked in `app/core/pipeline.py` **before** `run_intent_rewrite_router` is invoked (`resolve_route`)
+- **Deterministic GitHub repo** (HuntAI / layer-orchestrator / gateway architecture) via `app/core/github_route.py` — same pre-LLM `resolve_route` path; also post-LLM override when the router chose `rag` by mistake
 - Inside **`run_intent_rewrite_router`** (`app/core/intent_router.py`): **prompt-injection guard** → `reject`; **empty-history small-talk seed** → `direct_reply` (no router LLM)
 
 See [intent-router.md](intent-router.md) for the full pipeline.

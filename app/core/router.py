@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from .github_route import match_github_repo_search
 from .intent_router import (
     RouterDecision,
     normalize_post_router,
@@ -26,6 +27,7 @@ __all__ = [
     "match_internal_intent",
     "decision_to_route_detail",
     "resolve_route",
+    "match_github_repo_search",
 ]
 
 
@@ -52,10 +54,16 @@ def resolve_route(
     question: str,
     history: List[Tuple[str, str]],
 ) -> Optional[Tuple[RouteDetail, str, str]]:
-    """Deterministic internal intent before LLM. Returns (route_detail, answer, rewrite) or None."""
+    """Deterministic routes before LLM: internal intents, then github repo search."""
     hit = match_internal_intent(question)
-    if not hit:
-        return None
-    detail, answer = hit
-    rewrite = (question or "").strip()
-    return detail, answer, rewrite
+    if hit:
+        detail, answer = hit
+        rewrite = (question or "").strip()
+        return detail, answer, rewrite
+
+    github = match_github_repo_search(question)
+    if github is not None:
+        rewrite = (question or "").strip()
+        return github, "", rewrite
+
+    return None
