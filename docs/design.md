@@ -104,7 +104,7 @@ The user-facing `answer` is the RAG service response text. No orchestrator answe
 
 - Phases: `intent_router`, `rag`, `tool`, `request_complete`
 
-Non-stream JSON (and stream `done.latency_ms`) include a nested `latency_ms` object: `total`, `intent_router.total`, and `rag` / `tool` objects with `orchestrator` plus RAG service breakdown keys.
+Non-stream JSON (and stream `done.latency_ms`) include a nested `latency_ms` object: `total`, `intent_router.total`, and passthrough `tool-rag` / `tool-github-search` / `tool-tavily-search` from upstream service `latency_ms`.
 
 ### RAG HTTP request (`app/clients/rag_http.py`)
 

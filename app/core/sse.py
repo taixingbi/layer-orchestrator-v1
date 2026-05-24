@@ -79,50 +79,46 @@ def _round_ms(value: Any) -> Optional[float]:
     return None
 
 
-def _service_latency_from_metadata(metadata: dict) -> Optional[Dict[str, Any]]:
-    raw = metadata.get("rag_latency_ms") or metadata.get("tool_latency_ms")
-    if isinstance(raw, dict) and raw:
-        return raw
+def _mcp_latency_passthrough(metadata: dict, *keys: str) -> Optional[Dict[str, Any]]:
+    """Return upstream MCP/HTTP latency_ms dict unchanged."""
+    for key in keys:
+        raw = metadata.get(key)
+        if isinstance(raw, dict) and raw:
+            return raw
     return None
 
 
-def _merge_phase_latency(
-    orchestrator_ms: Optional[float],
-    service: Optional[Dict[str, Any]],
-) -> Optional[Dict[str, Any]]:
-    """Nest RAG/tool service latency_ms under phase orchestrator object."""
-    orchestrator: Dict[str, Any] = {}
-    wall = _round_ms(orchestrator_ms)
-    if wall is not None:
-        orchestrator["wall"] = wall
-    if isinstance(service, dict):
-        for key, val in service.items():
-            if val is None:
-                continue
-            rounded = _round_ms(val)
-            if rounded is not None:
-                orchestrator[key] = rounded
-            elif isinstance(val, dict):
-                orchestrator[key] = val
-    if not orchestrator:
-        return None
-    return {"orchestrator": orchestrator}
+def _rag_mcp_latency(metadata: dict) -> Optional[Dict[str, Any]]:
+    return _mcp_latency_passthrough(metadata, "rag_latency_ms", "tool_latency_ms")
 
 
 def _github_mcp_latency(metadata: dict) -> Optional[Dict[str, Any]]:
-    """Passthrough MCP ask_repo latency_ms (stored on completed github-search state)."""
-    raw = metadata.get("github_latency_ms") or metadata.get("tool_latency_ms")
-    if isinstance(raw, dict) and raw:
-        return raw
-    return None
+    return _mcp_latency_passthrough(metadata, "github_latency_ms", "tool_latency_ms")
 
 
-_GITHUB_SEARCH_LATENCY_KEY = "github-search"
+_GITHUB_SEARCH_PHASE = "github-search"
 _GITHUB_SEARCH_TOOL = "github_repo_search"
+_RAG_TOOL = "user_profile"
+
+LATENCY_KEY_RAG = "tool-rag"
+LATENCY_KEY_GITHUB_SEARCH = "tool-github-search"
+LATENCY_KEY_TAVILY_SEARCH = "tool-tavily-search"
+
+
+def _rag_state(by_phase: Dict[str, dict]) -> dict:
+    for phase in ("rag_query", "rag", "tool"):
+        state = by_phase.get(phase, {})
+        if not state:
+            continue
+        meta = state.get("metadata") or {}
+        if phase == "tool" and meta.get("tool") != _RAG_TOOL:
+            continue
+        return state
+    return {}
 
 
 def _github_search_state(by_phase: Dict[str, dict], tool_state: dict) -> dict:
-    for phase in (_GITHUB_SEARCH_LATENCY_KEY, "github", "tool"):
+    for phase in (_GITHUB_SEARCH_PHASE, "github", "tool"):
         state = by_phase.get(phase, {})
         if not state:
             continue
@@ -152,30 +148,23 @@ def build_latency_ms_summary(states: List[dict]) -> dict:
     if intent_router_ms is not None:
         timings["intent_router"] = {"total": _round_ms(intent_router_ms)}
 
-    rag_state = by_phase.get("rag_query", {}) or by_phase.get("rag", {})
-    rag_meta = rag_state.get("metadata") or {}
-    rag_obj = _merge_phase_latency(
-        rag_state.get("latency_ms"),
-        _service_latency_from_metadata(rag_meta),
-    )
+    rag_state = _rag_state(by_phase)
+    rag_obj = _rag_mcp_latency(rag_state.get("metadata") or {})
     if rag_obj:
-        timings["rag"] = rag_obj
+        timings[LATENCY_KEY_RAG] = rag_obj
 
     tool_state = by_phase.get("tool", {})
     tool_meta = tool_state.get("metadata") or {}
-    if tool_meta.get("tool") != _GITHUB_SEARCH_TOOL:
-        tool_obj = _merge_phase_latency(
-            tool_state.get("latency_ms"),
-            _service_latency_from_metadata(tool_meta),
-        )
+    if tool_meta.get("tool") == "web_search":
+        tool_obj = _mcp_latency_passthrough(tool_meta, "tool_latency_ms")
         if tool_obj:
-            timings["tool"] = tool_obj
+            timings[LATENCY_KEY_TAVILY_SEARCH] = tool_obj
 
     github_state = _github_search_state(by_phase, tool_state)
     github_meta = github_state.get("metadata") or {}
     github_obj = _github_mcp_latency(github_meta)
     if github_obj:
-        timings[_GITHUB_SEARCH_LATENCY_KEY] = github_obj
+        timings[LATENCY_KEY_GITHUB_SEARCH] = github_obj
 
     return timings
 

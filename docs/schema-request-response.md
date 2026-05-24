@@ -112,9 +112,9 @@ Violations and timeout behavior:
 
 ### `latency_ms` (non-stream aggregation)
 
-Built from terminal `state` phases only (`completed`, `failed`, or `skipped`). Top-level **`total`** is end-to-end wall time (earliest phase `started_at` → latest phase `ended_at`). Each phase is a **nested object**; RAG/tool service breakdown from `rag_query` / MCP `latency_ms` is merged into the phase object (not a separate `service` wrapper).
+Built from terminal `state` phases only (`completed`, `failed`, or `skipped`). Top-level **`total`** is end-to-end wall time (earliest phase `started_at` → latest phase `ended_at`). Tool phases use keys **`tool-rag`**, **`tool-github-search`**, **`tool-tavily-search`** — direct passthrough of upstream `latency_ms` (unchanged keys and values inside each object).
 
-**Example** (RAG route, MCP or HTTP with service metrics):
+**Example** (RAG route, MCP or HTTP — `latency_ms.tool-rag` is direct passthrough of upstream `latency_ms`):
 
 ```json
 {
@@ -123,15 +123,12 @@ Built from terminal `state` phases only (`completed`, `failed`, or `skipped`). T
     "intent_router": {
       "total": 2040.27
     },
-    "rag": {
-      "orchestrator": {
-        "wall": 2877.88,
-        "embed": 45.2,
-        "retrieve": 312.0,
-        "chat": 890.5,
-        "follow_up_chat": 520.1,
-        "total": 1767.8
-      }
+    "tool-rag": {
+      "embed": 45.2,
+      "retrieve": 312.0,
+      "chat": 890.5,
+      "follow_up_chat": 520.1,
+      "total": 1767.8
     }
   }
 }
@@ -146,7 +143,7 @@ Built from terminal `state` phases only (`completed`, `failed`, or `skipped`). T
     "intent_router": {
       "total": 1999.91
     },
-    "github-search": {
+    "tool-github-search": {
       "github_readme": 286,
       "github_search": 117,
       "chat": 3435,
@@ -157,17 +154,31 @@ Built from terminal `state` phases only (`completed`, `failed`, or `skipped`). T
 }
 ```
 
+**Example** (Tavily `web_search`):
+
+```json
+{
+  "latency_ms": {
+    "total": 2840.5,
+    "intent_router": {
+      "total": 1850.2
+    },
+    "tool-tavily-search": {
+      "web_search": 842.15
+    }
+  }
+}
+```
+
 | Key | Meaning |
 |-----|---------|
 | `total` | End-to-end wall time (milliseconds) |
 | `intent_router.total` | Router LLM phase wall time |
-| `rag.orchestrator.wall` | Orchestrator wall time for the `rag` phase (tool dispatch + MCP/HTTP call) |
-| `rag.orchestrator.embed`, `rag.orchestrator.retrieve`, … | From RAG / MCP `rag_query` response `latency_ms` (nested under `orchestrator`) |
-| `rag.orchestrator.total` | RAG service-reported total (when present); distinct from `rag.orchestrator.wall` |
-| `tool.orchestrator` | Same shape for `web_search` when that route runs |
-| `github-search` | Direct passthrough of MCP `ask_repo` response `latency_ms` (no orchestrator wall, no rounding) |
+| `tool-rag` | Direct passthrough of MCP `rag_query` / HTTP RAG response `latency_ms` |
+| `tool-github-search` | Direct passthrough of MCP `ask_repo` response `latency_ms` |
+| `tool-tavily-search` | Direct passthrough of Tavily `web_search` tool `latency_ms` |
 
-Use **`latency_ms.total`** for end-to-end wall time. For RAG, compare **`rag.orchestrator.wall`** vs **`rag.orchestrator.total`**. For GitHub, **`github-search.total`** is the MCP service-reported total.
+Use **`latency_ms.total`** for end-to-end wall time. **`tool-rag.total`** and **`tool-github-search.total`** are service-reported totals from upstream.
 
 ### `usage` (token counts)
 
@@ -477,4 +488,4 @@ Example metric families exposed:
 
 ## RAG alignment ( `route: "rag"` )
 
-When the upstream RAG HTTP service returns JSON with `answer`, `citations`, and `follow_up_questions`, the orchestrator mirrors **`answer`** (verbatim string), **`citations`**, and **`follow_up_questions`** on the non-stream JSON response and on the streaming **`answer`** event when those fields exist. RAG service `latency_ms` keys are merged into **`latency_ms.rag`** (see example above).
+When the upstream RAG HTTP service returns JSON with `answer`, `citations`, and `follow_up_questions`, the orchestrator mirrors **`answer`** (verbatim string), **`citations`**, and **`follow_up_questions`** on the non-stream JSON response and on the streaming **`answer`** event when those fields exist. Upstream **`latency_ms`** is passed through as **`latency_ms.tool-rag`** (see example above).

@@ -305,15 +305,21 @@ async def _tool_result_from_json_payload(
         if text:
             try:
                 inner = json.loads(text)
-                if isinstance(inner, dict) and inner.get("events"):
-                    merged = _emit_events_from_list(inner["events"], on_delta=on_delta)
-                    return _payload_to_tool_result(merged)
+                if isinstance(inner, dict):
+                    if inner.get("events"):
+                        merged = _emit_events_from_list(inner["events"], on_delta=on_delta)
+                        return _payload_to_tool_result(merged)
+                    if inner.get("answer") or inner.get("latency_ms"):
+                        return _payload_to_tool_result(inner)
             except json.JSONDecodeError:
                 return ToolResult(answer=str(text))
     sc = result.get("structuredContent")
-    if isinstance(sc, dict) and sc.get("events"):
-        merged = _emit_events_from_list(sc["events"], on_delta=on_delta)
-        return _payload_to_tool_result(merged)
+    if isinstance(sc, dict):
+        if sc.get("events"):
+            merged = _emit_events_from_list(sc["events"], on_delta=on_delta)
+            return _payload_to_tool_result(merged)
+        if sc.get("answer") or sc.get("latency_ms"):
+            return _payload_to_tool_result(sc)
     return ToolResult(answer=json.dumps(data, default=str)[:50000])
 
 
