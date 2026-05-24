@@ -64,8 +64,10 @@ def _answer_event(
 ) -> Dict[str, Any]:
     event: Dict[str, Any] = {
         "type": "answer",
-        "text": text,
-        "citations": list(citations) if citations is not None else [],
+        "answer": {
+            "text": text,
+            "citations": list(citations) if citations is not None else [],
+        },
         "follow_up_questions": list(follow_up_questions) if follow_up_questions is not None else [],
     }
     if usage is not None:
@@ -471,6 +473,7 @@ async def stream_answer_query(
         err_event: Dict[str, Any] = {
             "type": "error",
             "text": err_text,
+            "error": err_text,
             **_stream_correlation_fields(
                 session_id=session_id,
                 request_id=request_id,
@@ -524,7 +527,11 @@ async def answer_query_sync(
         invoke_timeout_s=invoke_timeout_s,
     ):
         if event.get("type") == "answer":
-            answer = event.get("text", "")
+            ans = event.get("answer")
+            if isinstance(ans, dict):
+                answer = str(ans.get("text") or "")
+            else:
+                answer = event.get("text", "")
         elif event.get("type") == "error":
             return event.get("text", "Unknown error")
     return answer

@@ -10,107 +10,11 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from ..observability.metrics import inc_timeout, observe_pipeline_event
 from ..observability.context import bind_conversation_logging_context
-from ..schemas.response import empty_answer_response
+from ..schemas.response import empty_answer_accumulator
 from .pipeline import stream_answer_query
 
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 _TERMINAL_STATE_STATUSES = frozenset({"completed", "failed", "skipped"})
-
-_CORRELATION_KEYS = (
-    "request_id",
-    "session_id",
-    "trace_id",
-    "conversation_id",
-    "is_new_conversation",
-)
-
-
-class AnswerResponseAccumulator:
-    """Accumulate pipeline events into the non-stream JSON response shape."""
-
-    def __init__(
-        self,
-        *,
-        request_id: Optional[str],
-        session_id: Optional[str],
-        trace_id: Optional[str],
-        conversation_id: str,
-        is_new_conversation: bool,
-    ) -> None:
-        self.data: Dict[str, Any] = empty_answer_response(
-            request_id=request_id,
-            session_id=session_id,
-            trace_id=trace_id,
-            conversation_id=conversation_id,
-            is_new_conversation=is_new_conversation,
-        )
-        self.states_by_phase: Dict[str, dict] = {}
-        self.state_phase_order: List[str] = []
-
-    def apply(self, event: dict) -> None:
-        t = event.get("type")
-        if t == "request_id":
-            for key in _CORRELATION_KEYS:
-                if event.get(key) is not None:
-                    self.data[key] = event.get(key)
-            return
-        if t == "rewrite":
-            self.data["rewrite"] = event.get("text")
-            return
-        if t == "route":
-            self.data["route"] = event.get("route")
-            if event.get("route_detail") is not None:
-                self.data["route_detail"] = event.get("route_detail")
-            if event.get("text"):
-                self.data["rewrite"] = event.get("text")
-            return
-        if t == "answer":
-            self.data["answer"] = event.get("text")
-            self.data["citations"] = event.get("citations", [])
-            self.data["follow_up_questions"] = event.get("follow_up_questions", [])
-            if event.get("usage") is not None:
-                self.data["usage"] = event.get("usage")
-            return
-        if t in ("done", "error"):
-            for key in _CORRELATION_KEYS:
-                if event.get(key) is not None:
-                    self.data[key] = event.get(key)
-            if event.get("usage") is not None:
-                self.data["usage"] = event.get("usage")
-            return
-        if t == "state":
-            phase = event.get("phase")
-            if not phase:
-                return
-            incoming = state_slice_from_event(event)
-            if phase not in self.states_by_phase:
-                self.state_phase_order.append(phase)
-                self.states_by_phase[phase] = incoming
-            else:
-                self.states_by_phase[phase] = merge_phase_states(
-                    self.states_by_phase[phase], incoming
-                )
-
-    def as_response(
-        self,
-        *,
-        status: str,
-        event_type: Optional[str] = None,
-        error: Optional[str] = None,
-    ) -> dict:
-        terminal_states = [
-            self.states_by_phase[p]
-            for p in self.state_phase_order
-            if self.states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
-        ]
-        out = dict(self.data)
-        out["status"] = status
-        out["latency_ms"] = build_latency_ms_summary(terminal_states)
-        if event_type is not None:
-            out["type"] = event_type
-        if error is not None:
-            out["error"] = error
-        return out
 
 
 def state_slice_from_event(event: dict) -> dict:
@@ -192,13 +96,18 @@ def _github_mcp_latency(metadata: dict) -> Optional[Dict[str, Any]]:
     return _mcp_latency_passthrough(metadata, "github_latency_ms", "tool_latency_ms")
 
 
+from ..schemas.answer_envelope import (
+    LATENCY_KEY_GITHUB_SEARCH,
+    LATENCY_KEY_RAG,
+    LATENCY_KEY_TAVILY_SEARCH,
+    build_answer_envelope,
+    normalize_latency_ms_keys,
+    normalize_usage_keys,
+)
+
 _GITHUB_SEARCH_PHASE = "github-search"
 _GITHUB_SEARCH_TOOL = "github_repo_search"
 _RAG_TOOL = "user_profile"
-
-LATENCY_KEY_RAG = "tool-rag"
-LATENCY_KEY_GITHUB_SEARCH = "tool-github-search"
-LATENCY_KEY_TAVILY_SEARCH = "tool-tavily-search"
 
 
 def _rag_state(by_phase: Dict[str, dict]) -> dict:
@@ -265,6 +174,111 @@ def build_latency_ms_summary(states: List[dict]) -> dict:
     return timings
 
 
+class AnswerResponseAccumulator:
+    """Merge pipeline events; finalize to meta/answer/latency_ms/usage envelope."""
+
+    def __init__(
+        self,
+        *,
+        request_id: Optional[str],
+        session_id: Optional[str],
+        trace_id: Optional[str],
+        conversation_id: str,
+        is_new_conversation: bool,
+        rag_user: Optional[Dict[str, str]] = None,
+    ) -> None:
+        self.rag_user = rag_user
+        self.body: Dict[str, Any] = empty_answer_accumulator(
+            request_id=request_id,
+            session_id=session_id,
+            trace_id=trace_id,
+            conversation_id=conversation_id,
+            is_new_conversation=is_new_conversation,
+        )
+        self.states_by_phase: Dict[str, dict] = {}
+        self.state_phase_order: List[str] = []
+
+    def apply(self, event: dict) -> None:
+        t = event.get("type")
+        if t == "request_id":
+            for key in ("request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation"):
+                if event.get(key) is not None:
+                    self.body[key] = event.get(key)
+        elif t == "rewrite":
+            self.body["rewrite"] = event.get("text")
+        elif t == "route":
+            if event.get("route_detail") is not None:
+                self.body["route_detail"] = event.get("route_detail")
+        elif t == "answer":
+            if isinstance(event.get("answer"), dict):
+                ans = event["answer"]
+                self.body["answer_text"] = ans.get("text")
+                self.body["citations"] = ans.get("citations", [])
+            else:
+                self.body["answer_text"] = event.get("text")
+                self.body["citations"] = event.get("citations", [])
+            self.body["follow_up_questions"] = event.get("follow_up_questions", [])
+            usage = event.get("usage")
+            if usage is not None:
+                self.body["usage"] = usage
+        elif t == "state":
+            phase = event.get("phase")
+            if not phase:
+                return
+            incoming = state_slice_from_event(event)
+            if phase not in self.states_by_phase:
+                self.state_phase_order.append(phase)
+                self.states_by_phase[phase] = incoming
+            else:
+                self.states_by_phase[phase] = merge_phase_states(
+                    self.states_by_phase[phase], incoming
+                )
+        elif t == "done":
+            for key in ("request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation"):
+                if event.get(key) is not None:
+                    self.body[key] = event.get(key)
+            usage = event.get("usage")
+            if usage is not None:
+                self.body["usage"] = usage
+
+    def _terminal_states(self) -> List[dict]:
+        return [
+            self.states_by_phase[p]
+            for p in self.state_phase_order
+            if self.states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
+        ]
+
+    def finalize(self, *, ok: bool, error: Optional[str] = None, state: Optional[str] = None) -> Dict[str, Any]:
+        latency = normalize_latency_ms_keys(build_latency_ms_summary(self._terminal_states()))
+        usage = normalize_usage_keys(self.body.get("usage") or {})
+        return build_answer_envelope(
+            request_id=self.body.get("request_id"),
+            session_id=self.body.get("session_id"),
+            trace_id=self.body.get("trace_id"),
+            conversation_id=self.body.get("conversation_id") or "",
+            is_new_conversation=bool(self.body.get("is_new_conversation")),
+            route_detail=self.body.get("route_detail"),
+            rewrite=self.body.get("rewrite"),
+            answer_text=self.body.get("answer_text"),
+            citations=self.body.get("citations"),
+            follow_up_questions=self.body.get("follow_up_questions"),
+            latency_ms=latency,
+            usage=usage,
+            rag_user=self.rag_user,
+            ok=ok,
+            state=state,
+            error=error,
+        )
+
+    def enrich_terminal_event(self, event: dict) -> dict:
+        if event.get("type") == "error":
+            err = event.get("error") or event.get("text")
+            merged = self.finalize(ok=False, error=err, state="failed")
+            return {**merged, "type": "error", "text": err or ""}
+        merged = self.finalize(ok=True)
+        return {**merged, "type": "done"}
+
+
 async def answer_event_iter(
     question: str,
     *,
@@ -307,6 +321,7 @@ async def answer_json(
         trace_id=trace_id,
         conversation_id=conversation_id,
         is_new_conversation=is_new_conversation,
+        rag_user=rag_user,
     )
     async for event in answer_event_iter(
         question,
@@ -319,16 +334,14 @@ async def answer_json(
         is_new_conversation=is_new_conversation,
     ):
         t = event.get("type")
-        if t == "state":
-            acc.apply(event)
-            continue
-        acc.apply(event)
         if t == "error":
+            acc.apply(event)
             err = event.get("error") or event.get("text")
-            return acc.as_response(status="error", error=err)
+            return acc.finalize(ok=False, error=err, state="failed")
+        acc.apply(event)
         if t == "done":
-            continue
-    return acc.as_response(status="ok")
+            return acc.finalize(ok=True)
+    return acc.finalize(ok=True)
 
 
 def sse_stream_answer_gen(
@@ -346,13 +359,26 @@ def sse_stream_answer_gen(
 ) -> AsyncIterator[str]:
     def _timeout_error_event(text: str) -> dict:
         return {
+            **build_answer_envelope(
+                request_id=request_id,
+                session_id=session_id,
+                trace_id=trace_id,
+                conversation_id=conversation_id,
+                is_new_conversation=is_new_conversation,
+                route_detail=None,
+                rewrite=None,
+                answer_text=None,
+                citations=[],
+                follow_up_questions=[],
+                latency_ms={},
+                usage={},
+                rag_user=rag_user,
+                ok=False,
+                state="failed",
+                error=text,
+            ),
             "type": "error",
             "text": text,
-            "session_id": session_id,
-            "request_id": request_id,
-            "trace_id": trace_id,
-            "conversation_id": conversation_id,
-            "is_new_conversation": is_new_conversation,
         }
 
     async def _gen():
@@ -363,6 +389,7 @@ def sse_stream_answer_gen(
                 trace_id=trace_id,
                 conversation_id=conversation_id,
                 is_new_conversation=is_new_conversation,
+                rag_user=rag_user,
             )
             ait = answer_event_iter(
                 question,
@@ -385,9 +412,7 @@ def sse_stream_answer_gen(
                             "Error: TimeoutError: request timeout exceeded"
                         )
                         observe_pipeline_event(timeout_event)
-                        acc.apply(timeout_event)
-                        err = timeout_event.get("error") or timeout_event.get("text")
-                        yield f"data: {json.dumps(acc.as_response(status='error', event_type='error', error=err))}\n\n"
+                        yield f"data: {json.dumps(timeout_event)}\n\n"
                         return
                     timeout_s = min(timeout_s, remaining) if timeout_s is not None else remaining
                 try:
@@ -403,18 +428,14 @@ def sse_stream_answer_gen(
                         inc_timeout("stream_idle")
                     timeout_event = _timeout_error_event(msg)
                     observe_pipeline_event(timeout_event)
-                    acc.apply(timeout_event)
-                    yield f"data: {json.dumps(acc.as_response(status='error', event_type='error', error=msg))}\n\n"
+                    yield f"data: {json.dumps(timeout_event)}\n\n"
                     return
                 if chunk.get("type") == "state":
                     acc.apply(chunk)
                     continue
                 acc.apply(chunk)
-                if chunk.get("type") == "done":
-                    chunk = acc.as_response(status="ok", event_type="done")
-                elif chunk.get("type") == "error":
-                    err = chunk.get("error") or chunk.get("text")
-                    chunk = acc.as_response(status="error", event_type="error", error=err)
+                if chunk.get("type") in ("done", "error"):
+                    chunk = acc.enrich_terminal_event(chunk)
                 yield f"data: {json.dumps(chunk)}\n\n"
 
     return _gen()

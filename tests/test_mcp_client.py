@@ -160,8 +160,10 @@ async def test_github_repo_search_latency_end_to_end():
         },
     ]
     out = build_latency_ms_summary(states)
-    assert out["tool-github-search"] is tool_result.latency_ms
-    assert out["tool-github-search"]["total"] == 5062
+    from app.schemas.answer_envelope import LATENCY_KEY_GITHUB_SEARCH
+
+    assert out[LATENCY_KEY_GITHUB_SEARCH] is tool_result.latency_ms
+    assert out[LATENCY_KEY_GITHUB_SEARCH]["total"] == 5062
     assert out["intent_router"] == {"total": 1999.91}
 
 

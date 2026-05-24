@@ -31,11 +31,10 @@ def test_build_usage_payload_merges_router_and_tool_rag():
         intent_router={"prompt_tokens": 50, "completion_tokens": 5, "total_tokens": 55},
         tool_rag=upstream,
     )
-    assert payload["prompt_tokens"] == 150
-    assert payload["total_tokens"] == 165
+    assert payload["total"]["prompt_tokens"] == 150
+    assert payload["total"]["total_tokens"] == 165
     assert payload["intent_router"]["prompt_tokens"] == 50
     assert payload[USAGE_KEY_RAG] is upstream
-    assert "rag" not in payload
 
 
 def test_build_usage_payload_github_passthrough():
@@ -48,7 +47,7 @@ def test_build_usage_payload_github_passthrough():
         intent_router={"prompt_tokens": 10, "completion_tokens": 1, "total_tokens": 11},
         tool_github_search=upstream,
     )
-    assert payload["total_tokens"] == 1111
+    assert payload["total"]["total_tokens"] == 1111
     assert payload[USAGE_KEY_GITHUB_SEARCH] is upstream
 
 

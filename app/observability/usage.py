@@ -6,10 +6,10 @@ from typing import Any, Dict, List, Optional
 
 _USAGE_KEYS = ("prompt_tokens", "completion_tokens", "total_tokens")
 
-# Match latency_ms tool keys (app/core/sse.py LATENCY_KEY_*).
-USAGE_KEY_RAG = "tool-rag"
-USAGE_KEY_GITHUB_SEARCH = "tool-github-search"
-USAGE_KEY_TAVILY_SEARCH = "tool-tavily-search"
+# Match answer_envelope phase keys (app/schemas/answer_envelope.py).
+USAGE_KEY_RAG = "tool_rag"
+USAGE_KEY_GITHUB_SEARCH = "tool_github_search"
+USAGE_KEY_TAVILY_SEARCH = "tool_tavily_search"
 
 
 def empty_usage() -> Dict[str, int]:
@@ -102,7 +102,7 @@ def build_usage_payload(
     tool_github_search: Optional[Any] = None,
     tool_tavily_search: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    """Flat totals plus intent_router and passthrough tool usage (same keys as latency_ms)."""
+    """Nested usage: intent_router, tool_* passthrough, and rolled-up total."""
     ir = normalize_usage(intent_router) if intent_router else None
     tool_pass: List[tuple[str, Any]] = []
     if isinstance(tool_rag, dict) and tool_rag:
@@ -112,14 +112,13 @@ def build_usage_payload(
     if isinstance(tool_tavily_search, dict) and tool_tavily_search:
         tool_pass.append((USAGE_KEY_TAVILY_SEARCH, tool_tavily_search))
 
-    flat_parts = [ir]
+    flat_parts: List[Optional[Dict[str, int]]] = [ir]
     for _, raw in tool_pass:
         flat = tool_usage_flat(raw)
         if flat:
             flat_parts.append(flat)
     parts = [p for p in flat_parts if p]
-    flat = merge_usage(*parts) if parts else empty_usage()
-    payload: Dict[str, Any] = dict(flat)
+    payload: Dict[str, Any] = {"total": merge_usage(*parts) if parts else empty_usage()}
     if ir:
         payload["intent_router"] = ir
     for key, raw in tool_pass:

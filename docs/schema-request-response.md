@@ -61,329 +61,137 @@ Violations and timeout behavior:
 
 ---
 
-## `POST /orchestrator/answer` — non-stream (`stream: false`)
+## Response envelope (`stream: false` and terminal SSE `done` / `error`)
 
-### Success (`200`)
+Non-stream JSON and the **final** SSE event use the **same** top-level shape (aligned with [tool upstream schema](schema-tool.md)). Intermediate stream events (`rewrite`, `route`, `answer_delta`, partial `answer`) are optional; clients may use only `done` / `error`.
+
+### Top-level fields
+
+| Field | Description |
+|-------|-------------|
+| `meta` | Correlation, `user`, routing (`route`, `tool`), optional `rewrite` |
+| `answer` | `{ "text", "citations" }` |
+| `follow_up_questions` | string[] |
+| `latency_ms` | `intent_router`, `tool_rag` / `tool_github_search` / `tool_tavily_search`, `total` |
+| `usage` | `intent_router`, tool phase passthrough, rolled-up `total` |
+| `status` | `{ "ok": boolean, "state": "completed" \| "failed" }` |
+| `error` | Present when `status.ok` is false |
+
+### `meta.route` / `meta.tool`
+
+| Orchestrator handler | `meta.route.type` | `meta.route.tool` | `meta.tool.name` | `meta.tool.type` |
+|----------------------|-------------------|-------------------|------------------|------------------|
+| `user_profile` | `tool` | `rag_query` | `rag_query` | `rag` |
+| `github_repo_search` | `tool` | `ask_repo` | `ask_repo` | `github` |
+| `web_search` | `tool` | `web_search` | `web_search` | `web` |
+| internal intents | `internal_intent` | intent name | intent name | `internal_intent` |
+
+### Tool timing / usage keys
+
+| Handler | `latency_ms` / `usage` key |
+|---------|----------------------------|
+| `user_profile` | `tool_rag` |
+| `github_repo_search` | `tool_github_search` |
+| `web_search` | `tool_tavily_search` |
+
+`latency_ms.tool_*` and `usage.tool_*` are **passthrough** of upstream MCP/HTTP payloads ([schema-tool.md](schema-tool.md)). `latency_ms.intent_router.total` is orchestrator router wall time. `usage.total` sums all phases.
+
+### Success example (RAG / `user_profile`)
 
 ```json
 {
-  "request_id": "string",
-  "session_id": "string | null",
-  "trace_id": "string",
-  "conversation_id": "string",
-  "is_new_conversation": false,
-  "route": "tool",
-  "route_detail": { "type": "tool", "name": "user_profile" },
-  "rewrite": "string | null",
-  "answer": "string | null",
-  "citations": [],
-  "follow_up_questions": [],
-  "latency_ms": {},
-  "usage": {
-    "prompt_tokens": 0,
-    "completion_tokens": 0,
-    "total_tokens": 0,
-    "intent_router": {
-      "prompt_tokens": 0,
-      "completion_tokens": 0,
-      "total_tokens": 0
+  "meta": {
+    "request_id": "req-abc123",
+    "session_id": "ses-xyz789",
+    "trace_id": "trc-001",
+    "conversation_id": "conv_rag_1",
+    "is_new_conversation": false,
+    "user": {
+      "id": "taixing",
+      "roles": "hr",
+      "groups": "engineering",
+      "teams": "rag-platform"
     },
-    "tool-rag": {
-      "chat": { "prompt_tokens": 886, "completion_tokens": 31, "total_tokens": 917 },
-      "total": { "prompt_tokens": 1163, "completion_tokens": 104, "total_tokens": 1267 }
-    }
+    "route": {
+      "type": "tool",
+      "tool": "rag_query",
+      "confidence": 0.98
+    },
+    "tool": {
+      "name": "rag_query",
+      "type": "rag",
+      "version": "v1"
+    },
+    "rewrite": "What is Taixing's current visa status in the United States?"
   },
-  "status": "ok"
-}
-```
-
-| Field | When present |
-|-------|----------------|
-| `conversation_id` | Always — effective thread id (client or server `conv_<uuidhex>`) |
-| `is_new_conversation` | Always — `true` if the server assigned a new id this request |
-| `rewrite` | After router emits rewrite |
-| `answer` | After an answer is produced |
-| `citations` | Always — populated from `user_profile` (RAG/MCP) when upstream returns them; otherwise `[]` |
-| `follow_up_questions` | Always — populated from `user_profile` when upstream returns them; otherwise `[]` |
-| `usage` | Always — flat token totals plus optional nested `intent_router` / `tool-rag` / `tool-github-search` / `tool-tavily-search` (see below) |
-
-**`route`** is lowercase (intent/rewrite router output).
-
-### `latency_ms` (non-stream aggregation)
-
-Built from terminal `state` phases only (`completed`, `failed`, or `skipped`). Top-level **`total`** is end-to-end wall time (earliest phase `started_at` → latest phase `ended_at`). Tool phases use keys **`tool-rag`**, **`tool-github-search`**, **`tool-tavily-search`** — direct passthrough of upstream `latency_ms` (unchanged keys and values inside each object).
-
-**Example** (RAG route, MCP or HTTP — `latency_ms.tool-rag` is direct passthrough of upstream `latency_ms`):
-
-```json
-{
-  "latency_ms": {
-    "total": 4919.13,
-    "intent_router": {
-      "total": 2040.27
-    },
-    "tool-rag": {
-      "embed": 45.2,
-      "retrieve": 312.0,
-      "chat": 890.5,
-      "follow_up_chat": 520.1,
-      "total": 1767.8
-    }
-  }
-}
-```
-
-**Example** (GitHub MCP route, `github_repo_search`):
-
-```json
-{
-  "latency_ms": {
-    "total": 4691.6,
-    "intent_router": {
-      "total": 1999.91
-    },
-    "tool-github-search": {
-      "github_readme": 286,
-      "github_search": 117,
-      "chat": 3435,
-      "follow_up_chat": 1193,
-      "total": 5062
-    }
-  }
-}
-```
-
-**Example** (Tavily `web_search`):
-
-```json
-{
-  "latency_ms": {
-    "total": 2840.5,
-    "intent_router": {
-      "total": 1850.2
-    },
-    "tool-tavily-search": {
-      "web_search": 842.15
-    }
-  }
-}
-```
-
-| Key | Meaning |
-|-----|---------|
-| `total` | End-to-end wall time (milliseconds) |
-| `intent_router.total` | Router LLM phase wall time |
-| `tool-rag` | Direct passthrough of MCP `rag_query` / HTTP RAG response `latency_ms` |
-| `tool-github-search` | Direct passthrough of MCP `ask_repo` response `latency_ms` |
-| `tool-tavily-search` | Direct passthrough of Tavily `web_search` tool `latency_ms` |
-
-Use **`latency_ms.total`** for end-to-end wall time. **`tool-rag.total`** and **`tool-github-search.total`** are service-reported totals from upstream.
-
-### `usage` (token counts)
-
-Aggregated OpenAI-style usage for the request. Flat fields sum all phases that reported usage.
-
-| Key | Meaning |
-|-----|---------|
-| `prompt_tokens` | Sum across phases |
-| `completion_tokens` | Sum across phases |
-| `total_tokens` | Sum across phases |
-| `intent_router` | Router LLM (`POST …/v1/chat/completions`) when the router ran an LLM call; omitted on small-talk short-circuit |
-| `tool-rag` | Direct passthrough of MCP `rag_query` / HTTP RAG response `usage` (unchanged keys and values inside the object) |
-| `tool-github-search` | Direct passthrough of MCP `ask_repo` response `usage` |
-| `tool-tavily-search` | Direct passthrough of Tavily `web_search` tool `usage` when present |
-
-**Example** (`user_profile` tool — `usage.tool-rag` is direct passthrough of upstream `usage`):
-
-```json
-{
-  "usage": {
-    "prompt_tokens": 1218,
-    "completion_tokens": 109,
-    "total_tokens": 1327,
-    "intent_router": {
-      "prompt_tokens": 55,
-      "completion_tokens": 5,
-      "total_tokens": 60
-    },
-    "tool-rag": {
-      "chat": { "prompt_tokens": 886, "completion_tokens": 31, "total_tokens": 917 },
-      "follow_up_chat": { "prompt_tokens": 277, "completion_tokens": 73, "total_tokens": 350 },
-      "total": { "prompt_tokens": 1163, "completion_tokens": 104, "total_tokens": 1267 }
-    }
-  }
-}
-```
-
-**Example** (GitHub MCP route):
-
-```json
-{
-  "usage": {
-    "prompt_tokens": 1011,
-    "completion_tokens": 101,
-    "total_tokens": 1112,
-    "intent_router": {
-      "prompt_tokens": 11,
-      "completion_tokens": 1,
-      "total_tokens": 12
-    },
-    "tool-github-search": {
-      "github_search": { "prompt_tokens": 200, "completion_tokens": 20, "total_tokens": 220 },
-      "chat": { "prompt_tokens": 800, "completion_tokens": 80, "total_tokens": 880 },
-      "total": { "prompt_tokens": 1000, "completion_tokens": 100, "total_tokens": 1100 }
-    }
-  }
-}
-```
-
-Use top-level **`usage.total_tokens`** for request-wide token totals. **`usage.tool-rag.total`** and **`usage.tool-github-search.total`** are service-reported totals from upstream when nested that way.
-
-### Full response examples (non-stream `stream: false`, `status: "ok"`)
-
-**`user_profile` (RAG)** — question: *"What is Taixing's current visa status in the US?"*
-
-```json
-{
-  "request_id": "req_a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "session_id": "sess_demo_001",
-  "trace_id": "req_a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "conversation_id": "conv_client_thread_42",
-  "is_new_conversation": false,
-  "route": "tool",
-  "route_detail": {
-    "type": "tool",
-    "name": "user_profile",
-    "confidence": 0.98,
-    "reason": "Candidate-specific immigration status from KB"
+  "answer": {
+    "text": "Taixing Bi's visa status is H4 EAD. [1]",
+    "citations": [
+      {
+        "cite_id": 1,
+        "chunk_id": "1607b45e-1c07-5c29-975d-bbf47ef3129c",
+        "source": "personal_profile",
+        "text": "Q: visa status?\nA: H4 EAD."
+      }
+    ]
   },
-  "rewrite": "What is Taixing's current visa status in the United States?",
-  "answer": "Taixing holds an O-1 visa valid through March 2027. The most recent I-797 approval notice is on file.",
-  "citations": [
-    {
-      "doc_id": "visa_packet_2024",
-      "title": "O-1 Approval Notice",
-      "snippet": "Valid from 2024-03-15 through 2027-03-14",
-      "score": 0.91
-    }
-  ],
   "follow_up_questions": [
-    "When does Taixing's O-1 need renewal?",
-    "Does Taixing have an approved I-140?"
+    "What does H4 EAD mean for work authorization?"
   ],
   "latency_ms": {
-    "total": 4919.13,
-    "intent_router": {
-      "total": 2040.27
+    "intent_router": { "total": 1231 },
+    "tool_rag": {
+      "embed": 88,
+      "retrieve_rerank": 166,
+      "chat": 619,
+      "follow_up_chat": 1919,
+      "total": 2801
     },
-    "tool-rag": {
-      "embed": 45.2,
-      "retrieve": 312.0,
-      "chat": 890.5,
-      "follow_up_chat": 520.1,
-      "total": 1767.8
-    }
+    "total": 4047
   },
   "usage": {
-    "prompt_tokens": 1218,
-    "completion_tokens": 109,
-    "total_tokens": 1327,
     "intent_router": {
-      "prompt_tokens": 55,
-      "completion_tokens": 5,
-      "total_tokens": 60
+      "prompt_tokens": 516,
+      "completion_tokens": 54,
+      "total_tokens": 570
     },
-    "tool-rag": {
-      "chat": { "prompt_tokens": 886, "completion_tokens": 31, "total_tokens": 917 },
-      "follow_up_chat": { "prompt_tokens": 277, "completion_tokens": 73, "total_tokens": 350 },
-      "total": { "prompt_tokens": 1163, "completion_tokens": 104, "total_tokens": 1267 }
+    "tool_rag": {
+      "chat": { "prompt_tokens": 319, "completion_tokens": 28, "total_tokens": 347 },
+      "follow_up_chat": { "prompt_tokens": 423, "completion_tokens": 88, "total_tokens": 511 },
+      "total": { "prompt_tokens": 742, "completion_tokens": 116, "total_tokens": 858 }
+    },
+    "total": {
+      "prompt_tokens": 1258,
+      "completion_tokens": 170,
+      "total_tokens": 1428
     }
   },
-  "status": "ok"
+  "status": {
+    "ok": true,
+    "state": "completed"
+  }
 }
 ```
 
-**`github_repo_search`** — question: *"in HuntAI, how to design gateway?"*
+### Success example (GitHub / `github_repo_search`)
 
-```json
-{
-  "request_id": "req_f9e8d7c6-b5a4-3210-fedc-ba9876543210",
-  "session_id": "sess_demo_001",
-  "trace_id": "req_f9e8d7c6-b5a4-3210-fedc-ba9876543210",
-  "conversation_id": "conv_client_thread_42",
-  "is_new_conversation": false,
-  "route": "tool",
-  "route_detail": {
-    "type": "tool",
-    "name": "github_repo_search",
-    "confidence": 0.99,
-    "reason": "HuntAI repo architecture question",
-    "repo": "taixingbi/layer-orchestrator-v1"
-  },
-  "rewrite": "in HuntAI, how to design gateway?",
-  "answer": "In HuntAI, the gateway sits in front of the orchestrator and handles auth, rate limits, and routing to MCP tools. See `docs/architecture.md` for the split between gateway and orchestrator.",
-  "citations": [],
-  "follow_up_questions": [],
-  "latency_ms": {
-    "total": 4691.6,
-    "intent_router": {
-      "total": 1999.91
-    },
-    "tool-github-search": {
-      "github_readme": 286,
-      "github_search": 117,
-      "chat": 3435,
-      "follow_up_chat": 1193,
-      "total": 5062
-    }
-  },
-  "usage": {
-    "prompt_tokens": 1011,
-    "completion_tokens": 101,
-    "total_tokens": 1112,
-    "intent_router": {
-      "prompt_tokens": 11,
-      "completion_tokens": 1,
-      "total_tokens": 12
-    },
-    "tool-github-search": {
-      "github_search": { "prompt_tokens": 200, "completion_tokens": 20, "total_tokens": 220 },
-      "chat": { "prompt_tokens": 800, "completion_tokens": 80, "total_tokens": 880 },
-      "total": { "prompt_tokens": 1000, "completion_tokens": 100, "total_tokens": 1100 }
-    }
-  },
-  "status": "ok"
-}
-```
-
-Both examples use **`route: "tool"`** with nested **`route_detail.name`** selecting the handler. **`latency_ms.tool-rag`** / **`latency_ms.tool-github-search`** and **`usage.tool-rag`** / **`usage.tool-github-search`** are direct passthrough of upstream service payloads.
-
-### `route_detail` (nested route)
-
-Emitted alongside legacy flat `route` on the `route` SSE event and non-stream JSON.
-
-| `route_detail.type` | `route_detail.name` | Legacy `route` |
-|---------------------|---------------------|----------------|
-| `internal_intent` | `identity`, `greeting`, `help`, `capabilities` | `direct_reply` |
-| `internal_intent` | `clarify` | `clarify` |
-| `internal_intent` | `reject` | `reject` |
-| `tool` | `user_profile` | `tool` |
-| `tool` | `github_repo_search`, `web_search` | `tool` |
-
-Tool `web_search` uses **Tavily** (`TAVILY_API_KEY`). Tool `user_profile` uses **MCP `rag_query` with stream** when `MCP_RAG_BASE_URL` is set (`USE_MCP_RAG=true`, default). Set `USE_MCP_RAG=false` for buffered HTTP RAG. Tool `github_repo_search` uses **MCP** when `USE_MCP_TOOLS=true` (`MCP_GITHUB_BASE_URL`).
+Same envelope; `meta.route.tool` / `meta.tool.name` are `ask_repo`, `latency_ms.tool_github_search` and `usage.tool_github_search` passthrough MCP `ask_repo` (see [schema-tool.md — GitHub example](schema-tool.md#example-mcp-github-github_repo_search--ask_repo)).
 
 ### Error (`500`)
 
-Same fields as far as they were accumulated, plus:
+Same envelope where possible, plus top-level `error`:
 
 ```json
 {
-  "status": "error",
-  "error": "string"
+  "meta": { "request_id": "...", "conversation_id": "...", "is_new_conversation": false },
+  "answer": { "text": "", "citations": [] },
+  "follow_up_questions": [],
+  "latency_ms": {},
+  "usage": {},
+  "status": { "ok": false, "state": "failed" },
+  "error": "Error: ValueError: ..."
 }
 ```
-
-`latency_ms` may still be present if terminal state events were recorded.
 
 ### Validation / timeout errors
 
@@ -418,32 +226,24 @@ Same fields as far as they were accumulated, plus:
 }
 ```
 
+
 ---
 
 ## `POST /orchestrator/answer` — stream (`stream: true`)
 
 Response: **SSE**, each line `data: <json>\n\n`.
 
-### Event types
-
 | `type` | Description |
 |--------|-------------|
-| `request_id` | `{ "type": "request_id", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation" }` — early correlation (`conversation_id` is always the effective id; omitted keys besides these may be null) |
+| `request_id` | Early correlation ids |
 | `rewrite` | `{ "type": "rewrite", "text": "..." }` |
-| `route` | `{ "type": "route", "route": "rag" \| "direct_reply" \| "clarify" \| "reject" \| "tool", "route_detail": { ... } }` |
-| `answer_delta` | `{ "type": "answer_delta", "text": "..." }` — streamed token/chunk events from MCP `rag_query` (and other MCP tools); emitted **as they arrive** before `answer` |
-| `answer` | `{ "type": "answer", "text": "...", "citations": [], "follow_up_questions": [] }` — RAG fills arrays when the service returns them |
-| `done` | Full non-stream response shape plus `"type": "done"` — includes `route`, `route_detail`, `rewrite`, `answer`, `citations`, `follow_up_questions`, `latency_ms`, `usage`, `status: "ok"` |
-| `error` | Full non-stream response shape plus `"type": "error"` — includes accumulated fields when available, `latency_ms`, `usage`, `status: "error"`, `error` message |
+| `route` | `{ "type": "route", "route_detail": { ... } }` (internal; folded into final `meta`) |
+| `answer_delta` | `{ "type": "answer_delta", "text": "..." }` |
+| `answer` | `{ "type": "answer", "answer": { "text", "citations" }, "follow_up_questions": [] }` |
+| `done` | **Full response envelope** (see above) plus `"type": "done"` |
+| `error` | **Full envelope** with `status.ok: false`, plus `"type": "error"`, `"text"` |
 
-**Phase `state` events are not sent on the SSE wire** (they remain in structured logs and Prometheus). The terminal **`done`** / **`error`** event carries the same aggregated fields as non-stream JSON (`stream: false`), including **`latency_ms`** built from internal phase state.
-
-Typical successful stream sequence (RAG via MCP): `request_id` → `rewrite` → `route` → `answer_delta` (×N) → `answer` → `done`. HTTP RAG fallback skips `answer_delta` and emits one `answer`. The final **`done`** repeats the full response payload (same as non-stream) so clients can consume only the last event if desired.
-
-Timeout examples in stream mode (partial fields if the pipeline did not finish):
-
-- `{"type":"error","status":"error","error":"Error: TimeoutError: request timeout exceeded",...}`
-- `{"type":"error","status":"error","error":"Error: TimeoutError: stream idle timeout exceeded",...}`
+The **`done`** object matches non-stream JSON (`meta`, `answer`, `latency_ms`, `usage`, `status`).
 
 ---
 
@@ -666,6 +466,8 @@ Example metric families exposed:
 
 ---
 
-## RAG alignment ( `route: "rag"` )
+## Upstream tool payloads
 
-When the upstream RAG HTTP service returns JSON with `answer`, `citations`, and `follow_up_questions`, the orchestrator mirrors **`answer`** (verbatim string), **`citations`**, and **`follow_up_questions`** on the non-stream JSON response and on the streaming **`answer`** event when those fields exist. Upstream **`latency_ms`** is passed through as **`latency_ms.tool-rag`** (see example above).
+MCP services return the shape in [schema-tool.md](schema-tool.md). The orchestrator maps `answer.text` → client `answer.text`, tool `latency_ms` → `latency_ms.tool_rag` (etc.), tool `usage` → `usage.tool_rag` (etc.).
+
+---

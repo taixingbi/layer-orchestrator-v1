@@ -157,7 +157,7 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
                 },
                 status_code=504,
             )
-        status_code = 200 if result.get("status") == "ok" else 500
+        status_code = 200 if (result.get("status") or {}).get("ok") else 500
         return JSONResponse(result, status_code=status_code)
 
 

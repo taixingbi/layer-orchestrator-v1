@@ -1,6 +1,11 @@
 """latency_ms summary aggregation."""
 
 from app.core.sse import build_latency_ms_summary
+from app.schemas.answer_envelope import (
+    LATENCY_KEY_GITHUB_SEARCH,
+    LATENCY_KEY_RAG,
+    LATENCY_KEY_TAVILY_SEARCH,
+)
 
 
 def test_build_latency_ms_summary_nested_rag_service():
@@ -32,8 +37,8 @@ def test_build_latency_ms_summary_nested_rag_service():
         },
     ]
     out = build_latency_ms_summary(states)
-    assert out["tool-rag"] is mcp_latency
-    assert "orchestrator" not in out["tool-rag"]
+    assert out[LATENCY_KEY_RAG] is mcp_latency
+    assert "orchestrator" not in out[LATENCY_KEY_RAG]
 
 
 def test_build_latency_ms_summary_mcp_tool_latency_key():
@@ -50,7 +55,7 @@ def test_build_latency_ms_summary_mcp_tool_latency_key():
         },
     ]
     out = build_latency_ms_summary(states)
-    assert out["tool-rag"] is mcp_latency
+    assert out[LATENCY_KEY_RAG] is mcp_latency
 
 
 def test_build_latency_ms_summary_github_mcp():
@@ -81,7 +86,7 @@ def test_build_latency_ms_summary_github_mcp():
         },
     ]
     out = build_latency_ms_summary(states)
-    github = out["tool-github-search"]
+    github = out[LATENCY_KEY_GITHUB_SEARCH]
     assert out["total"] == 4691.0
     assert out["intent_router"] == {"total": 1999.91}
     assert github["github_readme"] == 286
@@ -111,7 +116,7 @@ def test_build_latency_ms_summary_github_mcp_passthrough_exact():
         },
     ]
     out = build_latency_ms_summary(states)
-    assert out["tool-github-search"] is mcp_latency
+    assert out[LATENCY_KEY_GITHUB_SEARCH] is mcp_latency
 
 
 def test_build_latency_ms_summary_github_legacy_tool_latency_ms():
@@ -127,7 +132,7 @@ def test_build_latency_ms_summary_github_legacy_tool_latency_ms():
         },
     ]
     out = build_latency_ms_summary(states)
-    assert out["tool-github-search"] is mcp_latency
+    assert out[LATENCY_KEY_GITHUB_SEARCH] is mcp_latency
 
 
 def test_build_latency_ms_summary_tavily_web_search():
@@ -143,4 +148,4 @@ def test_build_latency_ms_summary_tavily_web_search():
         },
     ]
     out = build_latency_ms_summary(states)
-    assert out["tool-tavily-search"] is mcp_latency
+    assert out[LATENCY_KEY_TAVILY_SEARCH] is mcp_latency
