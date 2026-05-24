@@ -36,7 +36,7 @@ from ..schemas.request import (
     history_from_answer_body,
     history_from_eval_body,
 )
-from ..schemas.route import legacy_route_from_detail, route_detail_to_dict
+from ..schemas.route import legacy_route_from_detail, route_detail_to_dict, routes_equivalent
 
 router = APIRouter()
 _http_log = logging.getLogger("layer_orchestrator.http")
@@ -49,19 +49,19 @@ def _router_eval_payload(
     history: List[tuple],
     expected_route: Optional[str],
 ) -> dict:
-    actual_route = decision.route
     route_detail = decision_to_route_detail(decision)
+    actual_route = legacy_route_from_detail(route_detail)
     exp = expected_route.strip().lower() if isinstance(expected_route, str) and expected_route.strip() else None
 
     checks: Dict[str, bool] = {
         "has_rewrite": bool((decision.rewritten_question or "").strip()),
-        "route_valid": actual_route in ("rag", "direct_reply", "clarify", "reject", "tool"),
+        "route_valid": actual_route in ("direct_reply", "clarify", "reject", "tool"),
         "direct_reply_has_answer": (
             actual_route != "direct_reply" or bool((decision.direct_answer or "").strip())
         ),
     }
     if exp is not None:
-        checks["route_match"] = actual_route == exp
+        checks["route_match"] = routes_equivalent(exp, actual_route, route_detail)
     else:
         checks["route_match"] = True
     if history:

@@ -50,8 +50,6 @@ def legacy_route_from_detail(detail: Any) -> str:
             return "reject"
         return "direct_reply"
     if isinstance(detail, ToolRoute):
-        if detail.name == "user_profile":
-            return "rag"
         return "tool"
     if isinstance(detail, dict):
         t = detail.get("type")
@@ -63,10 +61,30 @@ def legacy_route_from_detail(detail: Any) -> str:
                 return "reject"
             return "direct_reply"
         if t == "tool":
-            if name == "user_profile":
-                return "rag"
             return "tool"
-    return "rag"
+    return "tool"
+
+
+def is_user_profile_tool(route: str, route_detail: Any = None) -> bool:
+    """True when the decision targets user_profile (legacy flat route was 'rag')."""
+    r = (route or "").strip().lower()
+    if r == "rag":
+        return True
+    if r != "tool":
+        return False
+    parsed = parse_route_detail(route_detail)
+    return isinstance(parsed, ToolRoute) and parsed.name == "user_profile"
+
+
+def routes_equivalent(expected: str, actual: str, route_detail: Any = None) -> bool:
+    """Eval compat: legacy expected_route 'rag' matches flat 'tool' + user_profile."""
+    exp = (expected or "").strip().lower()
+    act = (actual or "").strip().lower()
+    if exp == act:
+        return True
+    if exp == "rag" and act == "tool" and is_user_profile_tool("tool", route_detail):
+        return True
+    return False
 
 
 def route_detail_from_legacy(

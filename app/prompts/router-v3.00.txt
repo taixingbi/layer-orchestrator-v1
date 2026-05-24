@@ -23,5 +23,5 @@ Rules:
 6) Rewrite follow-ups to standalone third-person questions about __CANDIDATE_NAME__ when the ask is candidate-specific.
 
 Also include legacy field for compatibility:
-  "route": "rag" | "direct_reply" | "clarify" | "reject" | "tool"
-Map: user_profile→rag, github_repo_search/web_search→tool, internal intents→direct_reply/clarify/reject.
+  "route": "direct_reply" | "clarify" | "reject" | "tool"
+Map: user_profile/github_repo_search/web_search→tool, internal intents→direct_reply/clarify/reject.
