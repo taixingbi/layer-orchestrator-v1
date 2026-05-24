@@ -33,6 +33,7 @@ app/
   - `POST /orchestrator/eval/router`
   - `POST /feedback`
   - `GET /health` (liveness; config only)
+  - `GET /version` (version id only)
   - `GET /ready` (readiness; probes LLM gateway and RAG HTTP)
   - `GET /metrics` (Prometheus)
 - `app/api/routes.py`  

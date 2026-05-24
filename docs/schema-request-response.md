@@ -436,6 +436,20 @@ LangSmith `create_feedback` is called only when credentials are configured. The 
 
 ---
 
+## `GET /version`
+
+### Response (`200`)
+
+Returns the deployment version id (same value as `app_version` on `/health` — from `APP_VERSION` env or package metadata).
+
+```json
+{
+  "version_id": "string"
+}
+```
+
+---
+
 ## `GET /ready`
 
 Readiness probe: calls the **LLM gateway** (`POST …/v1/chat/completions` with `max_tokens: 1`) and the **RAG service** (`POST …/v1/rag/query` with a minimal body). Uses `READINESS_TIMEOUT_S` (default `5`) per request.

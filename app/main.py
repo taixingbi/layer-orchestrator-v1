@@ -51,7 +51,7 @@ app = FastAPI(
 
 @app.middleware("http")
 async def _http_request_logging_middleware(request: Request, call_next):
-    if request.url.path in ("/health", "/ready", "/metrics"):
+    if request.url.path in ("/health", "/ready", "/metrics", "/version"):
         t0 = time.perf_counter()
         response = await call_next(request)
         observe_http(

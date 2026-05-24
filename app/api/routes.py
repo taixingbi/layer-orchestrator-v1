@@ -282,6 +282,11 @@ def health() -> dict:
     }
 
 
+@router.get("/version")
+def version() -> dict:
+    return {"version_id": settings.app_version}
+
+
 @router.get("/ready")
 async def ready():
     all_ok, body = await run_readiness()
