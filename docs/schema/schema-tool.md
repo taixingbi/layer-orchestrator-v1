@@ -199,89 +199,80 @@ Provider-specific keys under `meta` (e.g. `rag`, `github`) are optional extensio
 
 ## Example: MCP GitHub (`github_search` / `ask_repo`)
 
+Aligned with [layer-mcp-github-v1 schema](https://github.com/taixingbi/layer-mcp-github-v1/blob/main/docs/schema.md). Buffered JSON-RPC `.result` / `.result.structuredContent` and SSE **`done`** share this shape.
+
+**SSE:** `meta` → `delta` (`{ "answer": { "text": "..." } }`) → `done` (payload below).
+
 ```json
 {
   "meta": {
-    "request_id": "req-github-123",
-    "session_id": "ses-github-789",
-    "trace_id": "trc-github-001",
-    "conversation_id": "conv_github_1",
+    "request_id": "req-mcp-stream-1",
+    "session_id": "ses-mcp-stream-1",
+    "trace_id": "trc-mcp-stream-1",
+    "conversation_id": "conv_smoke_1s",
+    "is_new_conversation": false,
     "user": {
       "id": "taixing",
-      "roles": "engineering",
+      "roles": "hr",
       "groups": "engineering",
       "teams": "rag-platform"
     },
+    "route": {
+      "type": "tool",
+      "tool": "github_search",
+      "confidence": 0.99,
+      "reason": "Deterministic multi-repo GitHub question",
+      "source": "deterministic_rule"
+    },
     "tool": {
       "name": "github_search",
-      "type": "github"
+      "type": "github",
+      "version": "v1"
     },
+    "rewrite": "introduce this huntAi project",
     "github": {
-      "repos": [
-        "taixingbi/layer-orchestrator-v1",
-        "taixingbi/layer-gateway-api-v1"
-      ]
+      "scope": "all",
+      "repos": ["taixingbi/layer-orchestrator-v1", "taixingbi/layer-mcp-github-v1"]
     }
   },
   "answer": {
-    "text": "The HuntAI architecture uses a frontend, gateway API, orchestrator, RAG query service, and model gateways. The gateway handles authentication and request normalization, while the orchestrator routes requests to RAG or chat backends. [1] [2]",
+    "text": "## Introduction to huntAi Project\n\nThe huntAi project involves several interconnected repositories.",
     "citations": [
-      {
-        "cite_id": 1,
-        "repo": "taixingbi/layer-gateway-api-v1",
-        "source": "README",
-        "url": "https://github.com/taixingbi/layer-gateway-api-v1",
-        "text": "FastAPI gateway for authentication, request normalization, and orchestrator access."
-      },
-      {
-        "cite_id": 2,
-        "repo": "taixingbi/layer-orchestrator-v1",
-        "source": "README",
-        "url": "https://github.com/taixingbi/layer-orchestrator-v1",
-        "text": "FastAPI orchestration service for chat completions and RAG capabilities."
-      }
+      {"cite_id": 1, "source": "layer-mcp-github-v1 README"},
+      {"cite_id": 4, "source": "layer-orchestrator-v1 README"}
     ]
   },
   "follow_up_questions": [
-    "How does the gateway call the orchestrator?",
-    "How does the orchestrator choose RAG vs chat?",
-    "How should tracing IDs flow across services?"
+    "What is the main function of the layer-orchestrator-v1 repository?"
   ],
   "latency_ms": {
-    "github_readme": 2693,
-    "github_search": 1335,
-    "chat": 8349,
-    "follow_up_chat": 1479,
-    "total": 13886
+    "total": 8577,
+    "tool_github_search": {
+      "retrieve_rerank": 3095,
+      "chat": 4310,
+      "follow_up_chat": 1125,
+      "total": 8577
+    }
   },
   "usage": {
-    "chat": {
-      "prompt_tokens": 558,
-      "completion_tokens": 120,
-      "total_tokens": 678
-    },
-    "follow_up_chat": {
-      "prompt_tokens": 558,
-      "completion_tokens": 66,
-      "total_tokens": 624
-    },
     "total": {
-      "prompt_tokens": 1116,
-      "completion_tokens": 186,
-      "total_tokens": 1302
+      "prompt_tokens": 399,
+      "completion_tokens": 52,
+      "total_tokens": 451
     }
   },
   "status": {
     "ok": true,
-    "state": "completed"
+    "state": "completed",
+    "code": "ok"
   }
 }
 ```
 
-**Orchestrator client** uses `latency_ms.tool_github_search` and `usage.tool_github_search` passthrough.
+The orchestrator unwraps `latency_ms.tool_github_search` for tool metadata and passthroughs it on the client envelope as `latency_ms.tool_github_search`. `usage` is passthrough under `usage.tool_github_search` (upstream may send only `usage.total`).
 
 ---
 
 ## Streaming note
 
-MCP may emit **`event: delta`** before **`event: done`**. The orchestrator forwards deltas as SSE `answer_delta` and maps the terminal payload into the client envelope on `answer` and `done`. See [schema-request-response.md — stream](schema-request-response.md#post-orchestratoranswer--stream-stream-true).
+MCP may emit **`event: meta`**, then **`event: delta`** (`answer.text` chunks), then **`event: done`**. The orchestrator forwards deltas as SSE `answer_delta` and maps the terminal payload into the client envelope on `answer` and `done`. See [schema-request-response.md — stream](schema-request-response.md#post-orchestratoranswer--stream-stream-true).

@@ -1,4 +1,4 @@
-"""MCP SSE parsing fixtures from tmp.md examples."""
+"""MCP SSE parsing — RAG progress + GitHub MCP v2 (meta / delta / done)."""
 
 import json
 
@@ -7,8 +7,50 @@ import pytest
 from app.tools.mcp_client import (
     _accumulate_github_sse,
     _accumulate_progress_events,
+    _normalize_mcp_tool_payload,
     _parse_mcp_sse_lines,
+    _tool_result_from_json_payload,
 )
+
+GITHUB_DONE_V2 = {
+    "meta": {
+        "request_id": "req-mcp-stream-1",
+        "route": {"type": "tool", "tool": "github_search", "source": "deterministic_rule"},
+        "tool": {"name": "github_search", "type": "github", "version": "v1"},
+        "github": {"scope": "all", "repos": ["taixingbi/layer-orchestrator-v1"]},
+    },
+    "answer": {
+        "text": "## Introduction to huntAi Project\n\nThe huntAi project involves several repositories.",
+        "citations": [
+            {"cite_id": 1, "source": "layer-mcp-github-v1 README"},
+            {"cite_id": 4, "source": "layer-orchestrator-v1 README"},
+        ],
+    },
+    "follow_up_questions": ["What is the main function of layer-orchestrator-v1?"],
+    "latency_ms": {
+        "total": 8577,
+        "tool_github_search": {
+            "retrieve_rerank": 3095,
+            "chat": 4310,
+            "follow_up_chat": 1125,
+            "total": 8577,
+        },
+    },
+    "usage": {
+        "total": {"prompt_tokens": 399, "completion_tokens": 52, "total_tokens": 451},
+    },
+    "status": {"ok": True, "state": "completed", "code": "ok"},
+}
+
+
+def test_normalize_github_mcp_v2_payload():
+    norm = _normalize_mcp_tool_payload(GITHUB_DONE_V2)
+    assert "Introduction to huntAi" in norm["answer"]
+    assert len(norm["citations"]) == 2
+    assert norm["latency_ms"]["retrieve_rerank"] == 3095
+    assert norm["latency_ms"]["total"] == 8577
+    assert norm["usage"]["total"]["total_tokens"] == 451
+    assert norm["metadata"]["mcp_meta"]["github"]["scope"] == "all"
 
 
 def test_accumulate_progress_rag_mcp_style():
@@ -22,19 +64,24 @@ def test_accumulate_progress_rag_mcp_style():
     assert merged["usage"]["total"]["prompt_tokens"] == 1
 
 
-def test_accumulate_github_sse_delta_and_done():
-    sse = """event: delta
-data: {"text": "##"}
+def test_accumulate_github_sse_v2_delta_and_done():
+    done_json = json.dumps(GITHUB_DONE_V2, separators=(",", ":"))
+    sse = f"""event: meta
+data: {json.dumps({"meta": GITHUB_DONE_V2["meta"]})}
 
 event: delta
-data: {"text": " Title"}
+data: {{"answer": {{"text": "##"}}}}
+
+event: delta
+data: {{"answer": {{"text": " Intro"}}}}
 
 event: done
-data: {"ok": true, "answer": "## Title", "citations": []}
+data: {done_json}
 """
     merged = _accumulate_github_sse(sse)
-    assert merged.get("answer") == "## Title"
-    assert merged.get("ok") is True
+    assert merged["answer"].startswith("## Intro")
+    assert merged["latency_ms"]["chat"] == 4310
+    assert merged["follow_up_questions"][0].startswith("What is")
 
 
 @pytest.mark.asyncio
@@ -59,14 +106,21 @@ async def test_parse_mcp_sse_lines_streams_deltas():
 
 
 @pytest.mark.asyncio
-async def test_parse_mcp_sse_github_done_latency_with_deltas():
-    """GitHub MCP: answer from deltas, latency_ms only on done event."""
+async def test_parse_mcp_sse_github_v2_stream():
+    """GitHub MCP v2: meta → delta (answer.text) → done envelope."""
+    done_line = json.dumps(GITHUB_DONE_V2, separators=(",", ":"))
     sse_lines = [
+        "event: meta",
+        f'data: {json.dumps({"meta": GITHUB_DONE_V2["meta"]})}',
+        "",
         "event: delta",
-        'data: {"text": "Repo overview"}',
+        'data: {"answer": {"text": "Repo "}}',
+        "",
+        "event: delta",
+        'data: {"answer": {"text": "overview"}}',
         "",
         "event: done",
-        'data: {"ok": true, "latency_ms": {"github_readme": 237, "github_search": 218, "chat": 3303, "follow_up_chat": 1081, "total": 4849}}',
+        f"data: {done_line}",
         "",
     ]
     deltas: list[str] = []
@@ -76,59 +130,43 @@ async def test_parse_mcp_sse_github_done_latency_with_deltas():
             yield line
 
     result = await _parse_mcp_sse_lines(_lines(), on_delta=deltas.append)
-    assert deltas == ["Repo overview"]
-    assert result.answer == "Repo overview"
-    assert result.latency_ms == {
-        "github_readme": 237,
-        "github_search": 218,
-        "chat": 3303,
-        "follow_up_chat": 1081,
-        "total": 4849,
-    }
+    assert deltas == ["Repo ", "overview"]
+    assert result.answer.startswith("## Introduction")
+    assert result.latency_ms == GITHUB_DONE_V2["latency_ms"]["tool_github_search"]
+    assert result.usage["total"]["total_tokens"] == 451
+    assert len(result.citations) == 2
+    assert result.follow_up_questions
 
 
 @pytest.mark.asyncio
-async def test_tool_result_from_json_github_latency_passthrough():
-    from app.tools.mcp_client import _tool_result_from_json_payload
-
-    mcp_latency = {
-        "github_readme": 286,
-        "github_search": 117,
-        "chat": 3435,
-        "follow_up_chat": 1193,
-        "total": 5062,
-    }
-    payload = {
-        "result": {
-            "content": [
-                {
-                    "text": json.dumps(
-                        {
-                            "ok": True,
-                            "answer": "Repo overview",
-                            "latency_ms": mcp_latency,
-                        }
-                    )
-                }
-            ]
-        }
-    }
+async def test_tool_result_from_json_buffered_github_v2():
+    payload = {"jsonrpc": "2.0", "id": "1", "result": GITHUB_DONE_V2}
     result = await _tool_result_from_json_payload(payload)
-    assert result.answer == "Repo overview"
-    assert result.latency_ms == mcp_latency
+    assert "Introduction to huntAi" in result.answer
+    assert result.latency_ms["retrieve_rerank"] == 3095
+
+
+@pytest.mark.asyncio
+async def test_tool_result_from_json_structured_content_github_v2():
+    payload = {"jsonrpc": "2.0", "id": "1", "result": {"structuredContent": GITHUB_DONE_V2}}
+    result = await _tool_result_from_json_payload(payload)
+    assert result.latency_ms["total"] == 8577
 
 
 @pytest.mark.asyncio
 async def test_github_search_latency_end_to_end():
-    """MCP SSE latency_ms → pipeline metadata → done summary github-search."""
+    """MCP v2 latency_ms.tool_github_search → pipeline metadata → client envelope."""
     from app.core.sse import build_latency_ms_summary
+    from app.schemas.answer_envelope import LATENCY_KEY_GITHUB_SEARCH
 
+    tool_latency = GITHUB_DONE_V2["latency_ms"]["tool_github_search"]
+    done_line = json.dumps(GITHUB_DONE_V2, separators=(",", ":"))
     sse_lines = [
         "event: delta",
-        'data: {"text": "Repo overview"}',
+        'data: {"answer": {"text": "chunk"}}',
         "",
         "event: done",
-        'data: {"ok": true, "latency_ms": {"github_readme": 286, "github_search": 117, "chat": 3435, "follow_up_chat": 1193, "total": 5062}}',
+        f"data: {done_line}",
         "",
     ]
 
@@ -137,7 +175,7 @@ async def test_github_search_latency_end_to_end():
             yield line
 
     tool_result = await _parse_mcp_sse_lines(_lines())
-    assert tool_result.latency_ms is not None
+    assert tool_result.latency_ms == tool_latency
 
     states = [
         {
@@ -160,14 +198,14 @@ async def test_github_search_latency_end_to_end():
         },
     ]
     out = build_latency_ms_summary(states)
-    from app.schemas.answer_envelope import LATENCY_KEY_GITHUB_SEARCH
-
     assert out[LATENCY_KEY_GITHUB_SEARCH] is tool_result.latency_ms
-    assert out[LATENCY_KEY_GITHUB_SEARCH]["total"] == 5062
+    assert out[LATENCY_KEY_GITHUB_SEARCH]["total"] == 8577
+    assert out[LATENCY_KEY_GITHUB_SEARCH]["retrieve_rerank"] == 3095
     assert out["intent_router"] == {"total": 1999.91}
 
 
-def test_accumulate_progress_github_latency_phases():
+def test_accumulate_progress_github_legacy_latency_phases():
+    """Legacy RAG-style progress latency events still merge."""
     events = [
         {"type": "latency", "phase": "github_readme", "ms": 237},
         {"type": "latency", "phase": "github_search", "ms": 218},

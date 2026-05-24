@@ -80,3 +80,4 @@ Generated **`result/*.csv`** and the report are listed in **`.gitignore`**; re-r
 ## See also
 
 - API shape: **`docs/schema-request-response.md`** (`POST /orchestrator/eval/router`)
+- **Router DPO JSONL:** [`dpo-router/README.md`](../dpo-router/README.md) — preference pairs from these gold CSVs (+ eval results)

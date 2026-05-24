@@ -59,6 +59,12 @@ def test_build_latency_ms_summary_mcp_tool_latency_key():
 
 
 def test_build_latency_ms_summary_github_mcp():
+    tool_latency = {
+        "retrieve_rerank": 3095,
+        "chat": 4310,
+        "follow_up_chat": 1125,
+        "total": 8577,
+    }
     states = [
         {
             "phase": "intent_router",
@@ -75,13 +81,7 @@ def test_build_latency_ms_summary_github_mcp():
             "latency_ms": 2691.0,
             "metadata": {
                 "tool": "github_search",
-                "github_latency_ms": {
-                    "github_readme": 286,
-                    "github_search": 117,
-                    "chat": 3435,
-                    "follow_up_chat": 1193,
-                    "total": 5062,
-                },
+                "github_latency_ms": tool_latency,
             },
         },
     ]
@@ -89,21 +89,19 @@ def test_build_latency_ms_summary_github_mcp():
     github = out[LATENCY_KEY_GITHUB_SEARCH]
     assert out["total"] == 4691.0
     assert out["intent_router"] == {"total": 1999.91}
-    assert github["github_readme"] == 286
-    assert github["github_search"] == 117
-    assert github["chat"] == 3435
-    assert github["follow_up_chat"] == 1193
-    assert github["total"] == 5062
+    assert github["retrieve_rerank"] == 3095
+    assert github["chat"] == 4310
+    assert github["follow_up_chat"] == 1125
+    assert github["total"] == 8577
     assert "orchestrator" not in github
 
 
 def test_build_latency_ms_summary_github_mcp_passthrough_exact():
     mcp_latency = {
-        "github_readme": 286,
-        "github_search": 117,
-        "chat": 3435,
-        "follow_up_chat": 1193,
-        "total": 5062,
+        "retrieve_rerank": 3095,
+        "chat": 4310,
+        "follow_up_chat": 1125,
+        "total": 8577,
     }
     states = [
         {
@@ -120,7 +118,7 @@ def test_build_latency_ms_summary_github_mcp_passthrough_exact():
 
 
 def test_build_latency_ms_summary_github_legacy_tool_latency_ms():
-    mcp_latency = {"github_readme": 286, "total": 5062}
+    mcp_latency = {"retrieve_rerank": 100, "chat": 200, "total": 300}
     states = [
         {
             "phase": "tool",

@@ -133,8 +133,70 @@ def _accumulate_progress_events(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     return out
 
 
+def _extract_sse_delta_text(obj: Dict[str, Any]) -> str:
+    """GitHub MCP v2: delta is `{ \"answer\": { \"text\": \"...\" } }`; legacy: `{ \"text\": \"...\" }`."""
+    ans = obj.get("answer")
+    if isinstance(ans, dict):
+        text = ans.get("text")
+        if isinstance(text, str):
+            return text
+    chunk = obj.get("text")
+    return chunk if isinstance(chunk, str) else ""
+
+
+def _normalize_mcp_tool_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Flatten MCP structuredContent (GitHub v2 / RAG) into ToolResult field dict."""
+    out: Dict[str, Any] = {}
+    if not isinstance(data, dict):
+        return out
+
+    ans = data.get("answer")
+    if isinstance(ans, dict):
+        out["answer"] = str(ans.get("text") or "").strip()
+        cites = ans.get("citations")
+        if cites is not None:
+            out["citations"] = cites
+    elif isinstance(ans, str):
+        out["answer"] = ans.strip()
+    elif isinstance(data.get("text"), str):
+        out["answer"] = data["text"].strip()
+
+    if data.get("citations") is not None and "citations" not in out:
+        out["citations"] = data["citations"]
+    if data.get("follow_up_questions") is not None:
+        out["follow_up_questions"] = data["follow_up_questions"]
+
+    lat = data.get("latency_ms")
+    if isinstance(lat, dict):
+        inner: Optional[Dict[str, Any]] = None
+        for key in ("tool_github_search", "tool_rag", "tool_tavily_search"):
+            nested = lat.get(key)
+            if isinstance(nested, dict):
+                inner = nested
+                break
+        out["latency_ms"] = inner if inner is not None else lat
+    elif lat is not None:
+        out["latency_ms"] = lat if isinstance(lat, dict) else {"total": lat}
+
+    usage = data.get("usage")
+    if isinstance(usage, dict):
+        out["usage"] = usage
+
+    meta: Dict[str, Any] = {}
+    if isinstance(data.get("meta"), dict):
+        meta["mcp_meta"] = data["meta"]
+    if isinstance(data.get("status"), dict):
+        meta["status"] = data["status"]
+    if "ok" in data:
+        meta["ok"] = data["ok"]
+    if meta:
+        out["metadata"] = meta
+
+    return out
+
+
 def _accumulate_github_sse(text: str) -> Dict[str, Any]:
-    """Parse GitHub MCP SSE (event: delta / done)."""
+    """Parse GitHub MCP SSE (event: meta / delta / done)."""
     text_chunks: List[str] = []
     done_payload: Dict[str, Any] = {}
     current_event: Optional[str] = None
@@ -155,16 +217,18 @@ def _accumulate_github_sse(text: str) -> Dict[str, Any]:
             obj = json.loads(raw)
         except json.JSONDecodeError:
             continue
-        if current_event == "delta" and isinstance(obj, dict):
-            chunk = obj.get("text")
-            if isinstance(chunk, str):
+        if not isinstance(obj, dict):
+            continue
+        if current_event == "delta":
+            chunk = _extract_sse_delta_text(obj)
+            if chunk:
                 text_chunks.append(chunk)
-        elif current_event == "done" and isinstance(obj, dict):
+        elif current_event == "done":
             done_payload = obj
-    out: Dict[str, Any] = dict(done_payload)
-    if text_chunks and not out.get("answer"):
-        out["answer"] = "".join(text_chunks).strip()
-    return out
+    normalized = _normalize_mcp_tool_payload(done_payload)
+    if text_chunks and not normalized.get("answer"):
+        normalized["answer"] = "".join(text_chunks).strip()
+    return normalized
 
 
 def _merge_mcp_stream_payload(
@@ -174,7 +238,7 @@ def _merge_mcp_stream_payload(
     progress_events: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """Combine GitHub delta text, RAG-style progress events, and done payload."""
-    payload = dict(base)
+    payload = _normalize_mcp_tool_payload(base) if base else {}
     if not payload.get("answer") and github_deltas:
         payload["answer"] = "".join(github_deltas).strip()
     if not progress_events:
@@ -196,25 +260,36 @@ def _merge_mcp_stream_payload(
 
 
 def _payload_to_tool_result(data: Dict[str, Any]) -> ToolResult:
-    answer = str(data.get("answer") or data.get("text") or "").strip()
-    citations = data.get("citations") or []
-    follow_ups = data.get("follow_up_questions") or []
-    usage_raw = data.get("usage")
+    normalized = _normalize_mcp_tool_payload(data)
+    answer = str(normalized.get("answer") or "").strip()
+    citations = normalized.get("citations") if normalized.get("citations") is not None else data.get("citations") or []
+    follow_ups = normalized.get("follow_up_questions")
+    if follow_ups is None:
+        follow_ups = data.get("follow_up_questions") or []
+    usage_raw = normalized.get("usage") if normalized.get("usage") is not None else data.get("usage")
     usage = usage_raw if isinstance(usage_raw, dict) else None
-    latency = data.get("latency_ms")
+    latency = normalized.get("latency_ms")
+    if latency is None:
+        latency = data.get("latency_ms")
     if isinstance(latency, dict):
         pass
     elif latency is not None:
         latency = {"total": latency}
     else:
         latency = None
+    meta = normalized.get("metadata") if isinstance(normalized.get("metadata"), dict) else {}
+    if not meta:
+        meta = {"source": data.get("source") or "mcp"}
+    else:
+        meta = dict(meta)
+        meta.setdefault("source", "mcp")
     return ToolResult(
         answer=answer,
         citations=list(citations) if citations else [],
         follow_up_questions=list(follow_ups) if follow_ups else [],
         usage=usage,
         latency_ms=latency,
-        metadata={"source": data.get("source") or "mcp"},
+        metadata=meta,
     )
 
 
@@ -263,10 +338,11 @@ async def _parse_mcp_sse_lines(
             if inner:
                 _emit_progress_event(inner, progress_events=progress_events, on_delta=on_delta)
         elif current_event == "delta" and isinstance(obj, dict):
-            chunk = obj.get("text") or ""
-            github_deltas.append(chunk)
-            if on_delta and chunk:
-                on_delta(chunk)
+            chunk = _extract_sse_delta_text(obj)
+            if chunk:
+                github_deltas.append(chunk)
+                if on_delta:
+                    on_delta(chunk)
         elif current_event == "done" and isinstance(obj, dict):
             payload = _merge_mcp_stream_payload(
                 obj,
@@ -298,6 +374,8 @@ async def _tool_result_from_json_payload(
     result = data["result"]
     if not isinstance(result, dict):
         return ToolResult(answer=json.dumps(data, default=str)[:50000])
+    if isinstance(result.get("answer"), (dict, str)) or isinstance(result.get("latency_ms"), dict):
+        return _payload_to_tool_result(result)
     content = result.get("content")
     if isinstance(content, list) and content:
         text = content[0].get("text") if isinstance(content[0], dict) else None

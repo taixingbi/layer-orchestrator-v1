@@ -133,42 +133,32 @@ curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
 
 ```json
 {
-  "meta": {
-    "request_id": "req-123",
+  "request": {
+    "type": "request_id",
     "session_id": "ses-123",
+    "request_id": "req-123",
     "trace_id": "req-123",
-
     "conversation_id": "conv-smoke-1",
-    "is_new_conversation": false,
-
-    "user": {
-      "id": "taixing",
-      "roles": "hr",
-      "groups": "engineering",
-      "teams": "rag-platform"
-    },
-
-    "route": {
+    "is_new_conversation": false
+  },
+  "rewrite": {
+    "type": "rewrite",
+    "text": "taixing visa status in us"
+  },
+  "route": {
+    "type": "route",
+    "route": "tool",
+    "route_detail": {
       "type": "tool",
-      "tool": "user_profile",
+      "name": "user_profile",
       "confidence": 1.0,
-      "source": "llm_router",
       "reason": "Needs Taixing Bi-specific facts"
     },
-
-    "tool": {
-      "name": "user_profile",
-      "type": "rag",
-      "version": "v1",
-      "key": "tool_rag"
-    },
-
-    "rewrite": "taixing visa status in us"
+    "route_source": "llm_router",
+    "text": "taixing visa status in us"
   },
-
   "answer": {
-    "text": "Taixing Bi's visa status in the US is H4 EAD, and there is no need for visa sponsorship [1].",
-
+    "text": "Taixing Bi's visa status in the US is H4 EAD, and there is no visa sponsorship required. [1]",
     "citations": [
       {
         "cite_id": 1,
@@ -178,71 +168,119 @@ curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
       }
     ]
   },
-
-  "follow_up_questions": [
-    "Can Taixing switch to another visa type in the future?",
-    "What are the requirements for maintaining H4 EAD status?",
-    "Are there any restrictions on working hours or types of work with H4 EAD?"
-  ],
-
-  "latency_ms": {
-    "total": 5028.25,
-
-    "intent_router": {
-      "total": 2132.04
-    },
-
-    "tool_rag": {
-      "embed": 238,
-      "retrieve_rerank": 204,
-      "chat": 648,
-      "follow_up_chat": 1768,
-      "total": 2865
-    }
+  "stream": {
+    "answer_delta_count": 27,
+    "answer_delta_text": [
+      "Ta",
+      "ix",
+      "ing",
+      " Bi",
+      "'s",
+      " visa",
+      " status",
+      " in",
+      " the",
+      " US",
+      " is",
+      " H",
+      "4",
+      " E",
+      "AD",
+      ",",
+      " and",
+      " there",
+      " is",
+      " no",
+      " visa",
+      " sponsorship",
+      " required",
+      ".",
+      " [",
+      "1",
+      "]"
+    ],
+    "merged_text": "Taixing Bi's visa status in the US is H4 EAD, and there is no visa sponsorship required. [1]"
   },
-
+  "follow_up_questions": [
+    "Can Taixing apply for a different type of visa in the future?",
+    "What are the requirements for maintaining H4 EAD status?",
+    "Is there any additional documentation needed to maintain H4 EAD status?"
+  ],
   "usage": {
     "total": {
       "prompt_tokens": 1258,
-      "completion_tokens": 158,
-      "total_tokens": 1416
+      "completion_tokens": 165,
+      "total_tokens": 1423
     },
-
     "intent_router": {
       "prompt_tokens": 516,
       "completion_tokens": 54,
       "total_tokens": 570
     },
-
     "tool_rag": {
       "type": "usage",
-
       "chat": {
         "prompt_tokens": 319,
         "completion_tokens": 28,
         "total_tokens": 347
       },
-
       "follow_up_chat": {
         "prompt_tokens": 423,
-        "completion_tokens": 76,
-        "total_tokens": 499
+        "completion_tokens": 83,
+        "total_tokens": 506
       },
-
       "total": {
         "prompt_tokens": 742,
-        "completion_tokens": 104,
-        "total_tokens": 846
+        "completion_tokens": 111,
+        "total_tokens": 853
       }
     }
   },
-
+  "meta": {
+    "request_id": "req-123",
+    "session_id": "ses-123",
+    "trace_id": "req-123",
+    "conversation_id": "conv-smoke-1",
+    "is_new_conversation": false,
+    "user": {
+      "id": "taixing",
+      "roles": "hr",
+      "groups": "engineering",
+      "teams": "rag-platform"
+    },
+    "route": {
+      "type": "tool",
+      "tool": "user_profile",
+      "confidence": 1.0,
+      "reason": "Needs Taixing Bi-specific facts",
+      "source": "llm_router"
+    },
+    "tool": {
+      "name": "user_profile",
+      "type": "rag",
+      "version": "v1",
+      "key": "tool_rag"
+    },
+    "rewrite": "taixing visa status in us"
+  },
+  "latency_ms": {
+    "total": 4988.74,
+    "intent_router": {
+      "total": 2255.62
+    },
+    "tool_rag": {
+      "embed": 77,
+      "retrieve_rerank": 151,
+      "chat": 640,
+      "follow_up_chat": 1848,
+      "total": 2724
+    }
+  },
   "status": {
     "ok": true,
     "state": "completed",
     "code": "ok"
   },
-
   "type": "done"
 }
 ```
@@ -274,151 +312,165 @@ echo
 
 ```json
 {
-  "meta": {
-    "request_id": "req-123",
+  "request": {
+    "type": "request_id",
     "session_id": "ses-123",
+    "request_id": "req-123",
     "trace_id": "req-123",
-
     "conversation_id": "conv-smoke-1",
-    "is_new_conversation": false,
-
-    "user": {
-      "id": "taixing",
-      "roles": "hr",
-      "groups": "engineering",
-      "teams": "rag-platform"
-    },
-
-    "route": {
+    "is_new_conversation": false
+  },
+  "rewrite": {
+    "type": "rewrite",
+    "text": "in app of huntai, what is orchestrator design?"
+  },
+  "route": {
+    "type": "route",
+    "route": "tool",
+    "route_detail": {
       "type": "tool",
-      "tool": "github_search",
+      "name": "github_search",
       "confidence": 0.99,
-      "source": "deterministic_rule",
       "reason": "Deterministic: HuntAI/layer repo or gateway architecture question"
     },
-
-    "tool": {
-      "name": "github_search",
-      "type": "github",
-      "version": "v1",
-      "key": "tool_github_search"
-    },
-
-    "rewrite": "in app of huntai, what is orchestrator design?"
+    "route_source": "deterministic_rule",
+    "text": "in app of huntai, what is orchestrator design?"
   },
-
   "answer": {
-    "text": "- The orchestrator design in the HuntAI application is described in the README of the `layer-orchestrator-v1` repository [4].\n- It acts as a FastAPI service handling HTTP chat completions, RAG, and unified `/orchestrator/answer` endpoints.\n- Supports streaming responses via SSE.\n- Handles correlation IDs in headers for traceability.\n- Routes requests to the appropriate backend based on configuration and current load conditions.",
-
-    "citations": [
-      {
-        "cite_id": 1,
-        "source": "layer-mcp-github-v1 README",
-        "text": "MCP server that answers natural-language questions about a fixed set of GitHub repos."
-      },
-      {
-        "cite_id": 2,
-        "source": "layer-web-v1 README",
-        "text": "Next.js 15 frontend with chat UI and BFF API routes."
-      },
-      {
-        "cite_id": 3,
-        "source": "layer-gateway-api-v1 README",
-        "text": "FastAPI gateway that decouples Next.js from AI orchestration."
-      },
-      {
-        "cite_id": 4,
-        "source": "layer-orchestrator-v1 README",
-        "text": "FastAPI service for HTTP chat completions, HTTP RAG, and unified `/orchestrator/answer` endpoints with SSE support."
-      },
-      {
-        "cite_id": 5,
-        "source": "layer-rag-query-v1 README",
-        "text": "RAG hybrid retrieval using dense vectors, BM25, and RRF fusion."
-      },
-      {
-        "cite_id": 6,
-        "source": "layer-gateway-inference-v1 README",
-        "text": "GPU-aware routing gateway for vLLM inference workloads."
-      },
-      {
-        "cite_id": 7,
-        "source": "layer-gateway-embed-v1 README",
-        "text": "Request-level routing gateway for `/v1/embeddings` across multiple vLLM backends."
-      },
-      {
-        "cite_id": 8,
-        "source": "layer-gateway-reranker-v1 README",
-        "text": "Request-level routing gateway for `/v1/rerank` across multiple vLLM backends."
-      },
-      {
-        "cite_id": 9,
-        "source": "layer-rag-ingest-v1 README",
-        "text": "Prepare chunks, enrich metadata, embed text, and upsert points into Qdrant."
-      },
-      {
-        "cite_id": 10,
-        "source": "k3s README",
-        "text": "k3s control plane and GPU worker manifests/scripts."
-      },
-      {
-        "cite_id": 11,
-        "source": "layer-grafana-loki-central-logger README",
-        "text": "Send logs to Grafana Loki with async httpx-based logging."
-      }
-    ]
-  },
-
-  "follow_up_questions": [
-    "What are the main components of the orchestrator in the layer-orchestrator-v1 repository?",
-    "How does the orchestrator handle error scenarios?",
-    "Can you explain the role of correlation IDs in the orchestrator's design?"
-  ],
-
-  "latency_ms": {
-    "total": 7466.06,
-
-    "intent_router": {
-      "total": 0.98
+    "type": "answer",
+    "answer": {
+      "text": "- The orchestrator in the HuntAI application is designed to handle HTTP chat completions, RAG queries, and other AI tasks through the `layer-orchestrator-v1` repository [4]. It acts as a backend service that communicates with the LLM gateway for generating responses.\n- The orchestrator receives chat requests and processes them, generating responses that are returned to the frontend via the gateway [4].\n- It supports conversation IDs and correlation IDs for tracking requests, ensuring consistent handling across different calls [4].\n- The architecture includes components for handling requests, responses, and observability metrics, ensuring efficient and reliable processing [4].\n- The orchestrator is configured via environment variables, allowing for customization of behavior such as retries, timeouts, and circuit breaker thresholds [4].",
+      "citations": [
+        {
+          "cite_id": 1,
+          "source": "layer-mcp-github-v1 README",
+          "text": "# layer-mcp-github\n\nMCP server (**[layer-mcp-github-v1](https://github.com/taixingbi/layer-mcp-github-v1)**) that answers natural-language questions about a fixed set of GitHub repos."
+        },
+        {
+          "cite_id": 2,
+          "source": "layer-web-v1 README",
+          "text": "# HuntAI\n\n## Design\n\nFull technical design: docs/design.md"
+        },
+        {
+          "cite_id": 3,
+          "source": "layer-gateway-api-v1 README",
+          "text": "# layer-gateway-api-v1\n\nFastAPI gateway that decouples Next.js from AI orchestration."
+        },
+        {
+          "cite_id": 4,
+          "source": "layer-orchestrator-v1 README",
+          "text": "# layer-orchestrator-v1\n\nFastAPI service: HTTP chat completions via LLM gateway, HTTP RAG, and unified /orchestrator/answer endpoint."
+        },
+        {
+          "cite_id": 5,
+          "source": "layer-rag-query-v1 README",
+          "text": "# layer-rag-query\n\nRAG hybrid retrieval: dense (vector) + BM25 + RRF fusion."
+        },
+        {
+          "cite_id": 6,
+          "source": "layer-gateway-inference-v1 README",
+          "text": "# layer-gateway-inference-v1\n\nGPU-aware routing gateway for vLLM on k3s."
+        },
+        {
+          "cite_id": 7,
+          "source": "layer-gateway-embed-v1 README",
+          "text": "# layer-gateway-embed-v1\n\nRequest-level routing gateway for /v1/embeddings."
+        },
+        {
+          "cite_id": 8,
+          "source": "layer-gateway-reranker-v1 README",
+          "text": "# layer-gateway-reranker-v1\n\nRequest-level routing gateway for /v1/rerank."
+        },
+        {
+          "cite_id": 9,
+          "source": "layer-rag-ingest-v1 README",
+          "text": "# RAG Ingest Pipeline\n\nPrepare chunk JSON files and upsert points into Qdrant."
+        },
+        {
+          "cite_id": 10,
+          "source": "k3s README",
+          "text": "# k3s server + GPU agents\n\nManifests and scripts for k3s control plane and GPU workers."
+        },
+        {
+          "cite_id": 11,
+          "source": "layer-grafana-loki-central-logger README",
+          "text": "# tb-loki-central-logger\n\nSend logs to Grafana Loki with httpx."
+        }
+      ]
     },
-
-    "tool_github_search": {
-      "retrieve_rerank": 3795,
-      "chat": 2536,
-      "follow_up_chat": 1116,
-      "total": 7456
-    }
-  },
-
-  "usage": {
-    "total": {
-      "prompt_tokens": 292,
-      "completion_tokens": 54,
-      "total_tokens": 346
-    },
-
-    "tool_github_search": {
-      "follow_up_chat": {
-        "prompt_tokens": 292,
-        "completion_tokens": 54,
-        "total_tokens": 346
-      },
-
+    "follow_up_questions": [
+      "What specific APIs does the orchestrator use to communicate with the LLM gateway?",
+      "Can you provide more details on how the orchestrator handles conversation IDs and correlation IDs?",
+      "Are there any known issues or limitations with the current orchestrator design?"
+    ],
+    "usage": {
       "total": {
-        "prompt_tokens": 292,
-        "completion_tokens": 54,
-        "total_tokens": 346
+        "prompt_tokens": 358,
+        "completion_tokens": 57,
+        "total_tokens": 415
+      },
+      "tool_github_search": {
+        "chat": {},
+        "follow_up_chat": {
+          "prompt_tokens": 358,
+          "completion_tokens": 57,
+          "total_tokens": 415
+        },
+        "total": {
+          "prompt_tokens": 358,
+          "completion_tokens": 57,
+          "total_tokens": 415
+        }
       }
     }
   },
-
-  "status": {
-    "ok": true,
-    "state": "completed",
-    "code": "ok"
-  },
-
-  "type": "done"
+  "done": {
+    "meta": {
+      "request_id": "req-123",
+      "session_id": "ses-123",
+      "trace_id": "req-123",
+      "conversation_id": "conv-smoke-1",
+      "is_new_conversation": false,
+      "user": {
+        "id": "taixing",
+        "roles": "hr",
+        "groups": "engineering",
+        "teams": "rag-platform"
+      },
+      "route": {
+        "type": "tool",
+        "tool": "github_search",
+        "confidence": 0.99,
+        "reason": "Deterministic: HuntAI/layer repo or gateway architecture question",
+        "source": "deterministic_rule"
+      },
+      "tool": {
+        "name": "github_search",
+        "type": "github",
+        "version": "v1",
+        "key": "tool_github_search"
+      },
+      "rewrite": "in app of huntai, what is orchestrator design?"
+    },
+    "latency_ms": {
+      "total": 8230.47,
+      "intent_router": {
+        "total": 1.45
+      },
+      "tool_github_search": {
+        "retrieve_rerank": 3590,
+        "chat": 3360,
+        "follow_up_chat": 1213,
+        "total": 8171
+      }
+    },
+    "status": {
+      "ok": true,
+      "state": "completed",
+      "code": "ok"
+    },
+    "type": "done"
+  }
 }
 ```
 
@@ -426,69 +478,98 @@ echo
 
 ## Internal intent (`help`)
 
+curl -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: ses-123" \
+  -H "X-Request-Id: req-123" \
+  -H "X-Trace-Id: req-123" \
+  -H "X-User-Id: taixing" \
+  -H "X-User-Roles: hr" \
+  -H "X-User-Groups: engineering" \
+  -H "X-User-Teams: rag-platform" \
+  -d '{
+    "question": "what is AI llm?",
+    "stream": true,
+    "conversation_id": "conv-smoke-1"
+  }'
+echo
+
+
 ```json
 {
+  "request": {
+    "type": "request_id",
+    "session_id": "ses-123",
+    "request_id": "req-123",
+    "trace_id": "req-123",
+    "conversation_id": "conv-smoke-1",
+    "is_new_conversation": false
+  },
+  "rewrite": {
+    "type": "rewrite",
+    "text": "what is ai llm?"
+  },
+  "route": {
+    "type": "route",
+    "route": "direct_reply",
+    "route_detail": {
+      "type": "internal_intent",
+      "name": "help",
+      "confidence": 1.0,
+      "reason": "General knowledge about AI terminology"
+    },
+    "route_source": "llm_router",
+    "text": "what is ai llm?"
+  },
+  "answer": {
+    "text": "AI LLM refers to Artificial Intelligence Large Language Model, which is a type of machine learning model designed to understand and generate human-like text based on the input it receives.",
+    "citations": []
+  },
+  "follow_up_questions": [],
   "meta": {
     "request_id": "req-123",
     "session_id": "ses-123",
     "trace_id": "req-123",
-
     "conversation_id": "conv-smoke-1",
     "is_new_conversation": false,
-
     "user": {
       "id": "taixing",
       "roles": "hr",
       "groups": "engineering",
       "teams": "rag-platform"
     },
-
     "route": {
       "type": "internal_intent",
       "intent": "help",
       "confidence": 1.0,
-      "source": "llm_router",
-      "reason": "General information about the location of the LLM agent."
+      "reason": "General knowledge about AI terminology",
+      "source": "llm_router"
     },
-
-    "rewrite": "location of llm agent"
+    "rewrite": "what is ai llm?"
   },
-
-  "answer": {
-    "text": "The LLM agent is located in the cloud and can be accessed through the application interface.",
-
-    "citations": []
-  },
-
-  "follow_up_questions": [],
-
   "latency_ms": {
-    "total": 1614.55,
-
+    "total": 1742.95,
     "intent_router": {
-      "total": 1612.77
+      "total": 1741.4
     }
   },
-
   "usage": {
     "total": {
       "prompt_tokens": 512,
-      "completion_tokens": 73,
-      "total_tokens": 585
+      "completion_tokens": 84,
+      "total_tokens": 596
     },
-
     "intent_router": {
       "prompt_tokens": 512,
-      "completion_tokens": 73,
-      "total_tokens": 585
+      "completion_tokens": 84,
+      "total_tokens": 596
     }
   },
-
   "status": {
     "ok": true,
     "state": "completed",
     "code": "ok"
   },
-
   "type": "done"
 }
+```
