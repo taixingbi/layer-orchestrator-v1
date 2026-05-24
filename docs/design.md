@@ -104,7 +104,7 @@ The user-facing `answer` is the RAG service response text. No orchestrator answe
 
 - Phases: `intent_router`, `rag`, `tool`, `request_complete`
 
-Non-stream JSON (and stream `done.latency_ms`) include a top-level `latency_ms` object with end-to-end `total`, `intent_router`, and nested `rag` or `tool` timing.
+Non-stream JSON (and stream `done.latency_ms`) include a nested `latency_ms` object: `total`, `intent_router.total`, and `rag` / `tool` objects with `orchestrator` plus RAG service breakdown keys.
 
 ### RAG HTTP request (`app/clients/rag_http.py`)
 

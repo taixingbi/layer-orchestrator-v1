@@ -47,6 +47,14 @@ def _get_downstream_semaphore() -> Optional[asyncio.Semaphore]:
     return _downstream_semaphore
 
 
+def _tool_stream_phase(tool_name: str) -> str:
+    if tool_name == "user_profile":
+        return "rag"
+    if tool_name == "github_repo_search":
+        return "github"
+    return "tool"
+
+
 def _answer_event(
     text: str,
     *,
@@ -335,8 +343,9 @@ async def stream_answer_query(
         if isinstance(route_detail, ToolRoute):
             tool_started = utc_now_iso()
             tool_started_perf = time.perf_counter()
+            tool_phase = _tool_stream_phase(route_detail.name)
             yield state_event(
-                phase="rag" if route_detail.name == "user_profile" else "tool",
+                phase=tool_phase,
                 status="running",
                 ui_message=f"Running {route_detail.name}...",
                 started_at=tool_started,
@@ -390,14 +399,20 @@ async def stream_answer_query(
             rag_part = tool_usage if route_detail.name == "user_profile" else None
             request_usage = build_usage_payload(intent_router=intent_router_usage, rag=rag_part)
 
+            tool_meta: Dict[str, Any] = {"tool": route_detail.name}
+            if t_latency is not None:
+                if route_detail.name == "user_profile":
+                    tool_meta["rag_latency_ms"] = t_latency
+                else:
+                    tool_meta["tool_latency_ms"] = t_latency
             yield state_event(
-                phase="rag" if route_detail.name == "user_profile" else "tool",
+                phase=tool_phase,
                 status="completed",
                 ui_message=f"{route_detail.name} completed",
                 started_at=tool_started,
                 ended_at=utc_now_iso(),
                 latency_ms=(time.perf_counter() - tool_started_perf) * 1000,
-                metadata={"tool": route_detail.name, "tool_latency_ms": t_latency},
+                metadata=tool_meta,
             )
             yield _answer_event(
                 answer_text,

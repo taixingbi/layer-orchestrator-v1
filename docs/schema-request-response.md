@@ -112,28 +112,40 @@ Violations and timeout behavior:
 
 ### `latency_ms` (non-stream aggregation)
 
-Built from terminal `state` phases only (`completed`, `failed`, or `skipped`). Typical keys:
+Built from terminal `state` phases only (`completed`, `failed`, or `skipped`). Top-level **`total`** is end-to-end wall time (earliest phase `started_at` → latest phase `ended_at`). Each phase is a **nested object**; RAG/tool service breakdown from `rag_query` / MCP `latency_ms` is merged into the phase object (not a separate `service` wrapper).
 
-| Key | Meaning |
-|-----|---------|
-| `total` | Wall time across those phases (from earliest `started_at` to latest `ended_at`), milliseconds |
-| `intent_router` | Router LLM phase latency |
-| `rag` | Object; see below (omitted when route is not `rag`) |
-| `tool` | Wall time for non-RAG tool phases (`github_repo_search`, `web_search`), milliseconds |
-
-**`rag`** (when RAG ran):
+**Example** (RAG route, MCP or HTTP with service metrics):
 
 ```json
 {
-  "total": 0,
-  "service": {}
+  "latency_ms": {
+    "total": 4919.13,
+    "intent_router": {
+      "total": 2040.27
+    },
+    "rag": {
+      "orchestrator": 2877.88,
+      "embed": 45.2,
+      "retrieve": 312.0,
+      "chat": 890.5,
+      "follow_up_chat": 520.1,
+      "total": 1767.8
+    }
+  }
 }
 ```
 
-- `rag.total` — orchestrator-side timing for the `rag` phase (HTTP RAG or MCP `user_profile`).
-- `rag.service` — RAG HTTP JSON `latency_ms` breakdown when available (e.g. `embed`, `retrieve`, `chat`, `total`, …).
+| Key | Meaning |
+|-----|---------|
+| `total` | End-to-end wall time (milliseconds) |
+| `intent_router.total` | Router LLM phase wall time |
+| `rag.orchestrator` | Orchestrator wall time for the `rag` phase (tool dispatch + MCP/HTTP call) |
+| `rag.embed`, `rag.retrieve`, `rag.chat`, … | From RAG / MCP `rag_query` response `latency_ms` (merged at same level) |
+| `rag.total` | RAG service-reported total (when present); distinct from `rag.orchestrator` |
+| `tool` | Same shape for `web_search` when that route runs |
+| `github` | MCP `ask_repo` breakdown (`github_readme`, `github_search`, `chat`, `follow_up_chat`, `total`, …) merged with orchestrator wall time |
 
-Use **`latency_ms.total`** for end-to-end wall time (milliseconds).
+Use **`latency_ms.total`** for end-to-end wall time. Compare **`rag.orchestrator`** vs **`rag.total`** to see orchestrator overhead vs RAG service self-timing.
 
 ### `usage` (token counts)
 
@@ -443,4 +455,4 @@ Example metric families exposed:
 
 ## RAG alignment ( `route: "rag"` )
 
-When the upstream RAG HTTP service returns JSON with `answer`, `citations`, and `follow_up_questions`, the orchestrator mirrors **`answer`** (verbatim string), **`citations`**, and **`follow_up_questions`** on the non-stream JSON response and on the streaming **`answer`** event when those fields exist. Downstream RAG latency detail appears under **`latency_ms.rag.service`** when present.
+When the upstream RAG HTTP service returns JSON with `answer`, `citations`, and `follow_up_questions`, the orchestrator mirrors **`answer`** (verbatim string), **`citations`**, and **`follow_up_questions`** on the non-stream JSON response and on the streaming **`answer`** event when those fields exist. RAG service `latency_ms` keys are merged into **`latency_ms.rag`** (see example above).

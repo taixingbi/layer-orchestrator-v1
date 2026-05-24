@@ -111,6 +111,13 @@ def _accumulate_progress_events(events: List[Dict[str, Any]]) -> Dict[str, Any]:
             ms = ev.get("ms")
             if phase is not None and ms is not None:
                 latency_ms[str(phase)] = ms
+            nested = ev.get("latency_ms")
+            if isinstance(nested, dict):
+                latency_ms.update(nested)
+        elif t == "latency_ms" and isinstance(ev, dict):
+            for key, val in ev.items():
+                if key != "type" and val is not None:
+                    latency_ms[key] = val
         elif isinstance(ev.get("answer"), str):
             text_chunks.append(ev["answer"])
     out: Dict[str, Any] = {}
@@ -159,6 +166,34 @@ def _accumulate_github_sse(text: str) -> Dict[str, Any]:
     if text_chunks and not out.get("answer"):
         out["answer"] = "".join(text_chunks).strip()
     return out
+
+
+def _merge_mcp_stream_payload(
+    base: Dict[str, Any],
+    *,
+    github_deltas: List[str],
+    progress_events: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Combine GitHub delta text, RAG-style progress events, and done payload."""
+    payload = dict(base)
+    if not payload.get("answer") and github_deltas:
+        payload["answer"] = "".join(github_deltas).strip()
+    if not progress_events:
+        return payload
+    merged = _accumulate_progress_events(progress_events)
+    if not payload.get("answer") and merged.get("answer"):
+        payload["answer"] = merged["answer"]
+    prog_lat = merged.get("latency_ms")
+    if isinstance(prog_lat, dict):
+        existing = payload.get("latency_ms")
+        if isinstance(existing, dict):
+            payload["latency_ms"] = {**prog_lat, **existing}
+        else:
+            payload["latency_ms"] = prog_lat
+    for key in ("citations", "follow_up_questions", "usage"):
+        if key not in payload and merged.get(key) is not None:
+            payload[key] = merged[key]
+    return payload
 
 
 def _payload_to_tool_result(data: Dict[str, Any]) -> ToolResult:
@@ -234,14 +269,21 @@ async def _parse_mcp_sse_lines(
             if on_delta and chunk:
                 on_delta(chunk)
         elif current_event == "done" and isinstance(obj, dict):
-            if obj.get("answer"):
-                return _payload_to_tool_result(obj)
+            payload = _merge_mcp_stream_payload(
+                obj,
+                github_deltas=github_deltas,
+                progress_events=progress_events,
+            )
+            if payload.get("answer") or payload.get("latency_ms"):
+                return _payload_to_tool_result(payload)
 
-    if progress_events:
-        merged = _accumulate_progress_events(progress_events)
-        return _payload_to_tool_result(merged)
-    if github_deltas:
-        return _payload_to_tool_result({"answer": "".join(github_deltas)})
+    payload = _merge_mcp_stream_payload(
+        {},
+        github_deltas=github_deltas,
+        progress_events=progress_events,
+    )
+    if payload.get("answer") or payload.get("latency_ms"):
+        return _payload_to_tool_result(payload)
     return ToolResult(answer="")
 
 

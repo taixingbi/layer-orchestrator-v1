@@ -6,7 +6,7 @@ import asyncio
 import json
 import time
 from datetime import datetime
-from typing import AsyncIterator, Dict, List, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from ..observability.metrics import inc_timeout, observe_pipeline_event
 from ..observability.context import bind_conversation_logging_context
@@ -73,6 +73,40 @@ def _compute_total_timing(states: List[dict]) -> Optional[float]:
     return None
 
 
+def _round_ms(value: Any) -> Optional[float]:
+    if isinstance(value, (int, float)):
+        return round(float(value), 2)
+    return None
+
+
+def _service_latency_from_metadata(metadata: dict) -> Optional[Dict[str, Any]]:
+    raw = metadata.get("rag_latency_ms") or metadata.get("tool_latency_ms")
+    if isinstance(raw, dict) and raw:
+        return raw
+    return None
+
+
+def _merge_phase_latency(
+    orchestrator_ms: Optional[float],
+    service: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Build nested phase object: orchestrator wall + RAG/tool service breakdown keys."""
+    out: Dict[str, Any] = {}
+    wall = _round_ms(orchestrator_ms)
+    if wall is not None:
+        out["orchestrator"] = wall
+    if isinstance(service, dict):
+        for key, val in service.items():
+            if val is None:
+                continue
+            rounded = _round_ms(val)
+            if rounded is not None:
+                out[key] = rounded
+            elif isinstance(val, dict):
+                out[key] = val
+    return out or None
+
+
 def build_latency_ms_summary(states: List[dict]) -> dict:
     by_phase: Dict[str, dict] = {}
     for s in states:
@@ -85,24 +119,36 @@ def build_latency_ms_summary(states: List[dict]) -> dict:
     if total is not None:
         timings["total"] = total
 
-    intent_router = by_phase.get("intent_router", {}).get("latency_ms")
-    if intent_router is not None:
-        timings["intent_router"] = intent_router
+    intent_router_ms = by_phase.get("intent_router", {}).get("latency_ms")
+    if intent_router_ms is not None:
+        timings["intent_router"] = {"total": _round_ms(intent_router_ms)}
 
-    rag_query_state = by_phase.get("rag_query", {}) or by_phase.get("rag", {})
-    rag_total = rag_query_state.get("latency_ms")
-    rag_service = (rag_query_state.get("metadata") or {}).get("rag_latency_ms")
-    tool_state = by_phase.get("tool", {})
-    tool_latency = tool_state.get("latency_ms")
-    if tool_latency is not None:
-        timings["tool"] = tool_latency
-    if rag_total is not None or isinstance(rag_service, dict):
-        rag_obj: Dict[str, object] = {}
-        if rag_total is not None:
-            rag_obj["total"] = rag_total
-        if isinstance(rag_service, dict):
-            rag_obj["service"] = rag_service
+    rag_state = by_phase.get("rag_query", {}) or by_phase.get("rag", {})
+    rag_meta = rag_state.get("metadata") or {}
+    rag_obj = _merge_phase_latency(
+        rag_state.get("latency_ms"),
+        _service_latency_from_metadata(rag_meta),
+    )
+    if rag_obj:
         timings["rag"] = rag_obj
+
+    tool_state = by_phase.get("tool", {})
+    tool_meta = tool_state.get("metadata") or {}
+    tool_obj = _merge_phase_latency(
+        tool_state.get("latency_ms"),
+        _service_latency_from_metadata(tool_meta),
+    )
+    if tool_obj:
+        timings["tool"] = tool_obj
+
+    github_state = by_phase.get("github", {})
+    github_meta = github_state.get("metadata") or {}
+    github_obj = _merge_phase_latency(
+        github_state.get("latency_ms"),
+        _service_latency_from_metadata(github_meta),
+    )
+    if github_obj:
+        timings["github"] = github_obj
 
     return timings
 
