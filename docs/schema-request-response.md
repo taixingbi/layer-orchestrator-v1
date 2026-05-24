@@ -137,24 +137,21 @@ Built from terminal `state` phases only (`completed`, `failed`, or `skipped`). T
 }
 ```
 
-**Example** (GitHub MCP route):
+**Example** (GitHub MCP route, `github_repo_search`):
 
 ```json
 {
   "latency_ms": {
-    "total": 6889.0,
+    "total": 4691.6,
     "intent_router": {
-      "total": 2040.27
+      "total": 1999.91
     },
-    "github": {
-      "orchestrator": {
-        "wall": 4849.0,
-        "github_readme": 237,
-        "github_search": 218,
-        "chat": 3303,
-        "follow_up_chat": 1081,
-        "total": 4849
-      }
+    "github-search": {
+      "github_readme": 286,
+      "github_search": 117,
+      "chat": 3435,
+      "follow_up_chat": 1193,
+      "total": 5062
     }
   }
 }
@@ -168,9 +165,9 @@ Built from terminal `state` phases only (`completed`, `failed`, or `skipped`). T
 | `rag.orchestrator.embed`, `rag.orchestrator.retrieve`, … | From RAG / MCP `rag_query` response `latency_ms` (nested under `orchestrator`) |
 | `rag.orchestrator.total` | RAG service-reported total (when present); distinct from `rag.orchestrator.wall` |
 | `tool.orchestrator` | Same shape for `web_search` when that route runs |
-| `github.orchestrator` | MCP `ask_repo` breakdown (`github_readme`, `github_search`, `chat`, `follow_up_chat`, `total`, …) nested under `orchestrator` with orchestrator `wall` |
+| `github-search` | Direct passthrough of MCP `ask_repo` response `latency_ms` (no orchestrator wall, no rounding) |
 
-Use **`latency_ms.total`** for end-to-end wall time. Compare **`github.orchestrator.wall`** vs **`github.orchestrator.total`** to see orchestrator overhead vs MCP service self-timing.
+Use **`latency_ms.total`** for end-to-end wall time. For RAG, compare **`rag.orchestrator.wall`** vs **`rag.orchestrator.total`**. For GitHub, **`github-search.total`** is the MCP service-reported total.
 
 ### `usage` (token counts)
 

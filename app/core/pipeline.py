@@ -51,7 +51,7 @@ def _tool_stream_phase(tool_name: str) -> str:
     if tool_name == "user_profile":
         return "rag"
     if tool_name == "github_repo_search":
-        return "github"
+        return "github-search"
     return "tool"
 
 
@@ -403,6 +403,8 @@ async def stream_answer_query(
             if t_latency is not None:
                 if route_detail.name == "user_profile":
                     tool_meta["rag_latency_ms"] = t_latency
+                elif route_detail.name == "github_repo_search":
+                    tool_meta["github_latency_ms"] = t_latency
                 else:
                     tool_meta["tool_latency_ms"] = t_latency
             yield state_event(

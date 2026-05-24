@@ -68,47 +68,17 @@ def test_build_latency_ms_summary_github_mcp():
             "status": "completed",
             "started_at": "2026-01-01T12:00:00Z",
             "ended_at": "2026-01-01T12:00:02.040Z",
-            "latency_ms": 2040.27,
+            "latency_ms": 1999.91,
         },
         {
-            "phase": "github",
+            "phase": "github-search",
             "status": "completed",
-            "started_at": "2026-01-01T12:00:02.040Z",
-            "ended_at": "2026-01-01T12:00:06.889Z",
-            "latency_ms": 4849.0,
+            "started_at": "2026-01-01T12:00:02.000Z",
+            "ended_at": "2026-01-01T12:00:04.691Z",
+            "latency_ms": 2691.0,
             "metadata": {
                 "tool": "github_repo_search",
-                "tool_latency_ms": {
-                    "github_readme": 237,
-                    "github_search": 218,
-                    "chat": 3303,
-                    "follow_up_chat": 1081,
-                    "total": 4849,
-                },
-            },
-        },
-    ]
-    out = build_latency_ms_summary(states)
-    github = out["github"]["orchestrator"]
-    assert out["total"] == 6889.0
-    assert out["intent_router"] == {"total": 2040.27}
-    assert github["wall"] == 4849.0
-    assert github["github_readme"] == 237
-    assert github["github_search"] == 218
-    assert github["chat"] == 3303
-    assert github["follow_up_chat"] == 1081
-    assert github["total"] == 4849
-
-
-def test_build_latency_ms_summary_github_legacy_tool_phase():
-    states = [
-        {
-            "phase": "tool",
-            "status": "completed",
-            "latency_ms": 5062.0,
-            "metadata": {
-                "tool": "github_repo_search",
-                "tool_latency_ms": {
+                "github_latency_ms": {
                     "github_readme": 286,
                     "github_search": 117,
                     "chat": 3435,
@@ -119,8 +89,50 @@ def test_build_latency_ms_summary_github_legacy_tool_phase():
         },
     ]
     out = build_latency_ms_summary(states)
-    github = out["github"]["orchestrator"]
-    assert "tool" not in out
-    assert github["wall"] == 5062.0
+    github = out["github-search"]
+    assert out["total"] == 4691.0
+    assert out["intent_router"] == {"total": 1999.91}
     assert github["github_readme"] == 286
+    assert github["github_search"] == 117
+    assert github["chat"] == 3435
+    assert github["follow_up_chat"] == 1193
     assert github["total"] == 5062
+    assert "orchestrator" not in github
+
+
+def test_build_latency_ms_summary_github_mcp_passthrough_exact():
+    mcp_latency = {
+        "github_readme": 286,
+        "github_search": 117,
+        "chat": 3435,
+        "follow_up_chat": 1193,
+        "total": 5062,
+    }
+    states = [
+        {
+            "phase": "github-search",
+            "status": "completed",
+            "metadata": {
+                "tool": "github_repo_search",
+                "github_latency_ms": mcp_latency,
+            },
+        },
+    ]
+    out = build_latency_ms_summary(states)
+    assert out["github-search"] is mcp_latency
+
+
+def test_build_latency_ms_summary_github_legacy_tool_latency_ms():
+    mcp_latency = {"github_readme": 286, "total": 5062}
+    states = [
+        {
+            "phase": "tool",
+            "status": "completed",
+            "metadata": {
+                "tool": "github_repo_search",
+                "tool_latency_ms": mcp_latency,
+            },
+        },
+    ]
+    out = build_latency_ms_summary(states)
+    assert out["github-search"] is mcp_latency
