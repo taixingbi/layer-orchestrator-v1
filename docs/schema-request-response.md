@@ -433,17 +433,17 @@ Response: **SSE**, each line `data: <json>\n\n`.
 | `route` | `{ "type": "route", "route": "rag" \| "direct_reply" \| "clarify" \| "reject" \| "tool", "route_detail": { ... } }` |
 | `answer_delta` | `{ "type": "answer_delta", "text": "..." }` — streamed token/chunk events from MCP `rag_query` (and other MCP tools); emitted **as they arrive** before `answer` |
 | `answer` | `{ "type": "answer", "text": "...", "citations": [], "follow_up_questions": [] }` — RAG fills arrays when the service returns them |
-| `done` | `{ "type": "done", …, "latency_ms", "usage" }` — success end; **`latency_ms`** and **`usage`** same shape as non-stream JSON |
-| `error` | `{ "type": "error", "text": "...", …, "latency_ms"?, "usage" }` — failure; **`latency_ms`** / **`usage`** when recorded before failure |
+| `done` | Full non-stream response shape plus `"type": "done"` — includes `route`, `route_detail`, `rewrite`, `answer`, `citations`, `follow_up_questions`, `latency_ms`, `usage`, `status: "ok"` |
+| `error` | Full non-stream response shape plus `"type": "error"` — includes accumulated fields when available, `latency_ms`, `usage`, `status: "error"`, `error` message |
 
-**Phase `state` events are not sent on the SSE wire** (they remain in structured logs and Prometheus). Use non-stream JSON (`stream: false`) for `latency_ms` built from internal phase state.
+**Phase `state` events are not sent on the SSE wire** (they remain in structured logs and Prometheus). The terminal **`done`** / **`error`** event carries the same aggregated fields as non-stream JSON (`stream: false`), including **`latency_ms`** built from internal phase state.
 
-Typical successful stream sequence (RAG via MCP): `request_id` → `rewrite` → `route` → `answer_delta` (×N) → `answer` → `done`. HTTP RAG fallback skips `answer_delta` and emits one `answer`.
+Typical successful stream sequence (RAG via MCP): `request_id` → `rewrite` → `route` → `answer_delta` (×N) → `answer` → `done`. HTTP RAG fallback skips `answer_delta` and emits one `answer`. The final **`done`** repeats the full response payload (same as non-stream) so clients can consume only the last event if desired.
 
-Timeout examples in stream mode:
+Timeout examples in stream mode (partial fields if the pipeline did not finish):
 
-- `{"type":"error","text":"Error: TimeoutError: request timeout exceeded"}`
-- `{"type":"error","text":"Error: TimeoutError: stream idle timeout exceeded"}`
+- `{"type":"error","status":"error","error":"Error: TimeoutError: request timeout exceeded",...}`
+- `{"type":"error","status":"error","error":"Error: TimeoutError: stream idle timeout exceeded",...}`
 
 ---
 

@@ -10,11 +10,107 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from ..observability.metrics import inc_timeout, observe_pipeline_event
 from ..observability.context import bind_conversation_logging_context
-from ..observability.usage import build_usage_payload
+from ..schemas.response import empty_answer_response
 from .pipeline import stream_answer_query
 
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 _TERMINAL_STATE_STATUSES = frozenset({"completed", "failed", "skipped"})
+
+_CORRELATION_KEYS = (
+    "request_id",
+    "session_id",
+    "trace_id",
+    "conversation_id",
+    "is_new_conversation",
+)
+
+
+class AnswerResponseAccumulator:
+    """Accumulate pipeline events into the non-stream JSON response shape."""
+
+    def __init__(
+        self,
+        *,
+        request_id: Optional[str],
+        session_id: Optional[str],
+        trace_id: Optional[str],
+        conversation_id: str,
+        is_new_conversation: bool,
+    ) -> None:
+        self.data: Dict[str, Any] = empty_answer_response(
+            request_id=request_id,
+            session_id=session_id,
+            trace_id=trace_id,
+            conversation_id=conversation_id,
+            is_new_conversation=is_new_conversation,
+        )
+        self.states_by_phase: Dict[str, dict] = {}
+        self.state_phase_order: List[str] = []
+
+    def apply(self, event: dict) -> None:
+        t = event.get("type")
+        if t == "request_id":
+            for key in _CORRELATION_KEYS:
+                if event.get(key) is not None:
+                    self.data[key] = event.get(key)
+            return
+        if t == "rewrite":
+            self.data["rewrite"] = event.get("text")
+            return
+        if t == "route":
+            self.data["route"] = event.get("route")
+            if event.get("route_detail") is not None:
+                self.data["route_detail"] = event.get("route_detail")
+            if event.get("text"):
+                self.data["rewrite"] = event.get("text")
+            return
+        if t == "answer":
+            self.data["answer"] = event.get("text")
+            self.data["citations"] = event.get("citations", [])
+            self.data["follow_up_questions"] = event.get("follow_up_questions", [])
+            if event.get("usage") is not None:
+                self.data["usage"] = event.get("usage")
+            return
+        if t in ("done", "error"):
+            for key in _CORRELATION_KEYS:
+                if event.get(key) is not None:
+                    self.data[key] = event.get(key)
+            if event.get("usage") is not None:
+                self.data["usage"] = event.get("usage")
+            return
+        if t == "state":
+            phase = event.get("phase")
+            if not phase:
+                return
+            incoming = state_slice_from_event(event)
+            if phase not in self.states_by_phase:
+                self.state_phase_order.append(phase)
+                self.states_by_phase[phase] = incoming
+            else:
+                self.states_by_phase[phase] = merge_phase_states(
+                    self.states_by_phase[phase], incoming
+                )
+
+    def as_response(
+        self,
+        *,
+        status: str,
+        event_type: Optional[str] = None,
+        error: Optional[str] = None,
+    ) -> dict:
+        terminal_states = [
+            self.states_by_phase[p]
+            for p in self.state_phase_order
+            if self.states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
+        ]
+        out = dict(self.data)
+        out["status"] = status
+        out["latency_ms"] = build_latency_ms_summary(terminal_states)
+        if event_type is not None:
+            out["type"] = event_type
+        if error is not None:
+            out["error"] = error
+        return out
 
 
 def state_slice_from_event(event: dict) -> dict:
@@ -205,23 +301,13 @@ async def answer_json(
     conversation_id: str,
     is_new_conversation: bool,
 ) -> dict:
-    final: dict = {
-        "request_id": request_id,
-        "session_id": session_id,
-        "trace_id": trace_id,
-        "conversation_id": conversation_id,
-        "is_new_conversation": is_new_conversation,
-        "route": None,
-        "route_detail": None,
-        "rewrite": None,
-        "answer": None,
-        "citations": [],
-        "follow_up_questions": [],
-        "usage": build_usage_payload(),
-    }
-    states_by_phase: Dict[str, dict] = {}
-    state_phase_order: List[str] = []
-    terminal_usage: Optional[dict] = None
+    acc = AnswerResponseAccumulator(
+        request_id=request_id,
+        session_id=session_id,
+        trace_id=trace_id,
+        conversation_id=conversation_id,
+        is_new_conversation=is_new_conversation,
+    )
     async for event in answer_event_iter(
         question,
         session_id=session_id,
@@ -233,76 +319,16 @@ async def answer_json(
         is_new_conversation=is_new_conversation,
     ):
         t = event.get("type")
-        if t == "request_id":
-            final["request_id"] = event.get("request_id")
-            final["session_id"] = event.get("session_id")
-            final["trace_id"] = event.get("trace_id")
-            final["conversation_id"] = event.get("conversation_id")
-            if event.get("is_new_conversation") is not None:
-                final["is_new_conversation"] = event.get("is_new_conversation")
-        elif t == "done":
-            for key in ("request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation"):
-                if event.get(key) is not None:
-                    final[key] = event.get(key)
-            usage = event.get("usage")
-            if usage is not None:
-                terminal_usage = usage
-                final["usage"] = usage
-            terminal_states = [
-                states_by_phase[p]
-                for p in state_phase_order
-                if states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
-            ]
-            final["latency_ms"] = build_latency_ms_summary(terminal_states)
+        if t == "state":
+            acc.apply(event)
             continue
-        elif t == "rewrite":
-            final["rewrite"] = event.get("text")
-        elif t == "route":
-            final["route"] = event.get("route")
-            if event.get("route_detail") is not None:
-                final["route_detail"] = event.get("route_detail")
-        elif t == "answer":
-            final["answer"] = event.get("text")
-            final["citations"] = event.get("citations", [])
-            final["follow_up_questions"] = event.get("follow_up_questions", [])
-            usage = event.get("usage")
-            if usage is not None:
-                terminal_usage = usage
-                final["usage"] = usage
-        elif t == "state":
-            phase = event.get("phase")
-            if not phase:
-                continue
-            incoming = state_slice_from_event(event)
-            if phase not in states_by_phase:
-                state_phase_order.append(phase)
-                states_by_phase[phase] = incoming
-            else:
-                states_by_phase[phase] = merge_phase_states(states_by_phase[phase], incoming)
-        elif t == "error":
-            terminal_states = [
-                states_by_phase[p]
-                for p in state_phase_order
-                if states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
-            ]
-            final["latency_ms"] = build_latency_ms_summary(terminal_states)
-            for key in ("request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation"):
-                if event.get(key) is not None:
-                    final[key] = event.get(key)
-            usage = event.get("usage")
-            if usage is not None:
-                terminal_usage = usage
-                final["usage"] = usage
-            return {**final, "status": "error", "error": event.get("text")}
-    terminal_states = [
-        states_by_phase[p]
-        for p in state_phase_order
-        if states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
-    ]
-    final["latency_ms"] = build_latency_ms_summary(terminal_states)
-    if terminal_usage is not None:
-        final["usage"] = terminal_usage
-    return {**final, "status": "ok"}
+        acc.apply(event)
+        if t == "error":
+            err = event.get("error") or event.get("text")
+            return acc.as_response(status="error", error=err)
+        if t == "done":
+            continue
+    return acc.as_response(status="ok")
 
 
 def sse_stream_answer_gen(
@@ -331,6 +357,13 @@ def sse_stream_answer_gen(
 
     async def _gen():
         async with bind_conversation_logging_context(conversation_id, is_new_conversation):
+            acc = AnswerResponseAccumulator(
+                request_id=request_id,
+                session_id=session_id,
+                trace_id=trace_id,
+                conversation_id=conversation_id,
+                is_new_conversation=is_new_conversation,
+            )
             ait = answer_event_iter(
                 question,
                 session_id=session_id,
@@ -341,8 +374,6 @@ def sse_stream_answer_gen(
                 conversation_id=conversation_id,
                 is_new_conversation=is_new_conversation,
             ).__aiter__()
-            states_by_phase: Dict[str, dict] = {}
-            state_phase_order: List[str] = []
             started = time.perf_counter()
             while True:
                 timeout_s = stream_idle_timeout_s
@@ -354,7 +385,9 @@ def sse_stream_answer_gen(
                             "Error: TimeoutError: request timeout exceeded"
                         )
                         observe_pipeline_event(timeout_event)
-                        yield f"data: {json.dumps(timeout_event)}\n\n"
+                        acc.apply(timeout_event)
+                        err = timeout_event.get("error") or timeout_event.get("text")
+                        yield f"data: {json.dumps(acc.as_response(status='error', event_type='error', error=err))}\n\n"
                         return
                     timeout_s = min(timeout_s, remaining) if timeout_s is not None else remaining
                 try:
@@ -370,30 +403,18 @@ def sse_stream_answer_gen(
                         inc_timeout("stream_idle")
                     timeout_event = _timeout_error_event(msg)
                     observe_pipeline_event(timeout_event)
-                    yield f"data: {json.dumps(timeout_event)}\n\n"
+                    acc.apply(timeout_event)
+                    yield f"data: {json.dumps(acc.as_response(status='error', event_type='error', error=msg))}\n\n"
                     return
                 if chunk.get("type") == "state":
-                    phase = chunk.get("phase")
-                    if phase:
-                        incoming = state_slice_from_event(chunk)
-                        if phase not in states_by_phase:
-                            state_phase_order.append(phase)
-                            states_by_phase[phase] = incoming
-                        else:
-                            states_by_phase[phase] = merge_phase_states(
-                                states_by_phase[phase], incoming
-                            )
+                    acc.apply(chunk)
                     continue
-                if chunk.get("type") in ("done", "error"):
-                    terminal_states = [
-                        states_by_phase[p]
-                        for p in state_phase_order
-                        if states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
-                    ]
-                    chunk = {
-                        **chunk,
-                        "latency_ms": build_latency_ms_summary(terminal_states),
-                    }
+                acc.apply(chunk)
+                if chunk.get("type") == "done":
+                    chunk = acc.as_response(status="ok", event_type="done")
+                elif chunk.get("type") == "error":
+                    err = chunk.get("error") or chunk.get("text")
+                    chunk = acc.as_response(status="error", event_type="error", error=err)
                 yield f"data: {json.dumps(chunk)}\n\n"
 
     return _gen()
