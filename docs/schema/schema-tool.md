@@ -42,7 +42,7 @@ Opaque phase-keyed objects. The orchestrator **passthroughs them unchanged** und
 | Tool `meta.tool.name` | Orchestrator `latency_ms` / `usage` key |
 |-----------------------|---------------------------------------|
 | `user_profile` | `tool_rag` |
-| `github_repo_search` | `tool_github_search` |
+| `github_search` | `tool_github_search` |
 
 ---
 
@@ -78,7 +78,7 @@ Orchestrator adds `latency_ms.intent_router`, `usage.intent_router`, `usage.tota
       "teams": "string"
     },
     "tool": {
-      "name": "user_profile | github_repo_search",
+      "name": "user_profile | github_search",
       "type": "rag | github",
       "version": "v1"
     }
@@ -197,7 +197,7 @@ Provider-specific keys under `meta` (e.g. `rag`, `github`) are optional extensio
 
 ---
 
-## Example: MCP GitHub (`github_repo_search` / `ask_repo`)
+## Example: MCP GitHub (`github_search` / `ask_repo`)
 
 ```json
 {
@@ -213,7 +213,7 @@ Provider-specific keys under `meta` (e.g. `rag`, `github`) are optional extensio
       "teams": "rag-platform"
     },
     "tool": {
-      "name": "github_repo_search",
+      "name": "github_search",
       "type": "github"
     },
     "github": {

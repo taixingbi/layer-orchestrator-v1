@@ -21,7 +21,7 @@ def test_legacy_route_user_profile():
 
 
 def test_legacy_route_github():
-    detail = ToolRoute(name="github_repo_search", repo="layer-orchestrator-v1", confidence=0.9)
+    detail = ToolRoute(name="github_search", repo="layer-orchestrator-v1", confidence=0.9)
     assert legacy_route_from_detail(detail) == "tool"
 
 

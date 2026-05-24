@@ -15,15 +15,16 @@ USAGE_KEY_RAG = LATENCY_KEY_RAG
 USAGE_KEY_GITHUB_SEARCH = LATENCY_KEY_GITHUB_SEARCH
 USAGE_KEY_TAVILY_SEARCH = LATENCY_KEY_TAVILY_SEARCH
 
-_MCP_TOOL_NAME = {
-    "user_profile": "rag_query",
-    "github_repo_search": "ask_repo",
-    "web_search": "web_search",
+# Orchestrator tool id (route_detail.name) → client latency_ms / usage key.
+TOOL_LATENCY_USAGE_KEYS: Dict[str, str] = {
+    "user_profile": LATENCY_KEY_RAG,
+    "github_search": LATENCY_KEY_GITHUB_SEARCH,
+    "web_search": LATENCY_KEY_TAVILY_SEARCH,
 }
 
 _TOOL_TYPE = {
     "user_profile": "rag",
-    "github_repo_search": "github",
+    "github_search": "github",
     "web_search": "web",
 }
 
@@ -41,16 +42,17 @@ def _user_block(rag_user: Optional[Dict[str, str]]) -> Dict[str, str]:
 def route_meta_from_detail(detail: Any) -> tuple[Dict[str, Any], Dict[str, Any]]:
     """Build meta.route and meta.tool from route_detail."""
     if isinstance(detail, ToolRoute):
-        mcp_name = _MCP_TOOL_NAME.get(detail.name, detail.name)
-        tool_type = _TOOL_TYPE.get(detail.name, "tool")
+        orch_name = detail.name
+        phase_key = TOOL_LATENCY_USAGE_KEYS.get(orch_name, orch_name)
+        tool_type = _TOOL_TYPE.get(orch_name, "tool")
         route = {
             "type": "tool",
-            "tool": mcp_name,
+            "tool": orch_name,
             "confidence": float(detail.confidence),
         }
         if detail.reason:
             route["reason"] = detail.reason
-        tool = {"name": mcp_name, "type": tool_type, "version": "v1"}
+        tool = {"name": orch_name, "type": tool_type, "version": "v1", "key": phase_key}
         if detail.repo:
             tool["repo"] = detail.repo
         return route, tool
@@ -167,13 +169,7 @@ def build_answer_envelope(
 
 
 def latency_key_for_tool(orchestrator_tool_name: str) -> Optional[str]:
-    if orchestrator_tool_name == "user_profile":
-        return LATENCY_KEY_RAG
-    if orchestrator_tool_name == "github_repo_search":
-        return LATENCY_KEY_GITHUB_SEARCH
-    if orchestrator_tool_name == "web_search":
-        return LATENCY_KEY_TAVILY_SEARCH
-    return None
+    return TOOL_LATENCY_USAGE_KEYS.get(orchestrator_tool_name)
 
 
 def normalize_latency_ms_keys(latency_ms: Dict[str, Any]) -> Dict[str, Any]:

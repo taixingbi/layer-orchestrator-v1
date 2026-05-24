@@ -106,7 +106,7 @@ from ..schemas.answer_envelope import (
 )
 
 _GITHUB_SEARCH_PHASE = "github-search"
-_GITHUB_SEARCH_TOOL = "github_repo_search"
+_GITHUB_SEARCH_TOOL = "github_search"
 _RAG_TOOL = "user_profile"
 
 

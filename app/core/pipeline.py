@@ -18,7 +18,7 @@ from ..schemas.route import (
     legacy_route_from_detail,
     route_detail_to_dict,
 )
-from ..tools.github_repo_search import run_github_repo_search
+from ..tools.github_search import run_github_search
 from ..tools.user_profile import run_user_profile
 from ..tools.web_search import run_web_search
 from ..observability.usage import build_usage_payload
@@ -50,7 +50,7 @@ def _get_downstream_semaphore() -> Optional[asyncio.Semaphore]:
 def _tool_stream_phase(tool_name: str) -> str:
     if tool_name == "user_profile":
         return "rag"
-    if tool_name == "github_repo_search":
+    if tool_name == "github_search":
         return "github-search"
     return "tool"
 
@@ -193,8 +193,8 @@ async def _run_tool(
             is_new_conversation=is_new_conversation,
             on_delta=emit_delta,
         )
-    elif name == "github_repo_search":
-        result = await run_github_repo_search(
+    elif name == "github_search":
+        result = await run_github_search(
             question,
             repo=detail.repo,
             request_id=request_id or "",
@@ -401,7 +401,7 @@ async def stream_answer_query(
             usage_kw: Dict[str, Any] = {"intent_router": intent_router_usage}
             if route_detail.name == "user_profile":
                 usage_kw["tool_rag"] = tool_usage
-            elif route_detail.name == "github_repo_search":
+            elif route_detail.name == "github_search":
                 usage_kw["tool_github_search"] = tool_usage
             elif route_detail.name == "web_search":
                 usage_kw["tool_tavily_search"] = tool_usage
@@ -411,7 +411,7 @@ async def stream_answer_query(
             if t_latency is not None:
                 if route_detail.name == "user_profile":
                     tool_meta["rag_latency_ms"] = t_latency
-                elif route_detail.name == "github_repo_search":
+                elif route_detail.name == "github_search":
                     tool_meta["github_latency_ms"] = t_latency
                 else:
                     tool_meta["tool_latency_ms"] = t_latency
@@ -486,7 +486,7 @@ async def stream_answer_query(
         if isinstance(route_detail, ToolRoute):
             if route_detail.name == "user_profile":
                 err_usage_kw["tool_rag"] = tool_usage
-            elif route_detail.name == "github_repo_search":
+            elif route_detail.name == "github_search":
                 err_usage_kw["tool_github_search"] = tool_usage
             elif route_detail.name == "web_search":
                 err_usage_kw["tool_tavily_search"] = tool_usage

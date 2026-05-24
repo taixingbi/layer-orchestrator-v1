@@ -13,9 +13,19 @@ def test_route_meta_user_profile():
     detail = ToolRoute(name="user_profile", confidence=0.95, reason="kb")
     route, tool = route_meta_from_detail(detail)
     assert route["type"] == "tool"
-    assert route["tool"] == "rag_query"
-    assert tool["name"] == "rag_query"
+    assert route["tool"] == "user_profile"
+    assert tool["name"] == "user_profile"
     assert tool["type"] == "rag"
+    assert tool["key"] == "tool_rag"
+
+
+def test_route_meta_github_search():
+    detail = ToolRoute(name="github_search", confidence=0.99, reason="deterministic")
+    route, tool = route_meta_from_detail(detail)
+    assert route["tool"] == "github_search"
+    assert tool["name"] == "github_search"
+    assert tool["type"] == "github"
+    assert tool["key"] == "tool_github_search"
 
 
 def test_build_answer_envelope_shape():
@@ -46,7 +56,8 @@ def test_build_answer_envelope_shape():
     )
     assert out["meta"]["request_id"] == "req-1"
     assert out["meta"]["user"]["id"] == "u1"
-    assert out["meta"]["route"]["tool"] == "rag_query"
+    assert out["meta"]["route"]["tool"] == "user_profile"
+    assert out["meta"]["tool"]["name"] == "user_profile"
     assert out["meta"]["rewrite"] == "rewritten"
     assert out["answer"]["text"] == "hello"
     assert out["answer"]["citations"][0]["cite_id"] == 1

@@ -2,7 +2,7 @@
 
 ## FastAPI Orchestrator
 
-FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …/v1/chat/completions`), **HTTP RAG**, and unified **`/orchestrator/answer`** (`stream=true` for SSE). Send correlation ids on headers (`X-Request-Id`, `X-Session-Id`, `X-Trace-Id`). Optional **`conversation_id`** may be sent in the **`/orchestrator/answer`** and **`/orchestrator/eval/router`** JSON body; if omitted or blank, the server assigns `conv_<uuidhex>` and returns **`is_new_conversation`: true**. See [schema-request-response.md](docs/schema-request-response.md).
+FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …/v1/chat/completions`), **HTTP RAG**, and unified **`/orchestrator/answer`** (`stream=true` for SSE). Send correlation ids on headers (`X-Request-Id`, `X-Session-Id`, `X-Trace-Id`). Optional **`conversation_id`** may be sent in the **`/orchestrator/answer`** and **`/orchestrator/eval/router`** JSON body; if omitted or blank, the server assigns `conv_<uuidhex>` and returns **`is_new_conversation`: true**. See [schema-request-response.md](docs/schema/schema-request-response.md).
 
 ## Layout
 
@@ -17,7 +17,8 @@ FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …
 
 ## Documentation
 
-- [Request & response schema](docs/schema-request-response.md) — JSON bodies, headers, `/orchestrator/answer`, `/orchestrator/eval/router`, SSE events, limits, `conversation_id`, and `is_new_conversation`.
+- [Request & response schema](docs/schema/schema-request-response.md) — JSON bodies, headers, `/orchestrator/answer`, `/orchestrator/eval/router`, SSE events, limits, `conversation_id`, and `is_new_conversation`.
+- [Response examples](docs/schema/schema-response-examples.md) — full GitHub and RAG smoke-test JSON envelopes.
 - [Conversation id](docs/conversation-id.md) — threading, resolution, logs, and propagation to gateway + RAG.
 - [Gateway inference](docs/gateway-inference.md) — chat completions URL, model, headers, `curl` example, and tool-calling note.
 - [RAG query](docs/rag-query.md) — HTTP RAG `POST /v1/rag/query`, env vars, request body, and `curl` example.
@@ -57,7 +58,7 @@ Copy or create `.env` at the **project root** (loaded by `app/config.py`). Typic
 | `RAG_HTTP_RETRY_BACKOFF_S` | Base delay (seconds) for exponential backoff between RAG retries (default: `0.5`) |
 | `USE_MCP_RAG` | `true` (default) to call MCP `rag_query` with stream when `MCP_RAG_BASE_URL` is set; `false` forces HTTP RAG |
 | `MCP_RAG_BASE_URL` | MCP origin for streaming `rag_query` (defaults to `RAG_HTTP_BASE_URL`) |
-| `USE_MCP_TOOLS` | `true` to route `github_repo_search` through MCP `ask_repo` (default: `false`) |
+| `USE_MCP_TOOLS` | `true` to route `github_search` through MCP `ask_repo` (default: `false`) |
 | `MCP_GITHUB_BASE_URL` | MCP origin for `ask_repo` |
 | `TAVILY_API_KEY` | Required for `web_search` tool route |
 | `TAVILY_SEARCH_DEPTH` | Tavily search depth (default: `advanced`) |

@@ -9,7 +9,7 @@ from ..schemas.tool import ToolResult
 from .mcp_client import call_mcp_tool
 
 
-async def run_github_repo_search(
+async def run_github_search(
     question: str,
     *,
     repo: Optional[str] = None,

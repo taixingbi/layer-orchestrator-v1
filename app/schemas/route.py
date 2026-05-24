@@ -15,7 +15,12 @@ InternalIntentName = Literal[
     "clarify",
     "reject",
 ]
-ToolName = Literal["user_profile", "github_repo_search", "web_search"]
+ToolName = Literal["user_profile", "github_search", "web_search"]
+
+# Legacy router / eval names → canonical orchestrator tool id.
+_TOOL_NAME_ALIASES: Dict[str, str] = {
+    "github_repo_search": "github_search",
+}
 
 
 class InternalIntentRoute(BaseModel):
@@ -38,6 +43,11 @@ class ToolRoute(BaseModel):
 
 
 RouteDetail = Union[InternalIntentRoute, ToolRoute]
+
+
+def normalize_tool_name(name: str) -> str:
+    n = (name or "").strip()
+    return _TOOL_NAME_ALIASES.get(n, n)
 
 
 def legacy_route_from_detail(detail: Any) -> str:
@@ -98,7 +108,7 @@ def route_detail_from_legacy(
     if r == "rag":
         return ToolRoute(name="user_profile", confidence=confidence, reason=reason)
     if r == "tool":
-        return ToolRoute(name="github_repo_search", confidence=confidence, reason=reason)
+        return ToolRoute(name="github_search", confidence=confidence, reason=reason)
     if r == "clarify":
         return InternalIntentRoute(name="clarify", confidence=confidence, reason=reason)
     if r == "reject":
@@ -125,5 +135,9 @@ def parse_route_detail(raw: Any) -> Optional[RouteDetail]:
     if t == "internal_intent":
         return InternalIntentRoute.model_validate(raw)
     if t == "tool":
-        return ToolRoute.model_validate(raw)
+        route = ToolRoute.model_validate(raw)
+        canonical = normalize_tool_name(route.name)
+        if canonical != route.name:
+            return route.model_copy(update={"name": canonical})
+        return route
     return None

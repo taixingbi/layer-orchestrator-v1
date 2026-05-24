@@ -61,7 +61,7 @@ def test_stream_done_matches_non_stream_envelope():
     done = acc.enrich_terminal_event({"type": "done"})
     assert done["type"] == "done"
     assert done["status"]["ok"] is True
-    assert done["meta"]["route"]["tool"] == "rag_query"
+    assert done["meta"]["route"]["tool"] == "user_profile"
     assert done["meta"]["rewrite"] == "rewritten q"
     assert done["answer"]["text"] == "answer body"
     assert done["usage"][USAGE_KEY_RAG]["total"]["total_tokens"] == 99
@@ -87,4 +87,4 @@ def test_stream_error_envelope():
     assert err["type"] == "error"
     assert err["status"]["ok"] is False
     assert err["error"] == "Error: ValueError: boom"
-    assert err["meta"]["route"]["tool"] == "rag_query"
+    assert err["meta"]["route"]["tool"] == "user_profile"

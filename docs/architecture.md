@@ -58,7 +58,7 @@ After routing, `app/core/pipeline.py` dispatches **directly** (no LangGraph on t
 |----------------|---------|----------------|
 | `internal_intent` (`identity`, `greeting`, `help`, `capabilities`, `clarify`, `reject`) | Static or router `direct_answer` | `direct_reply`, `clarify`, or `reject` |
 | `tool:user_profile` | MCP `rag_query` (stream) or HTTP RAG when `USE_MCP_RAG=false` | `rag` |
-| `tool:github_repo_search` | MCP `ask_repo` | `tool` |
+| `tool:github_search` | MCP `ask_repo` | `tool` |
 | `tool:web_search` | Tavily search | `tool` |
 
 Tool phases emit internal `state` events (`phase`: `rag` or `tool`) for logs, metrics, and non-stream `latency_ms` aggregation. **SSE clients do not receive `state` events**; they see `rewrite` → `route` → optional `answer_delta` → `answer` → `done`.
@@ -152,8 +152,8 @@ sequenceDiagram
     API->>Tools: run_user_profile
     Tools->>RAG: POST /v1/rag/query (or MCP rag_query)
     RAG-->>Tools: answer + citations
-  else route_detail is github_repo_search or web_search
-    API->>Tools: run_github_repo_search / run_web_search
+  else route_detail is github_search or web_search
+    API->>Tools: run_github_search / run_web_search
     Tools-->>API: answer
   else internal_intent or direct_reply
     API-->>API: static / direct_answer

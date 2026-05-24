@@ -74,7 +74,7 @@ def test_build_latency_ms_summary_github_mcp():
             "ended_at": "2026-01-01T12:00:04.691Z",
             "latency_ms": 2691.0,
             "metadata": {
-                "tool": "github_repo_search",
+                "tool": "github_search",
                 "github_latency_ms": {
                     "github_readme": 286,
                     "github_search": 117,
@@ -110,7 +110,7 @@ def test_build_latency_ms_summary_github_mcp_passthrough_exact():
             "phase": "github-search",
             "status": "completed",
             "metadata": {
-                "tool": "github_repo_search",
+                "tool": "github_search",
                 "github_latency_ms": mcp_latency,
             },
         },
@@ -126,7 +126,7 @@ def test_build_latency_ms_summary_github_legacy_tool_latency_ms():
             "phase": "tool",
             "status": "completed",
             "metadata": {
-                "tool": "github_repo_search",
+                "tool": "github_search",
                 "tool_latency_ms": mcp_latency,
             },
         },

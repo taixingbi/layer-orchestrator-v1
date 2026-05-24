@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
-from .github_route import match_github_repo_search
+from .github_route import match_github_search
 from .intent_router import (
     RouterDecision,
     normalize_post_router,
@@ -27,7 +27,7 @@ __all__ = [
     "match_internal_intent",
     "decision_to_route_detail",
     "resolve_route",
-    "match_github_repo_search",
+    "match_github_search",
 ]
 
 
@@ -42,7 +42,7 @@ def decision_to_route_detail(decision: RouterDecision) -> RouteDetail:
     if route == "rag":
         return ToolRoute(name="user_profile", confidence=1.0, reason=reason)
     if route == "tool":
-        return ToolRoute(name="github_repo_search", confidence=1.0, reason=reason)
+        return ToolRoute(name="github_search", confidence=1.0, reason=reason)
     if route == "clarify":
         return InternalIntentRoute(name="clarify", confidence=1.0, reason=reason)
     if route == "reject":
@@ -61,7 +61,7 @@ def resolve_route(
         rewrite = (question or "").strip()
         return detail, answer, rewrite
 
-    github = match_github_repo_search(question)
+    github = match_github_search(question)
     if github is not None:
         rewrite = (question or "").strip()
         return github, "", rewrite

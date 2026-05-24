@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from .github_route import match_github_repo_search
+from .github_route import match_github_search
 from .rewrite import (
     CANDIDATE_NAME,
     REWRITE_HISTORY_MAX_LINES,
@@ -445,18 +445,18 @@ def canonicalize_rag_to_tool(decision: RouterDecision) -> RouterDecision:
     )
 
 
-def maybe_override_for_github_repo(
+def maybe_override_for_github_search(
     decision: RouterDecision,
     latest_question: str,
 ) -> RouterDecision:
-    """If the ask is HuntAI/layer repo architecture, force github_repo_search (overrides rag/direct_reply)."""
+    """If the ask is HuntAI/layer repo architecture, force github_search (overrides rag/direct_reply)."""
     if decision.route == "tool":
         parsed = parse_route_detail(getattr(decision, "route_detail", None))
-        if isinstance(parsed, ToolRoute) and parsed.name == "github_repo_search":
+        if isinstance(parsed, ToolRoute) and parsed.name in ("github_search", "github_repo_search"):
             return decision
     if decision.route in ("clarify", "reject"):
         return decision
-    hit = match_github_repo_search(latest_question)
+    hit = match_github_search(latest_question)
     if hit is None:
         return decision
     suffix = " [server: github_repo_keyword→tool]"
@@ -478,7 +478,7 @@ def normalize_post_router(
     history: Optional[List[Tuple[str, str]]] = None,
 ) -> RouterDecision:
     """Post-router fixes: github repo keywords; KB-grounded direct_reply → user_profile tool; empty direct_reply → clarify."""
-    decision = maybe_override_for_github_repo(decision, latest_question)
+    decision = maybe_override_for_github_search(decision, latest_question)
     decision = maybe_override_direct_reply_for_kb_grounded(
         decision, latest_question, history
     )

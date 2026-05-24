@@ -1,4 +1,4 @@
-"""Deterministic github_repo_search routing (HuntAI / layer repo / gateway architecture)."""
+"""Deterministic github_search routing (HuntAI / layer repo / gateway architecture)."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def _extract_repo(question: str) -> Optional[str]:
     return None
 
 
-def match_github_repo_search(question: str) -> Optional[ToolRoute]:
+def match_github_search(question: str) -> Optional[ToolRoute]:
     """Return ToolRoute when the ask is clearly HuntAI/layer GitHub repo architecture."""
     q = (question or "").strip()
     if not q:
@@ -57,7 +57,7 @@ def match_github_repo_search(question: str) -> Optional[ToolRoute]:
 
     repo = _extract_repo(q)
     return ToolRoute(
-        name="github_repo_search",
+        name="github_search",
         confidence=0.99,
         reason="Deterministic: HuntAI/layer repo or gateway architecture question",
         repo=repo,

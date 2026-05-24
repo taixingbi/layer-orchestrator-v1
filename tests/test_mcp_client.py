@@ -119,7 +119,7 @@ async def test_tool_result_from_json_github_latency_passthrough():
 
 
 @pytest.mark.asyncio
-async def test_github_repo_search_latency_end_to_end():
+async def test_github_search_latency_end_to_end():
     """MCP SSE latency_ms → pipeline metadata → done summary github-search."""
     from app.core.sse import build_latency_ms_summary
 
@@ -154,7 +154,7 @@ async def test_github_repo_search_latency_end_to_end():
             "ended_at": "2026-01-01T12:00:04.691Z",
             "latency_ms": 2691.0,
             "metadata": {
-                "tool": "github_repo_search",
+                "tool": "github_search",
                 "github_latency_ms": tool_result.latency_ms,
             },
         },

@@ -5,10 +5,10 @@ Output JSON only (no markdown):
   "rewritten_question": "string",
   "route_detail": {
     "type": "internal_intent" | "tool",
-    "name": "identity" | "greeting" | "help" | "capabilities" | "clarify" | "reject" | "user_profile" | "github_repo_search" | "web_search",
+    "name": "identity" | "greeting" | "help" | "capabilities" | "clarify" | "reject" | "user_profile" | "github_search" | "web_search",
     "confidence": 0.0-1.0,
     "reason": "short explanation",
-    "repo": "optional repo slug for github_repo_search"
+    "repo": "optional repo slug for github_search"
   },
   "direct_answer": "string or null",
   "reason": "string"
@@ -18,10 +18,10 @@ Rules:
 1) internal_intent — identity, greeting, help, capabilities: static answers; set direct_answer when you can answer without tools.
 2) internal_intent clarify/reject — when unclear or unsafe; set direct_answer.
 3) tool user_profile — questions about __CANDIDATE_NAME__, visa, work auth, profile, KB documents (Taixing Bi dossier).
-4) tool github_repo_search — huntAi / layer repo architecture, README, code layout, "why split orchestrator and gateway".
+4) tool github_search — huntAi / layer repo architecture, README, code layout, "why split orchestrator and gateway".
 5) tool web_search — current public events, news, or general web facts not in KB or repos (only when web search is appropriate).
 6) Rewrite follow-ups to standalone third-person questions about __CANDIDATE_NAME__ when the ask is candidate-specific.
 
 Also include legacy field for compatibility:
   "route": "direct_reply" | "clarify" | "reject" | "tool"
-Map: user_profile/github_repo_search/web_search→tool, internal intents→direct_reply/clarify/reject.
+Map: user_profile/github_search/web_search→tool, internal intents→direct_reply/clarify/reject.

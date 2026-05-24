@@ -32,7 +32,7 @@ class Settings:
 
     # RAG via HTTP: base URL only; code POSTs to /v1/rag/query
     rag_http_base_url: Optional[str] = os.getenv("RAG_HTTP_BASE_URL")
-    # MCP tool services (github_repo_search when USE_MCP_TOOLS=true)
+    # MCP tool services (github_search when USE_MCP_TOOLS=true)
     use_mcp_tools: bool = os.getenv("USE_MCP_TOOLS", "false").lower() == "true"
     # MCP RAG (rag_query with stream) — default on when MCP_RAG_BASE_URL is set; set USE_MCP_RAG=false for HTTP RAG only
     use_mcp_rag: bool = os.getenv("USE_MCP_RAG", "true").lower() != "false"
