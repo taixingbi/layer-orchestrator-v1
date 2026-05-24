@@ -10,7 +10,6 @@ import httpx
 from langchain_core.tools import tool
 
 from ..config import settings
-from ..observability.usage import usage_from_rag_json
 
 _rag_log = logging.getLogger("layer_orchestrator.rag_http")
 _RAG_LOG_JSON_MAX_CHARS = 80_000
@@ -374,8 +373,8 @@ async def query_rag_http_with_meta(
     if rag_latency_ms is not None:
         metadata["rag_latency_ms"] = rag_latency_ms
     metadata["rag_api_response"] = _rag_api_body_for_log(data)
-    rag_usage = usage_from_rag_json(data)
-    if rag_usage:
+    rag_usage = data.get("usage")
+    if isinstance(rag_usage, dict) and rag_usage:
         metadata["usage"] = rag_usage
     sidecar = rag_tool_sidecar(data)
     if sidecar:

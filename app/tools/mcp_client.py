@@ -11,7 +11,6 @@ import httpx
 
 from ..config import settings
 from ..schemas.tool import ToolResult
-from ..observability.usage import usage_from_rag_json
 
 _mcp_log = logging.getLogger("layer_orchestrator.mcp")
 _client: Optional[httpx.AsyncClient] = None
@@ -201,7 +200,7 @@ def _payload_to_tool_result(data: Dict[str, Any]) -> ToolResult:
     citations = data.get("citations") or []
     follow_ups = data.get("follow_up_questions") or []
     usage_raw = data.get("usage")
-    usage = usage_from_rag_json({"usage": usage_raw}) if usage_raw else None
+    usage = usage_raw if isinstance(usage_raw, dict) else None
     latency = data.get("latency_ms")
     if isinstance(latency, dict):
         pass

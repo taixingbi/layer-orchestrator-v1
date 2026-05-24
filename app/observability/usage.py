@@ -6,6 +6,11 @@ from typing import Any, Dict, List, Optional
 
 _USAGE_KEYS = ("prompt_tokens", "completion_tokens", "total_tokens")
 
+# Match latency_ms tool keys (app/core/sse.py LATENCY_KEY_*).
+USAGE_KEY_RAG = "tool-rag"
+USAGE_KEY_GITHUB_SEARCH = "tool-github-search"
+USAGE_KEY_TAVILY_SEARCH = "tool-tavily-search"
+
 
 def empty_usage() -> Dict[str, int]:
     """Flat zero totals (no nested phase keys)."""
@@ -52,8 +57,8 @@ def merge_usage(*parts: Optional[Dict[str, int]]) -> Dict[str, int]:
     return out
 
 
-def rag_usage_flat(raw: Any) -> Optional[Dict[str, int]]:
-    """Flat token totals from RAG usage (prefers `total`, else sums phase keys)."""
+def tool_usage_flat(raw: Any) -> Optional[Dict[str, int]]:
+    """Flat token totals from upstream tool usage (prefers `total`, else sums phase keys)."""
     if not isinstance(raw, dict):
         return None
     if isinstance(raw.get("total"), dict):
@@ -70,11 +75,16 @@ def rag_usage_flat(raw: Any) -> Optional[Dict[str, int]]:
     return normalize_usage(raw)
 
 
+def rag_usage_flat(raw: Any) -> Optional[Dict[str, int]]:
+    """Alias for tool_usage_flat (RAG / GitHub MCP nested usage shapes)."""
+    return tool_usage_flat(raw)
+
+
 def rag_usage_detail(raw: Any) -> Optional[Dict[str, Any]]:
-    """RAG usage for API `usage.rag`: flat totals plus optional chat / follow_up_chat."""
+    """Normalized RAG usage with optional chat / follow_up_chat (internal helpers only)."""
     if not isinstance(raw, dict):
         return None
-    flat = rag_usage_flat(raw)
+    flat = tool_usage_flat(raw)
     out: Dict[str, Any] = dict(flat) if flat else {}
     for key in ("chat", "follow_up_chat"):
         part = raw.get(key)
@@ -88,19 +98,32 @@ def rag_usage_detail(raw: Any) -> Optional[Dict[str, Any]]:
 def build_usage_payload(
     *,
     intent_router: Optional[Dict[str, int]] = None,
-    rag: Optional[Dict[str, Any]] = None,
+    tool_rag: Optional[Any] = None,
+    tool_github_search: Optional[Any] = None,
+    tool_tavily_search: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    """Flat totals plus optional nested intent_router / rag when data exists."""
+    """Flat totals plus intent_router and passthrough tool usage (same keys as latency_ms)."""
     ir = normalize_usage(intent_router) if intent_router else None
-    rg_flat = rag_usage_flat(rag)
-    rg_detail = rag_usage_detail(rag)
-    parts = [p for p in (ir, rg_flat) if p]
+    tool_pass: List[tuple[str, Any]] = []
+    if isinstance(tool_rag, dict) and tool_rag:
+        tool_pass.append((USAGE_KEY_RAG, tool_rag))
+    if isinstance(tool_github_search, dict) and tool_github_search:
+        tool_pass.append((USAGE_KEY_GITHUB_SEARCH, tool_github_search))
+    if isinstance(tool_tavily_search, dict) and tool_tavily_search:
+        tool_pass.append((USAGE_KEY_TAVILY_SEARCH, tool_tavily_search))
+
+    flat_parts = [ir]
+    for _, raw in tool_pass:
+        flat = tool_usage_flat(raw)
+        if flat:
+            flat_parts.append(flat)
+    parts = [p for p in flat_parts if p]
     flat = merge_usage(*parts) if parts else empty_usage()
     payload: Dict[str, Any] = dict(flat)
     if ir:
         payload["intent_router"] = ir
-    if rg_detail:
-        payload["rag"] = rg_detail
+    for key, raw in tool_pass:
+        payload[key] = raw
     return payload
 
 
@@ -125,10 +148,10 @@ def usage_from_langchain_message(msg: Any) -> Optional[Dict[str, int]]:
 
 
 def usage_from_rag_json(data: Any) -> Optional[Dict[str, Any]]:
-    """Extract usage from RAG HTTP JSON (flat or nested chat / follow_up_chat / total)."""
+    """Extract usage dict from RAG HTTP JSON (returns upstream shape unchanged)."""
     if not isinstance(data, dict):
         return None
     raw = data.get("usage")
-    if not isinstance(raw, dict):
-        return None
-    return rag_usage_detail(raw)
+    if isinstance(raw, dict) and raw:
+        return raw
+    return None

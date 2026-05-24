@@ -396,8 +396,14 @@ async def stream_answer_query(
             answer_text, citations, follow_ups, t_usage, t_latency = await task
 
             tool_usage = t_usage
-            rag_part = tool_usage if route_detail.name == "user_profile" else None
-            request_usage = build_usage_payload(intent_router=intent_router_usage, rag=rag_part)
+            usage_kw: Dict[str, Any] = {"intent_router": intent_router_usage}
+            if route_detail.name == "user_profile":
+                usage_kw["tool_rag"] = tool_usage
+            elif route_detail.name == "github_repo_search":
+                usage_kw["tool_github_search"] = tool_usage
+            elif route_detail.name == "web_search":
+                usage_kw["tool_tavily_search"] = tool_usage
+            request_usage = build_usage_payload(**usage_kw)
 
             tool_meta: Dict[str, Any] = {"tool": route_detail.name}
             if t_latency is not None:
@@ -473,7 +479,15 @@ async def stream_answer_query(
                 is_new_conversation=is_new_conversation,
             ),
         }
-        err_event["usage"] = build_usage_payload(intent_router=intent_router_usage, rag=tool_usage)
+        err_usage_kw: Dict[str, Any] = {"intent_router": intent_router_usage}
+        if isinstance(route_detail, ToolRoute):
+            if route_detail.name == "user_profile":
+                err_usage_kw["tool_rag"] = tool_usage
+            elif route_detail.name == "github_repo_search":
+                err_usage_kw["tool_github_search"] = tool_usage
+            elif route_detail.name == "web_search":
+                err_usage_kw["tool_tavily_search"] = tool_usage
+        err_event["usage"] = build_usage_payload(**err_usage_kw)
         yield err_event
 
 

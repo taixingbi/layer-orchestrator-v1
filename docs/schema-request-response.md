@@ -72,7 +72,7 @@ Violations and timeout behavior:
   "trace_id": "string",
   "conversation_id": "string",
   "is_new_conversation": false,
-  "route": "rag" | "direct_reply" | "clarify" | "reject" | "tool",
+  "route": "tool",
   "route_detail": { "type": "tool", "name": "user_profile" },
   "rewrite": "string | null",
   "answer": "string | null",
@@ -88,10 +88,9 @@ Violations and timeout behavior:
       "completion_tokens": 0,
       "total_tokens": 0
     },
-    "rag": {
-      "prompt_tokens": 0,
-      "completion_tokens": 0,
-      "total_tokens": 0
+    "tool-rag": {
+      "chat": { "prompt_tokens": 886, "completion_tokens": 31, "total_tokens": 917 },
+      "total": { "prompt_tokens": 1163, "completion_tokens": 104, "total_tokens": 1267 }
     }
   },
   "status": "ok"
@@ -104,9 +103,9 @@ Violations and timeout behavior:
 | `is_new_conversation` | Always — `true` if the server assigned a new id this request |
 | `rewrite` | After router emits rewrite |
 | `answer` | After an answer is produced |
-| `citations` | Always — populated from RAG when `route` is `rag`; otherwise `[]` |
-| `follow_up_questions` | Always — populated from RAG when `route` is `rag`; otherwise `[]` |
-| `usage` | Always — flat token totals plus optional nested `intent_router` / `rag` (see below) |
+| `citations` | Always — populated from `user_profile` (RAG/MCP) when upstream returns them; otherwise `[]` |
+| `follow_up_questions` | Always — populated from `user_profile` when upstream returns them; otherwise `[]` |
+| `usage` | Always — flat token totals plus optional nested `intent_router` / `tool-rag` / `tool-github-search` / `tool-tavily-search` (see below) |
 
 **`route`** is lowercase (intent/rewrite router output).
 
@@ -190,7 +189,174 @@ Aggregated OpenAI-style usage for the request. Flat fields sum all phases that r
 | `completion_tokens` | Sum across phases |
 | `total_tokens` | Sum across phases |
 | `intent_router` | Router LLM (`POST …/v1/chat/completions`) when the router ran an LLM call; omitted on small-talk short-circuit |
-| `rag` | RAG HTTP `POST /v1/rag/query` when `route` is `rag` and the service returned `usage`; flat totals plus optional `chat` / `follow_up_chat` breakdown when upstream sends nested usage |
+| `tool-rag` | Direct passthrough of MCP `rag_query` / HTTP RAG response `usage` (unchanged keys and values inside the object) |
+| `tool-github-search` | Direct passthrough of MCP `ask_repo` response `usage` |
+| `tool-tavily-search` | Direct passthrough of Tavily `web_search` tool `usage` when present |
+
+**Example** (`user_profile` tool — `usage.tool-rag` is direct passthrough of upstream `usage`):
+
+```json
+{
+  "usage": {
+    "prompt_tokens": 1218,
+    "completion_tokens": 109,
+    "total_tokens": 1327,
+    "intent_router": {
+      "prompt_tokens": 55,
+      "completion_tokens": 5,
+      "total_tokens": 60
+    },
+    "tool-rag": {
+      "chat": { "prompt_tokens": 886, "completion_tokens": 31, "total_tokens": 917 },
+      "follow_up_chat": { "prompt_tokens": 277, "completion_tokens": 73, "total_tokens": 350 },
+      "total": { "prompt_tokens": 1163, "completion_tokens": 104, "total_tokens": 1267 }
+    }
+  }
+}
+```
+
+**Example** (GitHub MCP route):
+
+```json
+{
+  "usage": {
+    "prompt_tokens": 1011,
+    "completion_tokens": 101,
+    "total_tokens": 1112,
+    "intent_router": {
+      "prompt_tokens": 11,
+      "completion_tokens": 1,
+      "total_tokens": 12
+    },
+    "tool-github-search": {
+      "github_search": { "prompt_tokens": 200, "completion_tokens": 20, "total_tokens": 220 },
+      "chat": { "prompt_tokens": 800, "completion_tokens": 80, "total_tokens": 880 },
+      "total": { "prompt_tokens": 1000, "completion_tokens": 100, "total_tokens": 1100 }
+    }
+  }
+}
+```
+
+Use top-level **`usage.total_tokens`** for request-wide token totals. **`usage.tool-rag.total`** and **`usage.tool-github-search.total`** are service-reported totals from upstream when nested that way.
+
+### Full response examples (non-stream `stream: false`, `status: "ok"`)
+
+**`user_profile` (RAG)** — question: *"What is Taixing's current visa status in the US?"*
+
+```json
+{
+  "request_id": "req_a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "session_id": "sess_demo_001",
+  "trace_id": "req_a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "conversation_id": "conv_client_thread_42",
+  "is_new_conversation": false,
+  "route": "tool",
+  "route_detail": {
+    "type": "tool",
+    "name": "user_profile",
+    "confidence": 0.98,
+    "reason": "Candidate-specific immigration status from KB"
+  },
+  "rewrite": "What is Taixing's current visa status in the United States?",
+  "answer": "Taixing holds an O-1 visa valid through March 2027. The most recent I-797 approval notice is on file.",
+  "citations": [
+    {
+      "doc_id": "visa_packet_2024",
+      "title": "O-1 Approval Notice",
+      "snippet": "Valid from 2024-03-15 through 2027-03-14",
+      "score": 0.91
+    }
+  ],
+  "follow_up_questions": [
+    "When does Taixing's O-1 need renewal?",
+    "Does Taixing have an approved I-140?"
+  ],
+  "latency_ms": {
+    "total": 4919.13,
+    "intent_router": {
+      "total": 2040.27
+    },
+    "tool-rag": {
+      "embed": 45.2,
+      "retrieve": 312.0,
+      "chat": 890.5,
+      "follow_up_chat": 520.1,
+      "total": 1767.8
+    }
+  },
+  "usage": {
+    "prompt_tokens": 1218,
+    "completion_tokens": 109,
+    "total_tokens": 1327,
+    "intent_router": {
+      "prompt_tokens": 55,
+      "completion_tokens": 5,
+      "total_tokens": 60
+    },
+    "tool-rag": {
+      "chat": { "prompt_tokens": 886, "completion_tokens": 31, "total_tokens": 917 },
+      "follow_up_chat": { "prompt_tokens": 277, "completion_tokens": 73, "total_tokens": 350 },
+      "total": { "prompt_tokens": 1163, "completion_tokens": 104, "total_tokens": 1267 }
+    }
+  },
+  "status": "ok"
+}
+```
+
+**`github_repo_search`** — question: *"in HuntAI, how to design gateway?"*
+
+```json
+{
+  "request_id": "req_f9e8d7c6-b5a4-3210-fedc-ba9876543210",
+  "session_id": "sess_demo_001",
+  "trace_id": "req_f9e8d7c6-b5a4-3210-fedc-ba9876543210",
+  "conversation_id": "conv_client_thread_42",
+  "is_new_conversation": false,
+  "route": "tool",
+  "route_detail": {
+    "type": "tool",
+    "name": "github_repo_search",
+    "confidence": 0.99,
+    "reason": "HuntAI repo architecture question",
+    "repo": "taixingbi/layer-orchestrator-v1"
+  },
+  "rewrite": "in HuntAI, how to design gateway?",
+  "answer": "In HuntAI, the gateway sits in front of the orchestrator and handles auth, rate limits, and routing to MCP tools. See `docs/architecture.md` for the split between gateway and orchestrator.",
+  "citations": [],
+  "follow_up_questions": [],
+  "latency_ms": {
+    "total": 4691.6,
+    "intent_router": {
+      "total": 1999.91
+    },
+    "tool-github-search": {
+      "github_readme": 286,
+      "github_search": 117,
+      "chat": 3435,
+      "follow_up_chat": 1193,
+      "total": 5062
+    }
+  },
+  "usage": {
+    "prompt_tokens": 1011,
+    "completion_tokens": 101,
+    "total_tokens": 1112,
+    "intent_router": {
+      "prompt_tokens": 11,
+      "completion_tokens": 1,
+      "total_tokens": 12
+    },
+    "tool-github-search": {
+      "github_search": { "prompt_tokens": 200, "completion_tokens": 20, "total_tokens": 220 },
+      "chat": { "prompt_tokens": 800, "completion_tokens": 80, "total_tokens": 880 },
+      "total": { "prompt_tokens": 1000, "completion_tokens": 100, "total_tokens": 1100 }
+    }
+  },
+  "status": "ok"
+}
+```
+
+Both examples use **`route: "tool"`** with nested **`route_detail.name`** selecting the handler. **`latency_ms.tool-rag`** / **`latency_ms.tool-github-search`** and **`usage.tool-rag`** / **`usage.tool-github-search`** are direct passthrough of upstream service payloads.
 
 ### `route_detail` (nested route)
 
@@ -201,7 +367,7 @@ Emitted alongside legacy flat `route` on the `route` SSE event and non-stream JS
 | `internal_intent` | `identity`, `greeting`, `help`, `capabilities` | `direct_reply` |
 | `internal_intent` | `clarify` | `clarify` |
 | `internal_intent` | `reject` | `reject` |
-| `tool` | `user_profile` | `rag` |
+| `tool` | `user_profile` | `tool` |
 | `tool` | `github_repo_search`, `web_search` | `tool` |
 
 Tool `web_search` uses **Tavily** (`TAVILY_API_KEY`). Tool `user_profile` uses **MCP `rag_query` with stream** when `MCP_RAG_BASE_URL` is set (`USE_MCP_RAG=true`, default). Set `USE_MCP_RAG=false` for buffered HTTP RAG. Tool `github_repo_search` uses **MCP** when `USE_MCP_TOOLS=true` (`MCP_GITHUB_BASE_URL`).

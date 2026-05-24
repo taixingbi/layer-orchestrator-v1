@@ -7,7 +7,6 @@ from typing import Callable, Dict, Optional
 from ..config import mcp_rag_enabled, settings
 from ..clients.rag_http import query_rag_http_with_meta
 from ..schemas.tool import ToolResult
-from ..observability.usage import usage_from_rag_json
 from .mcp_client import call_mcp_tool
 
 
@@ -64,7 +63,8 @@ async def run_user_profile(
     )
     sidecar = (meta or {}).get("rag_tool_sidecar") or {}
     api = (meta or {}).get("rag_api_response") or {}
-    usage = (meta or {}).get("usage") or usage_from_rag_json({"usage": api.get("usage")})
+    usage_raw = api.get("usage")
+    usage = usage_raw if isinstance(usage_raw, dict) else None
     return ToolResult(
         answer=text,
         citations=sidecar.get("citations") or api.get("citations") or [],
