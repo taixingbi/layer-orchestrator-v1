@@ -48,6 +48,8 @@ def route_meta_from_detail(detail: Any) -> tuple[Dict[str, Any], Dict[str, Any]]
             "tool": mcp_name,
             "confidence": float(detail.confidence),
         }
+        if detail.reason:
+            route["reason"] = detail.reason
         tool = {"name": mcp_name, "type": tool_type, "version": "v1"}
         if detail.repo:
             tool["repo"] = detail.repo
@@ -58,6 +60,8 @@ def route_meta_from_detail(detail: Any) -> tuple[Dict[str, Any], Dict[str, Any]]
             "tool": detail.name,
             "confidence": float(detail.confidence),
         }
+        if detail.reason:
+            route["reason"] = detail.reason
         tool = {"name": detail.name, "type": "internal_intent", "version": "v1"}
         return route, tool
     if isinstance(detail, dict):

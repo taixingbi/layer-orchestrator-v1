@@ -96,15 +96,218 @@ Non-stream JSON and the **final** SSE event use the **same** top-level shape (al
 
 `latency_ms.tool_*` and `usage.tool_*` are **passthrough** of upstream MCP/HTTP payloads ([schema-tool.md](schema-tool.md)). `latency_ms.intent_router.total` is orchestrator router wall time. `usage.total` sums all phases.
 
-### Success example (RAG / `user_profile`)
+### Canonical skeleton
+
+Placeholders show all possible keys; a given response only includes the tool phase that ran (`tool_rag` **or** `tool_github_search` **or** `tool_tavily_search`). Optional `meta.rag` / `meta.github` / `meta.web` appear on [upstream MCP payloads](schema-tool.md) only — the orchestrator does not copy them into client `meta` today.
+
+**Non-stream** (`stream: false`): body matches the JSON below (no `type` field).
+
+**Stream** (`stream: true`): final SSE `done` / `error` is the same object plus `"type": "done"` or `"type": "error"` (and `"text"` on errors).
 
 ```json
 {
   "meta": {
-    "request_id": "req-abc123",
-    "session_id": "ses-xyz789",
-    "trace_id": "trc-001",
-    "conversation_id": "conv_rag_1",
+    "request_id": "string",
+    "session_id": "string | null",
+    "trace_id": "string",
+    "conversation_id": "string",
+    "is_new_conversation": false,
+    "user": {
+      "id": "string",
+      "roles": "string",
+      "groups": "string",
+      "teams": "string"
+    },
+    "route": {
+      "type": "tool | internal_intent",
+      "tool": "rag_query | ask_repo | web_search | <intent_name>",
+      "confidence": 0.99,
+      "reason": "optional string"
+    },
+    "tool": {
+      "name": "rag_query | ask_repo | web_search",
+      "type": "rag | github | web | internal_intent",
+      "version": "v1"
+    },
+    "rewrite": "optional rewritten question"
+  },
+  "answer": {
+    "text": "string",
+    "citations": [
+      {
+        "cite_id": 1,
+        "source": "string",
+        "text": "string",
+        "chunk_id": "optional",
+        "repo": "optional",
+        "url": "optional"
+      }
+    ]
+  },
+  "follow_up_questions": ["string"],
+  "latency_ms": {
+    "total": 0,
+    "intent_router": { "total": 0 },
+    "tool_rag": {
+      "embed": 0,
+      "retrieve_rerank": 0,
+      "chat": 0,
+      "follow_up_chat": 0,
+      "total": 0
+    },
+    "tool_github_search": {
+      "retrieve_rerank": 0,
+      "chat": 0,
+      "follow_up_chat": 0,
+      "total": 0
+    },
+    "tool_tavily_search": {
+      "search": 0,
+      "chat": 0,
+      "total": 0
+    }
+  },
+  "usage": {
+    "total": {
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0
+    },
+    "intent_router": {
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0
+    },
+    "tool_rag": {
+      "chat": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 },
+      "follow_up_chat": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 },
+      "total": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 }
+    },
+    "tool_github_search": {
+      "chat": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 },
+      "follow_up_chat": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 },
+      "total": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 }
+    },
+    "tool_tavily_search": {
+      "search": { "requests": 0 },
+      "chat": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 },
+      "total": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 }
+    }
+  },
+  "status": {
+    "ok": true,
+    "state": "completed"
+  }
+}
+```
+
+On failure, add top-level `"error": "string"` and set `status.ok` to `false`, `status.state` to `"failed"`.
+
+---
+
+### Example: GitHub (`ask_repo`)
+
+Question: *"in app of huntai, what is orchestrator design?"* — smoke-test style response (`stream: false` or SSE `done` with `"type": "done"` appended).
+
+```json
+{
+  "meta": {
+    "request_id": "req-123",
+    "session_id": "ses-123",
+    "trace_id": "req-123",
+    "conversation_id": "conv-smoke-1",
+    "is_new_conversation": false,
+    "user": {
+      "id": "taixing",
+      "roles": "hr",
+      "groups": "engineering",
+      "teams": "rag-platform"
+    },
+    "route": {
+      "type": "tool",
+      "tool": "ask_repo",
+      "confidence": 0.99,
+      "reason": "Deterministic: HuntAI/layer repo or gateway architecture question"
+    },
+    "tool": {
+      "name": "ask_repo",
+      "type": "github",
+      "version": "v1"
+    },
+    "rewrite": "in app of huntai, what is orchestrator design?"
+  },
+  "answer": {
+    "text": "- The orchestrator design is described in the layer-orchestrator-v1 repository.\n- FastAPI service for chat completions, RAG, and unified responses.\n- Supports streaming via SSE.",
+    "citations": [
+      {
+        "cite_id": 1,
+        "source": "layer-mcp-github-v1 README",
+        "text": "MCP server that answers natural-language questions about fixed GitHub repos."
+      },
+      {
+        "cite_id": 4,
+        "source": "layer-orchestrator-v1 README",
+        "text": "FastAPI orchestrator for chat completions, RAG, and unified SSE responses."
+      }
+    ]
+  },
+  "follow_up_questions": [
+    "What specific components are included in the main.py file of the orchestrator design?",
+    "Can you explain how the orchestrator handles RAG?",
+    "Which headers are used for tracing requests in the orchestrator?"
+  ],
+  "latency_ms": {
+    "total": 7872.87,
+    "intent_router": { "total": 1.36 },
+    "tool_github_search": {
+      "retrieve_rerank": 3934,
+      "chat": 2546,
+      "follow_up_chat": 1346,
+      "total": 7854
+    }
+  },
+  "usage": {
+    "total": {
+      "prompt_tokens": 318,
+      "completion_tokens": 65,
+      "total_tokens": 383
+    },
+    "tool_github_search": {
+      "chat": {},
+      "follow_up_chat": {
+        "prompt_tokens": 318,
+        "completion_tokens": 65,
+        "total_tokens": 383
+      },
+      "total": {
+        "prompt_tokens": 318,
+        "completion_tokens": 65,
+        "total_tokens": 383
+      }
+    }
+  },
+  "status": {
+    "ok": true,
+    "state": "completed"
+  }
+}
+```
+
+`usage.tool_github_search` is upstream passthrough (empty `chat` object allowed). `intent_router` usage is omitted when the router LLM did not run.
+
+---
+
+### Example: RAG (`rag_query` / `user_profile`)
+
+Question: *"taixing visa status in us"*
+
+```json
+{
+  "meta": {
+    "request_id": "req-123",
+    "session_id": "ses-123",
+    "trace_id": "req-123",
+    "conversation_id": "conv-smoke-1",
     "is_new_conversation": false,
     "user": {
       "id": "taixing",
@@ -115,55 +318,69 @@ Non-stream JSON and the **final** SSE event use the **same** top-level shape (al
     "route": {
       "type": "tool",
       "tool": "rag_query",
-      "confidence": 0.98
+      "confidence": 1.0
     },
     "tool": {
       "name": "rag_query",
       "type": "rag",
       "version": "v1"
     },
-    "rewrite": "What is Taixing's current visa status in the United States?"
+    "rewrite": "taixing visa status in us"
   },
   "answer": {
-    "text": "Taixing Bi's visa status is H4 EAD. [1]",
+    "text": "Taixing Bi's visa status in the US is H4 EAD, and there is no need for visa sponsorship [1].",
     "citations": [
       {
         "cite_id": 1,
         "chunk_id": "1607b45e-1c07-5c29-975d-bbf47ef3129c",
         "source": "personal_profile",
-        "text": "Q: visa status?\nA: H4 EAD."
+        "text": "Q: What is Taixing Bi's visa status / work authorization?\nA: H4 EAD. No visa sponsorship required."
       }
     ]
   },
   "follow_up_questions": [
-    "What does H4 EAD mean for work authorization?"
+    "What does H4 EAD allow Taixing Bi to do in the US?",
+    "Is Taixing Bi's H4 EAD permanent or temporary?",
+    "Can Taixing Bi switch to another visa type if needed?"
   ],
   "latency_ms": {
-    "intent_router": { "total": 1231 },
+    "total": 4826.92,
+    "intent_router": { "total": 1997.75 },
     "tool_rag": {
-      "embed": 88,
-      "retrieve_rerank": 166,
-      "chat": 619,
-      "follow_up_chat": 1919,
-      "total": 2801
-    },
-    "total": 4047
+      "embed": 138,
+      "retrieve_rerank": 155,
+      "chat": 678,
+      "follow_up_chat": 1819,
+      "total": 2799
+    }
   },
   "usage": {
+    "total": {
+      "prompt_tokens": 1258,
+      "completion_tokens": 166,
+      "total_tokens": 1424
+    },
     "intent_router": {
       "prompt_tokens": 516,
       "completion_tokens": 54,
       "total_tokens": 570
     },
     "tool_rag": {
-      "chat": { "prompt_tokens": 319, "completion_tokens": 28, "total_tokens": 347 },
-      "follow_up_chat": { "prompt_tokens": 423, "completion_tokens": 88, "total_tokens": 511 },
-      "total": { "prompt_tokens": 742, "completion_tokens": 116, "total_tokens": 858 }
-    },
-    "total": {
-      "prompt_tokens": 1258,
-      "completion_tokens": 170,
-      "total_tokens": 1428
+      "chat": {
+        "prompt_tokens": 319,
+        "completion_tokens": 28,
+        "total_tokens": 347
+      },
+      "follow_up_chat": {
+        "prompt_tokens": 423,
+        "completion_tokens": 84,
+        "total_tokens": 507
+      },
+      "total": {
+        "prompt_tokens": 742,
+        "completion_tokens": 112,
+        "total_tokens": 854
+      }
     }
   },
   "status": {
@@ -173,9 +390,9 @@ Non-stream JSON and the **final** SSE event use the **same** top-level shape (al
 }
 ```
 
-### Success example (GitHub / `github_repo_search`)
+Extra keys inside `usage.tool_rag` (e.g. `"type": "usage"`) are preserved when upstream sends them.
 
-Same envelope; `meta.route.tool` / `meta.tool.name` are `ask_repo`, `latency_ms.tool_github_search` and `usage.tool_github_search` passthrough MCP `ask_repo` (see [schema-tool.md — GitHub example](schema-tool.md#example-mcp-github-github_repo_search--ask_repo)).
+---
 
 ### Error (`500`)
 
