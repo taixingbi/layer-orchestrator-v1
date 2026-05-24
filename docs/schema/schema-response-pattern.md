@@ -1,8 +1,8 @@
 # Response examples (`/orchestrator/answer`)
 
-Full JSON envelopes for common tool routes. Same shape for **`stream: false`** and for SSE terminal **`done`** (append `"type": "done"` on stream only).
+Full JSON envelopes for common routes. **Terminal** `done` / `error` matches **`stream: false`** body shape (plus `"type": "done"` or `"type": "error"` on stream).
 
-Schema reference: [schema-request-response.md](schema-request-response.md) (skeleton and field tables). Upstream MCP payloads: [schema-tool.md](schema-tool.md).
+Schema reference: [schema-request-response.md](schema-request-response.md). Upstream MCP payloads: [schema-tool.md](schema-tool.md).
 
 ### Tool name ↔ timing / usage keys
 
@@ -12,14 +12,92 @@ Schema reference: [schema-request-response.md](schema-request-response.md) (skel
 | `github_search` | `github` | `tool_github_search` |
 | `web_search` | `web` | `tool_tavily_search` |
 
+### Stream vs `done`
+
+During **`stream: true`**, the server emits separate SSE events: `request_id` → `rewrite` → **`route`** → optional `answer_delta` → `answer` → **`done`**.
+
+The **`route`** event always uses this shape (legacy flat `route` + nested `route_detail`):
+
+```json
+{
+  "type": "route",
+  "route": "tool | direct_reply | clarify | reject",
+  "route_detail": {
+    "type": "tool | internal_intent",
+    "name": "user_profile | github_search | web_search | help | …",
+    "confidence": 0.99,
+    "reason": "optional string"
+  },
+  "route_source": "deterministic_rule | llm_router | smalltalk_seed | smalltalk_pattern | injection_guard | override_rule",
+  "text": "<rewritten question>"
+}
+```
+
+The **`done`** event uses the client envelope: `meta.route` is normalized (`tool` or `intent`, plus `source`); `meta.tool` is present **only** when a tool ran.
+
+Examples below group stream events and the terminal **`done`** in one JSON object for readability (keys `request`, `rewrite`, `route`, … are **not** merged in a single live SSE line).
+
 ---
 
 ## GitHub (`github_search`)
 
 **Question:** *"in app of huntai, what is orchestrator design?"*
 
+```bash
+curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: ses-123" \
+  -H "X-Request-Id: req-123" \
+  -H "X-Trace-Id: req-123" \
+  -H "X-User-Id: taixing" \
+  -H "X-User-Roles: hr" \
+  -H "X-User-Groups: engineering" \
+  -H "X-User-Teams: rag-platform" \
+  -d '{
+    "question": "in app of huntai, what is orchestrator design?",
+    "stream": true,
+    "conversation_id": "conv-smoke-1"
+  }'
+```
+
 ```json
 {
+  "request": {
+    "type": "request_id",
+    "session_id": "ses-123",
+    "request_id": "req-123",
+    "trace_id": "req-123",
+    "conversation_id": "conv-smoke-1",
+    "is_new_conversation": false
+  },
+  "rewrite": {
+    "type": "rewrite",
+    "text": "in app of huntai, what is orchestrator design?"
+  },
+  "route": {
+    "type": "route",
+    "route": "tool",
+    "route_detail": {
+      "type": "tool",
+      "name": "github_search",
+      "confidence": 0.99,
+      "reason": "Deterministic: HuntAI/layer repo or gateway architecture question"
+    },
+    "route_source": "deterministic_rule",
+    "text": "in app of huntai, what is orchestrator design?"
+  },
+  "answer": {
+    "text": "- The orchestrator in HuntAI manages and routes requests to AI services.\n- HTTP chat completions, RAG, and unified `/orchestrator/answer` with SSE.\n- Correlation IDs, config via `app/config.py`, FastAPI entry in `app/main.py`.",
+    "citations": [
+      { "cite_id": 1, "source": "layer-mcp-github-v1 README" },
+      { "cite_id": 4, "source": "layer-orchestrator-v1 README" }
+    ]
+  },
+  "follow_up_questions": [
+    "What specific backend services does the orchestrator call?",
+    "Can you provide more details on how the orchestrator handles retries and timeouts?",
+    "Where can I find environment configuration for the orchestrator?"
+  ],
   "meta": {
     "request_id": "req-123",
     "session_id": "ses-123",
@@ -47,53 +125,27 @@ Schema reference: [schema-request-response.md](schema-request-response.md) (skel
     },
     "rewrite": "in app of huntai, what is orchestrator design?"
   },
-  "answer": {
-    "text": "- The orchestrator design is described in the layer-orchestrator-v1 repository.\n- FastAPI service for chat completions, RAG, and unified responses.\n- Supports streaming via SSE.",
-    "citations": [
-      {
-        "cite_id": 1,
-        "source": "layer-mcp-github-v1 README",
-        "text": "MCP server that answers natural-language questions about fixed GitHub repos."
-      },
-      {
-        "cite_id": 4,
-        "source": "layer-orchestrator-v1 README",
-        "text": "FastAPI orchestrator for chat completions, RAG, and unified SSE responses."
-      }
-    ]
-  },
-  "follow_up_questions": [
-    "What specific components are included in the main.py file of the orchestrator design?",
-    "Can you explain how the orchestrator handles RAG?",
-    "Which headers are used for tracing requests in the orchestrator?"
-  ],
   "latency_ms": {
-    "total": 7872.87,
-    "intent_router": { "total": 1.36 },
+    "total": 8891.67,
+    "intent_router": { "total": 0.42 },
     "tool_github_search": {
-      "retrieve_rerank": 3934,
-      "chat": 2546,
-      "follow_up_chat": 1346,
-      "total": 7854
+      "retrieve_rerank": 3493,
+      "chat": 4303,
+      "follow_up_chat": 1050,
+      "total": 8855
     }
   },
   "usage": {
     "total": {
-      "prompt_tokens": 318,
-      "completion_tokens": 65,
-      "total_tokens": 383
+      "prompt_tokens": 406,
+      "completion_tokens": 49,
+      "total_tokens": 455
     },
     "tool_github_search": {
-      "chat": {},
-      "follow_up_chat": {
-        "prompt_tokens": 318,
-        "completion_tokens": 65,
-        "total_tokens": 383
-      },
       "total": {
-        "prompt_tokens": 318,
-        "completion_tokens": 65,
-        "total_tokens": 383
+        "prompt_tokens": 406,
+        "completion_tokens": 49,
+        "total_tokens": 455
       }
     }
   },
@@ -101,20 +153,24 @@ Schema reference: [schema-request-response.md](schema-request-response.md) (skel
     "ok": true,
     "state": "completed",
     "code": "ok"
-  }
+  },
+  "type": "done"
 }
 ```
 
 **Notes**
 
-- `usage.tool_github_search` is upstream passthrough (empty `chat` is allowed).
-- `usage.intent_router` is omitted when the router LLM did not run (deterministic GitHub short-circuit).
+- **`route.route_source`** is `deterministic_rule` when `resolve_route` / `github_route` short-circuits before the router LLM.
+- **`usage.intent_router`** is omitted when the router LLM did not run.
+- MCP upstream may send only `usage.total`; orchestrator passthroughs it under `usage.tool_github_search`.
 
 ---
 
 ## RAG (`user_profile`)
 
 **Question:** *"taixing visa status in us"*
+
+```bash
 curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
   -H "Content-Type: application/json" \
   -H "X-Session-Id: ses-123" \
@@ -128,8 +184,8 @@ curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
     "question": "what is taixing visa status in us?",
     "stream": true,
     "conversation_id": "conv-smoke-1"
-  }
-
+  }'
+```
 
 ```json
 {
@@ -170,35 +226,7 @@ curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
   },
   "stream": {
     "answer_delta_count": 27,
-    "answer_delta_text": [
-      "Ta",
-      "ix",
-      "ing",
-      " Bi",
-      "'s",
-      " visa",
-      " status",
-      " in",
-      " the",
-      " US",
-      " is",
-      " H",
-      "4",
-      " E",
-      "AD",
-      ",",
-      " and",
-      " there",
-      " is",
-      " no",
-      " visa",
-      " sponsorship",
-      " required",
-      ".",
-      " [",
-      "1",
-      "]"
-    ],
+    "answer_delta_text": ["Ta", "ix", "ing", " Bi", "'s", " visa", " status", " in", " the", " US", " is", " H", "4", " E", "AD", ",", " and", " there", " is", " no", " visa", " sponsorship", " required", ".", " [", "1", "]"],
     "merged_text": "Taixing Bi's visa status in the US is H4 EAD, and there is no visa sponsorship required. [1]"
   },
   "follow_up_questions": [
@@ -206,6 +234,44 @@ curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
     "What are the requirements for maintaining H4 EAD status?",
     "Is there any additional documentation needed to maintain H4 EAD status?"
   ],
+  "meta": {
+    "request_id": "req-123",
+    "session_id": "ses-123",
+    "trace_id": "req-123",
+    "conversation_id": "conv-smoke-1",
+    "is_new_conversation": false,
+    "user": {
+      "id": "taixing",
+      "roles": "hr",
+      "groups": "engineering",
+      "teams": "rag-platform"
+    },
+    "route": {
+      "type": "tool",
+      "tool": "user_profile",
+      "confidence": 1.0,
+      "source": "llm_router",
+      "reason": "Needs Taixing Bi-specific facts"
+    },
+    "tool": {
+      "name": "user_profile",
+      "type": "rag",
+      "version": "v1",
+      "key": "tool_rag"
+    },
+    "rewrite": "taixing visa status in us"
+  },
+  "latency_ms": {
+    "total": 4988.74,
+    "intent_router": { "total": 2255.62 },
+    "tool_rag": {
+      "embed": 77,
+      "retrieve_rerank": 151,
+      "chat": 640,
+      "follow_up_chat": 1848,
+      "total": 2724
+    }
+  },
   "usage": {
     "total": {
       "prompt_tokens": 1258,
@@ -236,46 +302,6 @@ curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
       }
     }
   },
-  "meta": {
-    "request_id": "req-123",
-    "session_id": "ses-123",
-    "trace_id": "req-123",
-    "conversation_id": "conv-smoke-1",
-    "is_new_conversation": false,
-    "user": {
-      "id": "taixing",
-      "roles": "hr",
-      "groups": "engineering",
-      "teams": "rag-platform"
-    },
-    "route": {
-      "type": "tool",
-      "tool": "user_profile",
-      "confidence": 1.0,
-      "reason": "Needs Taixing Bi-specific facts",
-      "source": "llm_router"
-    },
-    "tool": {
-      "name": "user_profile",
-      "type": "rag",
-      "version": "v1",
-      "key": "tool_rag"
-    },
-    "rewrite": "taixing visa status in us"
-  },
-  "latency_ms": {
-    "total": 4988.74,
-    "intent_router": {
-      "total": 2255.62
-    },
-    "tool_rag": {
-      "embed": 77,
-      "retrieve_rerank": 151,
-      "chat": 640,
-      "follow_up_chat": 1848,
-      "total": 2724
-    }
-  },
   "status": {
     "ok": true,
     "state": "completed",
@@ -288,196 +314,15 @@ curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
 **Notes**
 
 - Extra keys inside `usage.tool_rag` (e.g. `"type": "usage"`) are preserved when upstream sends them.
-
----
-
-## GitHub (extended smoke-test)
-
-curl -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
-  -H "Content-Type: application/json" \
-  -H "X-Session-Id: ses-123" \
-  -H "X-Request-Id: req-123" \
-  -H "X-Trace-Id: req-123" \
-  -H "X-User-Id: taixing" \
-  -H "X-User-Roles: hr" \
-  -H "X-User-Groups: engineering" \
-  -H "X-User-Teams: rag-platform" \
-  -d '{
-    "question": "in app of huntai, what is orchestrator design?",
-    "stream": true,
-    "conversation_id": "conv-smoke-1"
-  }'
-echo
-
-
-```json
-{
-  "request": {
-    "type": "request_id",
-    "session_id": "ses-123",
-    "request_id": "req-123",
-    "trace_id": "req-123",
-    "conversation_id": "conv-smoke-1",
-    "is_new_conversation": false
-  },
-  "rewrite": {
-    "type": "rewrite",
-    "text": "in app of huntai, what is orchestrator design?"
-  },
-  "route": {
-    "type": "route",
-    "route": "tool",
-    "route_detail": {
-      "type": "tool",
-      "name": "github_search",
-      "confidence": 0.99,
-      "reason": "Deterministic: HuntAI/layer repo or gateway architecture question"
-    },
-    "route_source": "deterministic_rule",
-    "text": "in app of huntai, what is orchestrator design?"
-  },
-  "answer": {
-    "type": "answer",
-    "answer": {
-      "text": "- The orchestrator in the HuntAI application is designed to handle HTTP chat completions, RAG queries, and other AI tasks through the `layer-orchestrator-v1` repository [4]. It acts as a backend service that communicates with the LLM gateway for generating responses.\n- The orchestrator receives chat requests and processes them, generating responses that are returned to the frontend via the gateway [4].\n- It supports conversation IDs and correlation IDs for tracking requests, ensuring consistent handling across different calls [4].\n- The architecture includes components for handling requests, responses, and observability metrics, ensuring efficient and reliable processing [4].\n- The orchestrator is configured via environment variables, allowing for customization of behavior such as retries, timeouts, and circuit breaker thresholds [4].",
-      "citations": [
-        {
-          "cite_id": 1,
-          "source": "layer-mcp-github-v1 README",
-          "text": "# layer-mcp-github\n\nMCP server (**[layer-mcp-github-v1](https://github.com/taixingbi/layer-mcp-github-v1)**) that answers natural-language questions about a fixed set of GitHub repos."
-        },
-        {
-          "cite_id": 2,
-          "source": "layer-web-v1 README",
-          "text": "# HuntAI\n\n## Design\n\nFull technical design: docs/design.md"
-        },
-        {
-          "cite_id": 3,
-          "source": "layer-gateway-api-v1 README",
-          "text": "# layer-gateway-api-v1\n\nFastAPI gateway that decouples Next.js from AI orchestration."
-        },
-        {
-          "cite_id": 4,
-          "source": "layer-orchestrator-v1 README",
-          "text": "# layer-orchestrator-v1\n\nFastAPI service: HTTP chat completions via LLM gateway, HTTP RAG, and unified /orchestrator/answer endpoint."
-        },
-        {
-          "cite_id": 5,
-          "source": "layer-rag-query-v1 README",
-          "text": "# layer-rag-query\n\nRAG hybrid retrieval: dense (vector) + BM25 + RRF fusion."
-        },
-        {
-          "cite_id": 6,
-          "source": "layer-gateway-inference-v1 README",
-          "text": "# layer-gateway-inference-v1\n\nGPU-aware routing gateway for vLLM on k3s."
-        },
-        {
-          "cite_id": 7,
-          "source": "layer-gateway-embed-v1 README",
-          "text": "# layer-gateway-embed-v1\n\nRequest-level routing gateway for /v1/embeddings."
-        },
-        {
-          "cite_id": 8,
-          "source": "layer-gateway-reranker-v1 README",
-          "text": "# layer-gateway-reranker-v1\n\nRequest-level routing gateway for /v1/rerank."
-        },
-        {
-          "cite_id": 9,
-          "source": "layer-rag-ingest-v1 README",
-          "text": "# RAG Ingest Pipeline\n\nPrepare chunk JSON files and upsert points into Qdrant."
-        },
-        {
-          "cite_id": 10,
-          "source": "k3s README",
-          "text": "# k3s server + GPU agents\n\nManifests and scripts for k3s control plane and GPU workers."
-        },
-        {
-          "cite_id": 11,
-          "source": "layer-grafana-loki-central-logger README",
-          "text": "# tb-loki-central-logger\n\nSend logs to Grafana Loki with httpx."
-        }
-      ]
-    },
-    "follow_up_questions": [
-      "What specific APIs does the orchestrator use to communicate with the LLM gateway?",
-      "Can you provide more details on how the orchestrator handles conversation IDs and correlation IDs?",
-      "Are there any known issues or limitations with the current orchestrator design?"
-    ],
-    "usage": {
-      "total": {
-        "prompt_tokens": 358,
-        "completion_tokens": 57,
-        "total_tokens": 415
-      },
-      "tool_github_search": {
-        "chat": {},
-        "follow_up_chat": {
-          "prompt_tokens": 358,
-          "completion_tokens": 57,
-          "total_tokens": 415
-        },
-        "total": {
-          "prompt_tokens": 358,
-          "completion_tokens": 57,
-          "total_tokens": 415
-        }
-      }
-    }
-  },
-  "done": {
-    "meta": {
-      "request_id": "req-123",
-      "session_id": "ses-123",
-      "trace_id": "req-123",
-      "conversation_id": "conv-smoke-1",
-      "is_new_conversation": false,
-      "user": {
-        "id": "taixing",
-        "roles": "hr",
-        "groups": "engineering",
-        "teams": "rag-platform"
-      },
-      "route": {
-        "type": "tool",
-        "tool": "github_search",
-        "confidence": 0.99,
-        "reason": "Deterministic: HuntAI/layer repo or gateway architecture question",
-        "source": "deterministic_rule"
-      },
-      "tool": {
-        "name": "github_search",
-        "type": "github",
-        "version": "v1",
-        "key": "tool_github_search"
-      },
-      "rewrite": "in app of huntai, what is orchestrator design?"
-    },
-    "latency_ms": {
-      "total": 8230.47,
-      "intent_router": {
-        "total": 1.45
-      },
-      "tool_github_search": {
-        "retrieve_rerank": 3590,
-        "chat": 3360,
-        "follow_up_chat": 1213,
-        "total": 8171
-      }
-    },
-    "status": {
-      "ok": true,
-      "state": "completed",
-      "code": "ok"
-    },
-    "type": "done"
-  }
-}
-```
+- Legacy flat **`route.route`** is `tool` for `user_profile` (eval gold may still say `rag`).
 
 ---
 
 ## Internal intent (`help`)
 
+**Question:** *"what is AI llm?"*
+
+```bash
 curl -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
   -H "Content-Type: application/json" \
   -H "X-Session-Id: ses-123" \
@@ -492,8 +337,7 @@ curl -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
     "stream": true,
     "conversation_id": "conv-smoke-1"
   }'
-echo
-
+```
 
 ```json
 {
@@ -542,16 +386,14 @@ echo
       "type": "internal_intent",
       "intent": "help",
       "confidence": 1.0,
-      "reason": "General knowledge about AI terminology",
-      "source": "llm_router"
+      "source": "llm_router",
+      "reason": "General knowledge about AI terminology"
     },
     "rewrite": "what is ai llm?"
   },
   "latency_ms": {
     "total": 1742.95,
-    "intent_router": {
-      "total": 1741.4
-    }
+    "intent_router": { "total": 1741.4 }
   },
   "usage": {
     "total": {
@@ -573,3 +415,8 @@ echo
   "type": "done"
 }
 ```
+
+**Notes**
+
+- No **`meta.tool`** on internal intents (no tool was invoked).
+- **`route.route_detail.name`** is the intent id; **`meta.route.intent`** mirrors it on `done`.

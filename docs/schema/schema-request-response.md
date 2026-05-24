@@ -286,7 +286,7 @@ Response: **SSE**, each line `data: <json>\n\n`.
 |--------|-------------|
 | `request_id` | Early correlation ids |
 | `rewrite` | `{ "type": "rewrite", "text": "..." }` |
-| `route` | `{ "type": "route", "route_detail": { ... } }` (internal; folded into final `meta`) |
+| `route` | `{ "type": "route", "route": "<legacy flat>", "route_detail": { ... }, "route_source": "...", "text": "<rewrite>" }` — see [schema-response-pattern.md](schema-response-pattern.md) |
 | `answer_delta` | `{ "type": "answer_delta", "text": "..." }` |
 | `answer` | `{ "type": "answer", "answer": { "text", "citations" }, "follow_up_questions": [] }` |
 | `done` | **Full response envelope** (see above) plus `"type": "done"` |
