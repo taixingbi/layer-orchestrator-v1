@@ -90,21 +90,23 @@ def _merge_phase_latency(
     orchestrator_ms: Optional[float],
     service: Optional[Dict[str, Any]],
 ) -> Optional[Dict[str, Any]]:
-    """Build nested phase object: orchestrator wall + RAG/tool service breakdown keys."""
-    out: Dict[str, Any] = {}
+    """Nest RAG/tool service latency_ms under phase orchestrator object."""
+    orchestrator: Dict[str, Any] = {}
     wall = _round_ms(orchestrator_ms)
     if wall is not None:
-        out["orchestrator"] = wall
+        orchestrator["wall"] = wall
     if isinstance(service, dict):
         for key, val in service.items():
             if val is None:
                 continue
             rounded = _round_ms(val)
             if rounded is not None:
-                out[key] = rounded
+                orchestrator[key] = rounded
             elif isinstance(val, dict):
-                out[key] = val
-    return out or None
+                orchestrator[key] = val
+    if not orchestrator:
+        return None
+    return {"orchestrator": orchestrator}
 
 
 def build_latency_ms_summary(states: List[dict]) -> dict:
@@ -142,6 +144,8 @@ def build_latency_ms_summary(states: List[dict]) -> dict:
         timings["tool"] = tool_obj
 
     github_state = by_phase.get("github", {})
+    if not github_state and tool_meta.get("tool") == "github_repo_search":
+        github_state = tool_state
     github_meta = github_state.get("metadata") or {}
     github_obj = _merge_phase_latency(
         github_state.get("latency_ms"),
@@ -149,6 +153,8 @@ def build_latency_ms_summary(states: List[dict]) -> dict:
     )
     if github_obj:
         timings["github"] = github_obj
+        if tool_meta.get("tool") == "github_repo_search" and "tool" in timings:
+            del timings["tool"]
 
     return timings
 
@@ -232,6 +238,13 @@ async def answer_json(
             if usage is not None:
                 terminal_usage = usage
                 final["usage"] = usage
+            terminal_states = [
+                states_by_phase[p]
+                for p in state_phase_order
+                if states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
+            ]
+            final["latency_ms"] = build_latency_ms_summary(terminal_states)
+            continue
         elif t == "rewrite":
             final["rewrite"] = event.get("text")
         elif t == "route":
@@ -367,9 +380,10 @@ def sse_stream_answer_gen(
                         for p in state_phase_order
                         if states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
                     ]
-                    latency_ms = build_latency_ms_summary(terminal_states)
-                    if latency_ms:
-                        chunk = {**chunk, "latency_ms": latency_ms}
+                    chunk = {
+                        **chunk,
+                        "latency_ms": build_latency_ms_summary(terminal_states),
+                    }
                 yield f"data: {json.dumps(chunk)}\n\n"
 
     return _gen()

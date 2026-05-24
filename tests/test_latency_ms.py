@@ -31,14 +31,15 @@ def test_build_latency_ms_summary_nested_rag_service():
         },
     ]
     out = build_latency_ms_summary(states)
+    rag = out["rag"]["orchestrator"]
     assert out["total"] == 4918.0
     assert out["intent_router"] == {"total": 2040.27}
-    assert out["rag"]["orchestrator"] == 2877.88
-    assert out["rag"]["embed"] == 45.2
-    assert out["rag"]["retrieve"] == 312.0
-    assert out["rag"]["chat"] == 890.5
-    assert out["rag"]["follow_up_chat"] == 520.1
-    assert out["rag"]["total"] == 1767.8
+    assert rag["wall"] == 2877.88
+    assert rag["embed"] == 45.2
+    assert rag["retrieve"] == 312.0
+    assert rag["chat"] == 890.5
+    assert rag["follow_up_chat"] == 520.1
+    assert rag["total"] == 1767.8
 
 
 def test_build_latency_ms_summary_mcp_tool_latency_key():
@@ -54,9 +55,10 @@ def test_build_latency_ms_summary_mcp_tool_latency_key():
         },
     ]
     out = build_latency_ms_summary(states)
-    assert out["rag"]["orchestrator"] == 100.0
-    assert out["rag"]["chat"] == 50.0
-    assert out["rag"]["total"] == 50.0
+    rag = out["rag"]["orchestrator"]
+    assert rag["wall"] == 100.0
+    assert rag["chat"] == 50.0
+    assert rag["total"] == 50.0
 
 
 def test_build_latency_ms_summary_github_mcp():
@@ -87,11 +89,38 @@ def test_build_latency_ms_summary_github_mcp():
         },
     ]
     out = build_latency_ms_summary(states)
+    github = out["github"]["orchestrator"]
     assert out["total"] == 6889.0
     assert out["intent_router"] == {"total": 2040.27}
-    assert out["github"]["orchestrator"] == 4849.0
-    assert out["github"]["github_readme"] == 237
-    assert out["github"]["github_search"] == 218
-    assert out["github"]["chat"] == 3303
-    assert out["github"]["follow_up_chat"] == 1081
-    assert out["github"]["total"] == 4849
+    assert github["wall"] == 4849.0
+    assert github["github_readme"] == 237
+    assert github["github_search"] == 218
+    assert github["chat"] == 3303
+    assert github["follow_up_chat"] == 1081
+    assert github["total"] == 4849
+
+
+def test_build_latency_ms_summary_github_legacy_tool_phase():
+    states = [
+        {
+            "phase": "tool",
+            "status": "completed",
+            "latency_ms": 5062.0,
+            "metadata": {
+                "tool": "github_repo_search",
+                "tool_latency_ms": {
+                    "github_readme": 286,
+                    "github_search": 117,
+                    "chat": 3435,
+                    "follow_up_chat": 1193,
+                    "total": 5062,
+                },
+            },
+        },
+    ]
+    out = build_latency_ms_summary(states)
+    github = out["github"]["orchestrator"]
+    assert "tool" not in out
+    assert github["wall"] == 5062.0
+    assert github["github_readme"] == 286
+    assert github["total"] == 5062
