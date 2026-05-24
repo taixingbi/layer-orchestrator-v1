@@ -2,9 +2,33 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from .route import InternalIntentRoute, RouteDetail, ToolRoute
+
+RouteSource = Literal[
+    "deterministic_rule",
+    "llm_router",
+    "smalltalk_seed",
+    "smalltalk_pattern",
+    "injection_guard",
+    "override_rule",
+]
+
+_PROMPT_SOURCE_TO_ROUTE_SOURCE: Dict[str, RouteSource] = {
+    "injection_guard": "injection_guard",
+    "smalltalk_seed": "smalltalk_seed",
+    "smalltalk_pattern": "smalltalk_pattern",
+    "versioned_file": "llm_router",
+    "body_override": "llm_router",
+}
+
+_OVERRIDE_REASON_MARKERS = (
+    "[server: github_repo_keyword",
+    "[server: kb_grounded",
+    "[server: general_immigration",
+    "[server: empty direct_reply",
+)
 
 # Latency / usage phase keys (underscore; aligned with schema-request-response.md).
 LATENCY_KEY_RAG = "tool_rag"
@@ -39,43 +63,72 @@ def _user_block(rag_user: Optional[Dict[str, str]]) -> Dict[str, str]:
     }
 
 
-def route_meta_from_detail(detail: Any) -> tuple[Dict[str, Any], Dict[str, Any]]:
-    """Build meta.route and meta.tool from route_detail."""
+def route_source_from_prompt_source(prompt_source: Optional[str]) -> RouteSource:
+    key = (prompt_source or "").strip()
+    return _PROMPT_SOURCE_TO_ROUTE_SOURCE.get(key, "llm_router")
+
+
+def route_source_after_normalize(
+    *,
+    pre_deterministic: bool,
+    prompt_source: Optional[str],
+    reason: str,
+) -> RouteSource:
+    """Resolve client meta.route.source from how routing was decided."""
+    if pre_deterministic:
+        return "deterministic_rule"
+    r = reason or ""
+    if any(marker in r for marker in _OVERRIDE_REASON_MARKERS):
+        return "override_rule"
+    return route_source_from_prompt_source(prompt_source)
+
+
+def route_meta_from_detail(
+    detail: Any,
+    *,
+    source: Optional[RouteSource] = None,
+) -> tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+    """Build meta.route and optional meta.tool (tools only) from route_detail."""
     if isinstance(detail, ToolRoute):
         orch_name = detail.name
         phase_key = TOOL_LATENCY_USAGE_KEYS.get(orch_name, orch_name)
         tool_type = _TOOL_TYPE.get(orch_name, "tool")
-        route = {
+        route: Dict[str, Any] = {
             "type": "tool",
             "tool": orch_name,
             "confidence": float(detail.confidence),
         }
         if detail.reason:
             route["reason"] = detail.reason
-        tool = {"name": orch_name, "type": tool_type, "version": "v1", "key": phase_key}
+        if source:
+            route["source"] = source
+        tool: Dict[str, Any] = {"name": orch_name, "type": tool_type, "version": "v1", "key": phase_key}
         if detail.repo:
             tool["repo"] = detail.repo
         return route, tool
     if isinstance(detail, InternalIntentRoute):
         route = {
             "type": "internal_intent",
-            "tool": detail.name,
+            "intent": detail.name,
             "confidence": float(detail.confidence),
         }
         if detail.reason:
             route["reason"] = detail.reason
-        tool = {"name": detail.name, "type": "internal_intent", "version": "v1"}
-        return route, tool
+        if source:
+            route["source"] = source
+        return route, None
     if isinstance(detail, dict):
         t = detail.get("type")
-        name = str(detail.get("name") or "")
         if t == "tool":
             fake = ToolRoute.model_validate({**detail, "type": "tool"})
-            return route_meta_from_detail(fake)
+            return route_meta_from_detail(fake, source=source)
         if t == "internal_intent":
             fake = InternalIntentRoute.model_validate({**detail, "type": "internal_intent"})
-            return route_meta_from_detail(fake)
-    return {"type": "unknown", "tool": "", "confidence": 0.0}, {"name": "", "type": "unknown", "version": "v1"}
+            return route_meta_from_detail(fake, source=source)
+    route = {"type": "unknown", "confidence": 0.0}
+    if source:
+        route["source"] = source
+    return route, None
 
 
 def build_meta(
@@ -87,10 +140,11 @@ def build_meta(
     is_new_conversation: bool,
     route_detail: Any,
     rewrite: Optional[str],
+    route_source: Optional[RouteSource] = None,
     rag_user: Optional[Dict[str, str]] = None,
     extra_meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    route, tool = route_meta_from_detail(route_detail)
+    route, tool = route_meta_from_detail(route_detail, source=route_source)
     meta: Dict[str, Any] = {
         "request_id": request_id,
         "session_id": session_id,
@@ -99,8 +153,9 @@ def build_meta(
         "is_new_conversation": is_new_conversation,
         "user": _user_block(rag_user),
         "route": route,
-        "tool": tool,
     }
+    if tool is not None:
+        meta["tool"] = tool
     if rewrite is not None and str(rewrite).strip():
         meta["rewrite"] = rewrite
     if extra_meta:
@@ -118,10 +173,27 @@ def build_answer_block(
     }
 
 
-def build_status(*, ok: bool, state: Optional[str] = None) -> Dict[str, Any]:
+def status_code_for_exception(exc: BaseException) -> str:
+    """Map exceptions to client status.code values."""
+    if isinstance(exc, (TimeoutError,)):
+        return "tool_timeout"
+    name = type(exc).__name__.lower()
+    if "timeout" in name:
+        return "tool_timeout"
+    return "error"
+
+
+def build_status(
+    *,
+    ok: bool,
+    state: Optional[str] = None,
+    code: Optional[str] = None,
+) -> Dict[str, Any]:
     if state is None:
         state = "completed" if ok else "failed"
-    return {"ok": ok, "state": state}
+    if code is None:
+        code = "ok" if ok else "error"
+    return {"ok": ok, "state": state, "code": code}
 
 
 def build_answer_envelope(
@@ -141,6 +213,8 @@ def build_answer_envelope(
     rag_user: Optional[Dict[str, str]] = None,
     ok: bool = True,
     state: Optional[str] = None,
+    code: Optional[str] = None,
+    route_source: Optional[RouteSource] = None,
     error: Optional[str] = None,
     extra_meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
@@ -154,6 +228,7 @@ def build_answer_envelope(
             is_new_conversation=is_new_conversation,
             route_detail=route_detail,
             rewrite=rewrite,
+            route_source=route_source,
             rag_user=rag_user,
             extra_meta=extra_meta,
         ),
@@ -161,7 +236,7 @@ def build_answer_envelope(
         "follow_up_questions": list(follow_up_questions) if follow_up_questions else [],
         "latency_ms": latency_ms if isinstance(latency_ms, dict) else {},
         "usage": usage if isinstance(usage, dict) else {},
-        "status": build_status(ok=ok, state=state),
+        "status": build_status(ok=ok, state=state, code=code),
     }
     if error:
         out["error"] = error

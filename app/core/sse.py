@@ -209,6 +209,8 @@ class AnswerResponseAccumulator:
         elif t == "route":
             if event.get("route_detail") is not None:
                 self.body["route_detail"] = event.get("route_detail")
+            if event.get("route_source") is not None:
+                self.body["route_source"] = event.get("route_source")
         elif t == "answer":
             if isinstance(event.get("answer"), dict):
                 ans = event["answer"]
@@ -248,7 +250,14 @@ class AnswerResponseAccumulator:
             if self.states_by_phase[p].get("status") in _TERMINAL_STATE_STATUSES
         ]
 
-    def finalize(self, *, ok: bool, error: Optional[str] = None, state: Optional[str] = None) -> Dict[str, Any]:
+    def finalize(
+        self,
+        *,
+        ok: bool,
+        error: Optional[str] = None,
+        state: Optional[str] = None,
+        code: Optional[str] = None,
+    ) -> Dict[str, Any]:
         latency = normalize_latency_ms_keys(build_latency_ms_summary(self._terminal_states()))
         usage = normalize_usage_keys(self.body.get("usage") or {})
         return build_answer_envelope(
@@ -259,6 +268,7 @@ class AnswerResponseAccumulator:
             is_new_conversation=bool(self.body.get("is_new_conversation")),
             route_detail=self.body.get("route_detail"),
             rewrite=self.body.get("rewrite"),
+            route_source=self.body.get("route_source"),
             answer_text=self.body.get("answer_text"),
             citations=self.body.get("citations"),
             follow_up_questions=self.body.get("follow_up_questions"),
@@ -267,15 +277,19 @@ class AnswerResponseAccumulator:
             rag_user=self.rag_user,
             ok=ok,
             state=state,
+            code=code,
             error=error,
         )
 
     def enrich_terminal_event(self, event: dict) -> dict:
         if event.get("type") == "error":
             err = event.get("error") or event.get("text")
-            merged = self.finalize(ok=False, error=err, state="failed")
+            if event.get("route_source") is not None:
+                self.body["route_source"] = event.get("route_source")
+            code = event.get("status_code") or "error"
+            merged = self.finalize(ok=False, error=err, state="failed", code=code)
             return {**merged, "type": "error", "text": err or ""}
-        merged = self.finalize(ok=True)
+        merged = self.finalize(ok=True, code="ok")
         return {**merged, "type": "done"}
 
 
@@ -337,11 +351,12 @@ async def answer_json(
         if t == "error":
             acc.apply(event)
             err = event.get("error") or event.get("text")
-            return acc.finalize(ok=False, error=err, state="failed")
+            code = event.get("status_code") or "error"
+            return acc.finalize(ok=False, error=err, state="failed", code=code)
         acc.apply(event)
         if t == "done":
-            return acc.finalize(ok=True)
-    return acc.finalize(ok=True)
+            return acc.finalize(ok=True, code="ok")
+    return acc.finalize(ok=True, code="ok")
 
 
 def sse_stream_answer_gen(
@@ -375,6 +390,7 @@ def sse_stream_answer_gen(
                 rag_user=rag_user,
                 ok=False,
                 state="failed",
+                code="error",
                 error=text,
             ),
             "type": "error",

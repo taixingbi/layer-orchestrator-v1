@@ -22,6 +22,7 @@ from ..tools.github_search import run_github_search
 from ..tools.user_profile import run_user_profile
 from ..tools.web_search import run_web_search
 from ..observability.usage import build_usage_payload
+from ..schemas.answer_envelope import route_source_after_normalize, status_code_for_exception
 from .router import (
     decision_to_route_detail,
     normalize_post_router,
@@ -144,12 +145,13 @@ async def _yield_request_complete_done(
     yield done_event
 
 
-def _route_event(detail: RouteDetail, rewrite: str) -> Dict[str, Any]:
+def _route_event(detail: RouteDetail, rewrite: str, *, route_source: str) -> Dict[str, Any]:
     flat = legacy_route_from_detail(detail)
     return {
         "type": "route",
         "route": flat,
         "route_detail": route_detail_to_dict(detail),
+        "route_source": route_source,
         "text": rewrite,
     }
 
@@ -241,8 +243,10 @@ async def stream_answer_query(
     intent_router_usage: Optional[Dict[str, int]] = None
     tool_usage: Optional[Dict[str, Any]] = None
     route_detail: Optional[RouteDetail] = None
+    route_source: str = "llm_router"
     rewrite_text = (query or "").strip()
     direct_answer: Optional[str] = None
+    router_runtime_meta: Dict[str, Any] = {}
 
     try:
         async with bind_pipeline_phase("request"):
@@ -277,6 +281,7 @@ async def stream_answer_query(
         )
 
         pre = resolve_route(query, hist)
+        pre_deterministic = pre is not None
         if pre:
             route_detail, direct_answer, rewrite_text = pre
         else:
@@ -289,6 +294,7 @@ async def stream_answer_query(
                     trace_id=trace_id,
                     conversation_id=conv or None,
                     is_new_conversation=is_new_conversation,
+                    runtime_meta=router_runtime_meta,
                 )
                 decision = normalize_post_router(decision, latest_question=query, history=hist)
                 intent_router_usage = decision.router_usage
@@ -304,6 +310,15 @@ async def stream_answer_query(
                         confidence=1.0,
                         reason=decision.reason or "",
                     )
+        route_source = route_source_after_normalize(
+            pre_deterministic=pre_deterministic,
+            prompt_source=router_runtime_meta.get("prompt_source"),
+            reason=(
+                route_detail.reason
+                if route_detail is not None and hasattr(route_detail, "reason")
+                else ""
+            ),
+        )
 
         flat_route = legacy_route_from_detail(route_detail)
         router_ended_at = utc_now_iso()
@@ -321,7 +336,7 @@ async def stream_answer_query(
             },
         )
         yield {"type": "rewrite", "text": rewrite_text}
-        yield _route_event(route_detail, rewrite_text)
+        yield _route_event(route_detail, rewrite_text, route_source=route_source)
 
         request_usage = build_usage_payload(intent_router=intent_router_usage)
 
@@ -474,6 +489,8 @@ async def stream_answer_query(
             "type": "error",
             "text": err_text,
             "error": err_text,
+            "route_source": route_source,
+            "status_code": status_code_for_exception(e),
             **_stream_correlation_fields(
                 session_id=session_id,
                 request_id=request_id,

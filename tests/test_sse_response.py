@@ -44,6 +44,7 @@ def test_stream_done_matches_non_stream_envelope():
         {
             "type": "route",
             "route_detail": {"type": "tool", "name": "user_profile", "confidence": 0.98},
+            "route_source": "llm_router",
         }
     )
     usage = build_usage_payload(
@@ -61,7 +62,9 @@ def test_stream_done_matches_non_stream_envelope():
     done = acc.enrich_terminal_event({"type": "done"})
     assert done["type"] == "done"
     assert done["status"]["ok"] is True
+    assert done["status"]["code"] == "ok"
     assert done["meta"]["route"]["tool"] == "user_profile"
+    assert done["meta"]["route"]["source"] == "llm_router"
     assert done["meta"]["rewrite"] == "rewritten q"
     assert done["answer"]["text"] == "answer body"
     assert done["usage"][USAGE_KEY_RAG]["total"]["total_tokens"] == 99
@@ -86,5 +89,6 @@ def test_stream_error_envelope():
     err = acc.enrich_terminal_event({"type": "error", "text": "Error: ValueError: boom"})
     assert err["type"] == "error"
     assert err["status"]["ok"] is False
+    assert err["status"]["code"] == "error"
     assert err["error"] == "Error: ValueError: boom"
     assert err["meta"]["route"]["tool"] == "user_profile"

@@ -69,24 +69,32 @@ Non-stream JSON and the **final** SSE event use the **same** top-level shape (al
 
 | Field | Description |
 |-------|-------------|
-| `meta` | Correlation, `user`, routing (`route`, `tool`), optional `rewrite` |
+| `meta` | Correlation, `user`, routing (`route`; `tool` only when a tool ran), optional `rewrite` |
 | `answer` | `{ "text", "citations" }` |
 | `follow_up_questions` | string[] |
 | `latency_ms` | `intent_router`, `tool_rag` / `tool_github_search` / `tool_tavily_search`, `total` |
 | `usage` | `intent_router`, tool phase passthrough, rolled-up `total` |
-| `status` | `{ "ok": boolean, "state": "completed" \| "failed" }` |
+| `status` | `{ "ok", "state": "completed" \| "failed", "code": "ok" \| "error" \| "tool_timeout" \| ... }` |
 | `error` | Present when `status.ok` is false |
 
 ### `meta.route` / `meta.tool`
 
-| Orchestrator handler | `meta.route.type` | `meta.route.tool` | `meta.tool.name` | `meta.tool.type` | `meta.tool.key` |
-|----------------------|-------------------|-------------------|------------------|------------------|-----------------|
-| `user_profile` | `tool` | `user_profile` | `user_profile` | `rag` | `tool_rag` |
-| `github_search` | `tool` | `github_search` | `github_search` | `github` | `tool_github_search` |
-| `web_search` | `tool` | `web_search` | `web_search` | `web` | `tool_tavily_search` |
-| internal intents | `internal_intent` | intent name | intent name | `internal_intent` | — |
+| Handler | `meta.route.type` | Route id field | `meta.tool` (if any) |
+|---------|-------------------|----------------|----------------------|
+| `user_profile` | `tool` | `meta.route.tool` | `{ name, type, version, key }` |
+| `github_search` | `tool` | `meta.route.tool` | same |
+| `web_search` | `tool` | `meta.route.tool` | same |
+| internal intents | `internal_intent` | `meta.route.intent` | **omitted** (no tool ran) |
 
-Client `meta.route.tool` / `meta.tool.name` use **orchestrator** handler ids. `meta.tool.key` matches the `latency_ms` / `usage` phase key for that tool.
+| `meta.route.source` | When set |
+|---------------------|----------|
+| `deterministic_rule` | Pre-LLM match (`app/intents/`, `github_route`) |
+| `llm_router` | Default router LLM (`router-v3.00.txt`) |
+| `smalltalk_seed` / `smalltalk_pattern` | Empty-history small-talk |
+| `injection_guard` | Prompt-injection block |
+| `override_rule` | Post-LLM server override (GitHub keywords, KB-grounded, general immigration, empty direct_reply → clarify) |
+
+Orchestrator handler ids in `meta.route.tool` / `meta.tool.name`. `meta.tool.key` matches `latency_ms` / `usage` phase keys (`tool_rag`, `tool_github_search`, `tool_tavily_search`).
 
 ### Tool timing / usage keys
 
@@ -122,15 +130,17 @@ Placeholders show all possible keys; a given response only includes the tool pha
     },
     "route": {
       "type": "tool | internal_intent",
-      "tool": "user_profile | github_search | web_search | <intent_name>",
+      "tool": "user_profile | github_search | web_search (type tool only)",
+      "intent": "help | clarify | reject | identity | greeting | capabilities (type internal_intent only)",
       "confidence": 0.99,
+      "source": "deterministic_rule | llm_router | smalltalk_seed | smalltalk_pattern | injection_guard | override_rule",
       "reason": "optional string"
     },
     "tool": {
       "name": "user_profile | github_search | web_search",
-      "type": "rag | github | web | internal_intent",
+      "type": "rag | github | web",
       "version": "v1",
-      "key": "tool_rag | tool_github_search | tool_tavily_search (tools only; omit for internal_intent)"
+      "key": "tool_rag | tool_github_search | tool_tavily_search"
     },
     "rewrite": "optional rewritten question"
   },
@@ -199,12 +209,13 @@ Placeholders show all possible keys; a given response only includes the tool pha
   },
   "status": {
     "ok": true,
-    "state": "completed"
+    "state": "completed",
+    "code": "ok"
   }
 }
 ```
 
-On failure, add top-level `"error": "string"` and set `status.ok` to `false`, `status.state` to `"failed"`.
+On failure, add top-level `"error": "string"` and set `status.ok` to `false`, `status.state` to `"failed"`, `status.code` to e.g. `"error"` or `"tool_timeout"`.
 
 ### Full examples (smoke-test)
 

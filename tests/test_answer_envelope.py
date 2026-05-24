@@ -5,8 +5,9 @@ from app.schemas.answer_envelope import (
     LATENCY_KEY_RAG,
     build_answer_envelope,
     route_meta_from_detail,
+    route_source_after_normalize,
 )
-from app.schemas.route import ToolRoute
+from app.schemas.route import InternalIntentRoute, ToolRoute
 
 
 def test_route_meta_user_profile():
@@ -26,6 +27,29 @@ def test_route_meta_github_search():
     assert tool["name"] == "github_search"
     assert tool["type"] == "github"
     assert tool["key"] == "tool_github_search"
+
+
+def test_route_source_after_normalize():
+    assert route_source_after_normalize(pre_deterministic=True, prompt_source=None, reason="") == "deterministic_rule"
+    assert (
+        route_source_after_normalize(
+            pre_deterministic=False,
+            prompt_source="versioned_file",
+            reason="x [server: github_repo_keyword→tool]",
+        )
+        == "override_rule"
+    )
+    assert route_source_after_normalize(pre_deterministic=False, prompt_source="smalltalk_seed", reason="") == "smalltalk_seed"
+
+
+def test_route_meta_internal_intent_omits_tool():
+    detail = InternalIntentRoute(name="help", confidence=1.0, reason="meta question")
+    route, tool = route_meta_from_detail(detail, source="llm_router")
+    assert route["type"] == "internal_intent"
+    assert route["intent"] == "help"
+    assert "tool" not in route
+    assert route["source"] == "llm_router"
+    assert tool is None
 
 
 def test_build_answer_envelope_shape():
@@ -65,4 +89,5 @@ def test_build_answer_envelope_shape():
     assert out["usage"][USAGE_KEY_RAG] is upstream_usage
     assert out["status"]["ok"] is True
     assert out["status"]["state"] == "completed"
+    assert out["status"]["code"] == "ok"
     assert "prompt_tokens" not in out["usage"] or out["usage"].get("prompt_tokens") is None

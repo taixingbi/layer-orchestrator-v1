@@ -36,6 +36,7 @@ Schema reference: [schema-request-response.md](schema-request-response.md) (skel
       "type": "tool",
       "tool": "github_search",
       "confidence": 0.99,
+      "source": "deterministic_rule",
       "reason": "Deterministic: HuntAI/layer repo or gateway architecture question"
     },
     "tool": {
@@ -98,7 +99,8 @@ Schema reference: [schema-request-response.md](schema-request-response.md) (skel
   },
   "status": {
     "ok": true,
-    "state": "completed"
+    "state": "completed",
+    "code": "ok"
   }
 }
 ```
@@ -113,6 +115,21 @@ Schema reference: [schema-request-response.md](schema-request-response.md) (skel
 ## RAG (`user_profile`)
 
 **Question:** *"taixing visa status in us"*
+curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: ses-123" \
+  -H "X-Request-Id: req-123" \
+  -H "X-Trace-Id: req-123" \
+  -H "X-User-Id: taixing" \
+  -H "X-User-Roles: hr" \
+  -H "X-User-Groups: engineering" \
+  -H "X-User-Teams: rag-platform" \
+  -d '{
+    "question": "what is taixing visa status in us?",
+    "stream": true,
+    "conversation_id": "conv-smoke-1"
+  }
+
 
 ```json
 {
@@ -120,29 +137,38 @@ Schema reference: [schema-request-response.md](schema-request-response.md) (skel
     "request_id": "req-123",
     "session_id": "ses-123",
     "trace_id": "req-123",
+
     "conversation_id": "conv-smoke-1",
     "is_new_conversation": false,
+
     "user": {
       "id": "taixing",
       "roles": "hr",
       "groups": "engineering",
       "teams": "rag-platform"
     },
+
     "route": {
       "type": "tool",
       "tool": "user_profile",
-      "confidence": 1.0
+      "confidence": 1.0,
+      "source": "llm_router",
+      "reason": "Needs Taixing Bi-specific facts"
     },
+
     "tool": {
       "name": "user_profile",
       "type": "rag",
       "version": "v1",
       "key": "tool_rag"
     },
+
     "rewrite": "taixing visa status in us"
   },
+
   "answer": {
     "text": "Taixing Bi's visa status in the US is H4 EAD, and there is no need for visa sponsorship [1].",
+
     "citations": [
       {
         "cite_id": 1,
@@ -152,55 +178,72 @@ Schema reference: [schema-request-response.md](schema-request-response.md) (skel
       }
     ]
   },
+
   "follow_up_questions": [
-    "What does H4 EAD allow Taixing Bi to do in the US?",
-    "Is Taixing Bi's H4 EAD permanent or temporary?",
-    "Can Taixing Bi switch to another visa type if needed?"
+    "Can Taixing switch to another visa type in the future?",
+    "What are the requirements for maintaining H4 EAD status?",
+    "Are there any restrictions on working hours or types of work with H4 EAD?"
   ],
+
   "latency_ms": {
-    "total": 4826.92,
-    "intent_router": { "total": 1997.75 },
+    "total": 5028.25,
+
+    "intent_router": {
+      "total": 2132.04
+    },
+
     "tool_rag": {
-      "embed": 138,
-      "retrieve_rerank": 155,
-      "chat": 678,
-      "follow_up_chat": 1819,
-      "total": 2799
+      "embed": 238,
+      "retrieve_rerank": 204,
+      "chat": 648,
+      "follow_up_chat": 1768,
+      "total": 2865
     }
   },
+
   "usage": {
     "total": {
       "prompt_tokens": 1258,
-      "completion_tokens": 166,
-      "total_tokens": 1424
+      "completion_tokens": 158,
+      "total_tokens": 1416
     },
+
     "intent_router": {
       "prompt_tokens": 516,
       "completion_tokens": 54,
       "total_tokens": 570
     },
+
     "tool_rag": {
+      "type": "usage",
+
       "chat": {
         "prompt_tokens": 319,
         "completion_tokens": 28,
         "total_tokens": 347
       },
+
       "follow_up_chat": {
         "prompt_tokens": 423,
-        "completion_tokens": 84,
-        "total_tokens": 507
+        "completion_tokens": 76,
+        "total_tokens": 499
       },
+
       "total": {
         "prompt_tokens": 742,
-        "completion_tokens": 112,
-        "total_tokens": 854
+        "completion_tokens": 104,
+        "total_tokens": 846
       }
     }
   },
+
   "status": {
     "ok": true,
-    "state": "completed"
-  }
+    "state": "completed",
+    "code": "ok"
+  },
+
+  "type": "done"
 }
 ```
 
@@ -212,7 +255,22 @@ Schema reference: [schema-request-response.md](schema-request-response.md) (skel
 
 ## GitHub (extended smoke-test)
 
-Same route as above; longer answer and citations.
+curl -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: ses-123" \
+  -H "X-Request-Id: req-123" \
+  -H "X-Trace-Id: req-123" \
+  -H "X-User-Id: taixing" \
+  -H "X-User-Roles: hr" \
+  -H "X-User-Groups: engineering" \
+  -H "X-User-Teams: rag-platform" \
+  -d '{
+    "question": "in app of huntai, what is orchestrator design?",
+    "stream": true,
+    "conversation_id": "conv-smoke-1"
+  }'
+echo
+
 
 ```json
 {
@@ -220,20 +278,25 @@ Same route as above; longer answer and citations.
     "request_id": "req-123",
     "session_id": "ses-123",
     "trace_id": "req-123",
+
     "conversation_id": "conv-smoke-1",
     "is_new_conversation": false,
+
     "user": {
       "id": "taixing",
       "roles": "hr",
       "groups": "engineering",
       "teams": "rag-platform"
     },
+
     "route": {
       "type": "tool",
       "tool": "github_search",
       "confidence": 0.99,
+      "source": "deterministic_rule",
       "reason": "Deterministic: HuntAI/layer repo or gateway architecture question"
     },
+
     "tool": {
       "name": "github_search",
       "type": "github",
@@ -245,13 +308,13 @@ Same route as above; longer answer and citations.
   },
 
   "answer": {
-    "text": "- The orchestrator design is described in the README of layer-orchestrator-v1.\n- It acts as a FastAPI service handling HTTP chat completions and RAG queries.\n- Supports unified `/orchestrator/answer` endpoint for both chat and RAG requests.\n- Sends correlation IDs on headers for tracking requests.\n- Manages conversation IDs optionally passed in JSON bodies.\n- Calls the LLM gateway for completions and integrates with other components like RAG and embeddings.",
+    "text": "- The orchestrator design in the HuntAI application is described in the README of the `layer-orchestrator-v1` repository [4].\n- It acts as a FastAPI service handling HTTP chat completions, RAG, and unified `/orchestrator/answer` endpoints.\n- Supports streaming responses via SSE.\n- Handles correlation IDs in headers for traceability.\n- Routes requests to the appropriate backend based on configuration and current load conditions.",
 
     "citations": [
       {
         "cite_id": 1,
         "source": "layer-mcp-github-v1 README",
-        "text": "MCP server that answers natural-language questions about fixed GitHub repos."
+        "text": "MCP server that answers natural-language questions about a fixed set of GitHub repos."
       },
       {
         "cite_id": 2,
@@ -261,67 +324,98 @@ Same route as above; longer answer and citations.
       {
         "cite_id": 3,
         "source": "layer-gateway-api-v1 README",
-        "text": "FastAPI gateway for authentication, validation, tracing, and orchestrator access."
+        "text": "FastAPI gateway that decouples Next.js from AI orchestration."
       },
       {
         "cite_id": 4,
         "source": "layer-orchestrator-v1 README",
-        "text": "FastAPI orchestrator for chat completions, RAG, and unified SSE responses."
+        "text": "FastAPI service for HTTP chat completions, HTTP RAG, and unified `/orchestrator/answer` endpoints with SSE support."
       },
       {
         "cite_id": 5,
         "source": "layer-rag-query-v1 README",
-        "text": "Hybrid RAG retrieval using dense vectors, BM25, and RRF fusion."
+        "text": "RAG hybrid retrieval using dense vectors, BM25, and RRF fusion."
+      },
+      {
+        "cite_id": 6,
+        "source": "layer-gateway-inference-v1 README",
+        "text": "GPU-aware routing gateway for vLLM inference workloads."
+      },
+      {
+        "cite_id": 7,
+        "source": "layer-gateway-embed-v1 README",
+        "text": "Request-level routing gateway for `/v1/embeddings` across multiple vLLM backends."
+      },
+      {
+        "cite_id": 8,
+        "source": "layer-gateway-reranker-v1 README",
+        "text": "Request-level routing gateway for `/v1/rerank` across multiple vLLM backends."
+      },
+      {
+        "cite_id": 9,
+        "source": "layer-rag-ingest-v1 README",
+        "text": "Prepare chunks, enrich metadata, embed text, and upsert points into Qdrant."
+      },
+      {
+        "cite_id": 10,
+        "source": "k3s README",
+        "text": "k3s control plane and GPU worker manifests/scripts."
+      },
+      {
+        "cite_id": 11,
+        "source": "layer-grafana-loki-central-logger README",
+        "text": "Send logs to Grafana Loki with async httpx-based logging."
       }
     ]
   },
 
   "follow_up_questions": [
-    "What are the main responsibilities of the orchestrator?",
-    "Can you explain how the orchestrator handles RAG queries?",
-    "Which other components does the orchestrator integrate with?"
+    "What are the main components of the orchestrator in the layer-orchestrator-v1 repository?",
+    "How does the orchestrator handle error scenarios?",
+    "Can you explain the role of correlation IDs in the orchestrator's design?"
   ],
 
   "latency_ms": {
-    "total": 8603.93,
+    "total": 7466.06,
 
     "intent_router": {
-      "total": 1.02
+      "total": 0.98
     },
 
     "tool_github_search": {
-      "retrieve_rerank": 4537,
-      "chat": 3060,
-      "follow_up_chat": 963,
-      "total": 8586
+      "retrieve_rerank": 3795,
+      "chat": 2536,
+      "follow_up_chat": 1116,
+      "total": 7456
     }
   },
 
   "usage": {
     "total": {
-      "prompt_tokens": 302,
-      "completion_tokens": 42,
-      "total_tokens": 344
+      "prompt_tokens": 292,
+      "completion_tokens": 54,
+      "total_tokens": 346
     },
 
     "tool_github_search": {
       "follow_up_chat": {
-        "prompt_tokens": 302,
-        "completion_tokens": 42,
-        "total_tokens": 344
+        "prompt_tokens": 292,
+        "completion_tokens": 54,
+        "total_tokens": 346
       },
 
       "total": {
-        "prompt_tokens": 302,
-        "completion_tokens": 42,
-        "total_tokens": 344
+        "prompt_tokens": 292,
+        "completion_tokens": 54,
+        "total_tokens": 346
       }
     }
   },
 
   "status": {
     "ok": true,
-    "state": "completed"
+    "state": "completed",
+    "code": "ok"
   },
 
   "type": "done"
@@ -351,15 +445,10 @@ Same route as above; longer answer and citations.
 
     "route": {
       "type": "internal_intent",
-      "tool": "help",
+      "intent": "help",
       "confidence": 1.0,
+      "source": "llm_router",
       "reason": "General information about the location of the LLM agent."
-    },
-
-    "tool": {
-      "name": "help",
-      "type": "internal_intent",
-      "version": "v1"
     },
 
     "rewrite": "location of llm agent"
@@ -397,7 +486,8 @@ Same route as above; longer answer and citations.
 
   "status": {
     "ok": true,
-    "state": "completed"
+    "state": "completed",
+    "code": "ok"
   },
 
   "type": "done"
