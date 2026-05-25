@@ -30,8 +30,8 @@ app/
 - `app/main.py`  
   FastAPI entrypoint. Exposes:
   - `POST /v1/orchestrator/answer` (set `stream=true` for SSE, default aggregated JSON)
-  - `POST /orchestrator/eval/router`
-  - `POST /feedback`
+  - `POST /v1/orchestrator/eval/router`
+  - `POST /v1/feedback`
   - `GET /health` (liveness; config only)
   - `GET /version` (version id only)
   - `GET /ready` (readiness; probes LLM gateway and RAG HTTP)
@@ -111,7 +111,7 @@ Non-stream JSON (and stream `done.latency_ms`) include a nested `latency_ms` obj
 
 Payload: `question`, `collection_base`, `k`, `k_max`, `include_retrieval_hits`, optional `conversation_id`. Correlation and user fields travel on headers.
 
-### Feedback (`POST /feedback`)
+### Feedback (`POST /v1/feedback`)
 
 Accepts user rating + optional type/comment and forwards to LangSmith when credentials exist.
 

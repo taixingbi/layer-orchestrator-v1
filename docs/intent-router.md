@@ -54,7 +54,7 @@ On hit:
 - **`reason`**: `[server: smalltalk:<intent>]`
 - **No** `maybe_override_rag_for_general_question` or `_ensure_rewritten_question_third_person` on this path.
 
-Callers that pass `runtime_meta` (for example **`POST /orchestrator/eval/router`**) receive `prompt_source` of `smalltalk_seed` or `smalltalk_pattern` and `smalltalk_intent`. Details: [smalltalk-seed.md](smalltalk-seed.md).
+Callers that pass `runtime_meta` (for example **`POST /v1/orchestrator/eval/router`**) receive `prompt_source` of `smalltalk_seed` or `smalltalk_pattern` and `smalltalk_intent`. Details: [smalltalk-seed.md](smalltalk-seed.md).
 
 ### 4. LLM router (default path)
 
@@ -78,7 +78,7 @@ Same as parse failure: **`fallback_router_decision`** (`rag`) plus the two post-
 
 ### 7. `normalize_post_router` (callers after return)
 
-[`normalize_post_router`](../app/core/intent_router.py) runs in **`app/core/pipeline.py`** (and **`POST /orchestrator/eval/router`**) with the latest question and history:
+[`normalize_post_router`](../app/core/intent_router.py) runs in **`app/core/pipeline.py`** (and **`POST /v1/orchestrator/eval/router`**) with the latest question and history:
 
 1. **`maybe_override_direct_reply_for_kb_grounded`** — If the model chose **`direct_reply`** but the latest line names the candidate, or is an immigration/work-auth follow-up in a thread that already mentions the candidate (or uses second-person for that topic), the server switches to **`rag`** so the answer includes KB **citations** and **follow_up_questions** instead of replaying chat history.
 

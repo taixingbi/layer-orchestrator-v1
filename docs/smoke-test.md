@@ -121,7 +121,7 @@ curl -N -sS -X POST "http://192.168.86.179:30183/v1/rag/query" \
 Use this to evaluate rewrite/route behavior and deterministic checks without running the RAG phase.
 
 ```bash
-curl -sS -X POST "http://192.168.86.179:30184/orchestrator/eval/router" \
+curl -sS -X POST "http://192.168.86.179:30184/v1/orchestrator/eval/router" \
   -H "Content-Type: application/json" \
   -H "X-Session-Id: ses-123" \
   -H "X-Request-Id: req-router-1" \
@@ -238,12 +238,12 @@ If total processing exceeds `REQUEST_TIMEOUT_MS`, non-stream responses return `5
 
 ## Feedback
 
-`POST /feedback` records thumbs up/down on a prior answer. The handler always logs the event; it **forwards to LangSmith** only when `LANGCHAIN_API_KEY` or `LANGSMITH_API_KEY` is set and a run id is supplied. The server picks the LangSmith `run_id` in order: **`agent_graph_run_id`** (root graph run UUID from tracing, best match), **`trace_id`**, then **`request_id`**. LangSmith expects a real run UUID unless your project maps `trace_id` to that run.
+`POST /v1/feedback` records thumbs up/down on a prior answer. The handler always logs the event; it **forwards to LangSmith** only when `LANGCHAIN_API_KEY` or `LANGSMITH_API_KEY` is set and a run id is supplied. The server picks the LangSmith `run_id` in order: **`agent_graph_run_id`** (root graph run UUID from tracing, best match), **`trace_id`**, then **`request_id`**. LangSmith expects a real run UUID unless your project maps `trace_id` to that run.
 
 **Thumbs up** (correlate with the same `trace_id` / `request_id` you used on `/v1/orchestrator/answer`):
 
 ```bash
-curl -sS -X POST "http://192.168.86.179:30184/feedback" \
+curl -sS -X POST "http://192.168.86.179:30184/v1/feedback" \
   -H "Content-Type: application/json" \
   -d '{
     "trace_id": "req-123",
@@ -255,7 +255,7 @@ curl -sS -X POST "http://192.168.86.179:30184/feedback" \
 **Thumbs down** with optional `feedback_type` and `comment`:
 
 ```bash
-curl -sS -X POST "http://192.168.86.179:30184/feedback" \
+curl -sS -X POST "http://192.168.86.179:30184/v1/feedback" \
   -H "Content-Type: application/json" \
   -d '{
     "trace_id": "req-123",
@@ -271,7 +271,7 @@ curl -sS -X POST "http://192.168.86.179:30184/feedback" \
 **With LangSmith root run id** (from a non-stream or SSE `answer` event when tracing is enabled):
 
 ```bash
-curl -sS -X POST "http://192.168.86.179:30184/feedback" \
+curl -sS -X POST "http://192.168.86.179:30184/v1/feedback" \
   -H "Content-Type: application/json" \
   -d '{
     "agent_graph_run_id": "YOUR_LANGSMITH_ROOT_RUN_UUID",

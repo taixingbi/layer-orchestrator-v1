@@ -56,7 +56,7 @@ Each line matches what the router LLM sees in production:
 ```
 
 - **chosen** — built from gold `expected_route` (`rag` → `tool` + `user_profile`, etc.)
-- **rejected** — eval mismatch from result CSV, live `/orchestrator/eval/router`, or synthetic opposite route
+- **rejected** — eval mismatch from result CSV, live `/v1/orchestrator/eval/router`, or synthetic opposite route
 
 ## Gold CSV mapping
 
@@ -113,5 +113,5 @@ ROUTER_PROMPT_VERSION=router-v3.00 bash gold-test/run-router-eval.sh
 ## See also
 
 - [intent-router.md](../docs/intent-router.md) — router execution order
-- [schema-request-response.md](../docs/schema/schema-request-response.md) — `POST /orchestrator/eval/router`
+- [schema-request-response.md](../docs/schema/schema-request-response.md) — `POST /v1/orchestrator/eval/router`
 - [gold-test/readme.md](../gold-test/readme.md) — gold CSV format

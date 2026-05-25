@@ -60,7 +60,7 @@ The router **LLM is not invoked** on this path. Post-router helpers such as `_en
 
 ## API and gold tests
 
-- **`POST /orchestrator/eval/router`** returns `router.smalltalk_intent` when either small-talk path was used (`router.prompt_source` is `smalltalk_seed` or `smalltalk_pattern`). For **`injection_guard`**, `router.smalltalk_intent` is `null`. See [schema-request-response.md](schema-request-response.md) (`POST /orchestrator/eval/router`).
+- **`POST /v1/orchestrator/eval/router`** returns `router.smalltalk_intent` when either small-talk path was used (`router.prompt_source` is `smalltalk_seed` or `smalltalk_pattern`). For **`injection_guard`**, `router.smalltalk_intent` is `null`. See [schema-request-response.md](schema-request-response.md) (`POST /v1/orchestrator/eval/router`).
 - Gold inputs for seed-FAQ / small-talk rows: [`gold-test/data/router-gold-seed-faq.csv`](../gold-test/data/router-gold-seed-faq.csv). Prompt-injection / jailbreak smoke: [`gold-test/data/router-gold-hack.csv`](../gold-test/data/router-gold-hack.csv). Runner and columns: [`gold-test/README.md`](../gold-test/README.md).
 
 ## Router prompts

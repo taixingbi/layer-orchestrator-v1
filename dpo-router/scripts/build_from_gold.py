@@ -299,7 +299,7 @@ def _fetch_eval_decision(
     router_prompt_version: str,
     timeout_s: float,
 ) -> Optional[Dict[str, Any]]:
-    url = f"{orchestrator_url.rstrip('/')}/orchestrator/eval/router"
+    url = f"{orchestrator_url.rstrip('/')}/v1/orchestrator/eval/router"
     body = json.dumps(
         {
             "question": question,
@@ -475,7 +475,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument(
         "--fetch-live",
         action="store_true",
-        help="Call /orchestrator/eval/router for rejected when result CSV missing or mismatch",
+        help="Call /v1/orchestrator/eval/router for rejected when result CSV missing or mismatch",
     )
     parser.add_argument(
         "--orchestrator-url",

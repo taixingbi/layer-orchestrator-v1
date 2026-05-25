@@ -1,6 +1,6 @@
 # Gold test (router eval)
 
-Batch-evaluates the intent router: for each row in **`gold-test/data/*.csv`**, calls **`POST /orchestrator/eval/router`**, writes per-suite results under **`gold-test/result/`**, then builds **`result/router-eval-report-<ROUTER_PROMPT_VERSION>.md`** (for example **`result/router-eval-report-router-v1.00.md`** with the default prompt version).
+Batch-evaluates the intent router: for each row in **`gold-test/data/*.csv`**, calls **`POST /v1/orchestrator/eval/router`**, writes per-suite results under **`gold-test/result/`**, then builds **`result/router-eval-report-<ROUTER_PROMPT_VERSION>.md`** (for example **`result/router-eval-report-router-v1.00.md`** with the default prompt version).
 
 ## Requirements
 
@@ -79,5 +79,5 @@ Generated **`result/*.csv`** and the report are listed in **`.gitignore`**; re-r
 
 ## See also
 
-- API shape: **`docs/schema-request-response.md`** (`POST /orchestrator/eval/router`)
+- API shape: **`docs/schema-request-response.md`** (`POST /v1/orchestrator/eval/router`)
 - **Router DPO JSONL:** [`dpo-router/README.md`](../dpo-router/README.md) — preference pairs from these gold CSVs (+ eval results)

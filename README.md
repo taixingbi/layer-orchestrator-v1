@@ -2,7 +2,7 @@
 
 ## FastAPI Orchestrator
 
-FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …/v1/chat/completions`), **HTTP RAG**, and unified **`/v1/orchestrator/answer`** (`stream=true` for SSE). Send correlation ids on headers (`X-Request-Id`, `X-Session-Id`, `X-Trace-Id`). Optional **`conversation_id`** may be sent in the **`/v1/orchestrator/answer`** and **`/orchestrator/eval/router`** JSON body; if omitted or blank, the server assigns `conv_<uuidhex>` and returns **`is_new_conversation`: true**. See [schema-request-response.md](docs/schema/schema-request-response.md).
+FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …/v1/chat/completions`), **HTTP RAG**, and unified **`/v1/orchestrator/answer`** (`stream=true` for SSE). Send correlation ids on headers (`X-Request-Id`, `X-Session-Id`, `X-Trace-Id`). Optional **`conversation_id`** may be sent in the **`/v1/orchestrator/answer`** and **`/v1/orchestrator/eval/router`** JSON body; if omitted or blank, the server assigns `conv_<uuidhex>` and returns **`is_new_conversation`: true**. See [schema-request-response.md](docs/schema/schema-request-response.md).
 
 ## Layout
 
@@ -17,7 +17,7 @@ FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …
 
 ## Documentation
 
-- [Request & response schema](docs/schema/schema-request-response.md) — JSON bodies, headers, `/v1/orchestrator/answer`, `/orchestrator/eval/router`, SSE events, limits, `conversation_id`, and `is_new_conversation`.
+- [Request & response schema](docs/schema/schema-request-response.md) — JSON bodies, headers, `/v1/orchestrator/answer`, `/v1/orchestrator/eval/router`, SSE events, limits, `conversation_id`, and `is_new_conversation`.
 - [Response examples](docs/schema/schema-response-examples.md) — full GitHub and RAG smoke-test JSON envelopes.
 - [Conversation id](docs/conversation-id.md) — threading, resolution, logs, and propagation to gateway + RAG.
 - [Gateway inference](docs/gateway-inference.md) — chat completions URL, model, headers, `curl` example, and tool-calling note.
@@ -27,7 +27,7 @@ FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …
 - [Design](docs/design.md) — architecture, request flows, reliability loop, and trade-offs.
 - [Architecture flow](docs/architecture.md) — SSE sequence, tool dispatch, and sequence diagram.
 - [Smoke / cluster examples](docs/smoke-test.md) — health, orchestrator `curl`, limits, and eval snippets.
-- [Gold router eval](gold-test/readme.md) — batch CSV tests for `/orchestrator/eval/router` (optional CI / local harness).
+- [Gold router eval](gold-test/readme.md) — batch CSV tests for `/v1/orchestrator/eval/router` (optional CI / local harness).
 - [Router DPO dataset](dpo-router/README.md) — build `train.jsonl` / `val.jsonl` for intent-router fine-tuning from gold CSVs.
 
 ## Setup
@@ -162,7 +162,7 @@ Submit feedback on an agent response. The server tries, in order: **`agent_graph
 **Thumbs up (with trace_id):**
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/feedback \
+curl -s -X POST http://127.0.0.1:8000/v1/feedback \
   -H "Content-Type: application/json" \
   -d '{"trace_id":"12345678","rating":"thumbs_up"}'
 ```
@@ -170,7 +170,7 @@ curl -s -X POST http://127.0.0.1:8000/feedback \
 **Thumbs down (with type and comment):**
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/feedback \
+curl -s -X POST http://127.0.0.1:8000/v1/feedback \
   -H "Content-Type: application/json" \
   -d '{
     "trace_id": "12345678",

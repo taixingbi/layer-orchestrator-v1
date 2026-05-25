@@ -120,7 +120,7 @@ Phase `state` events are **internal only** (structured logs, Prometheus, non-str
 | Gateway tool-calling quirks | Direct HTTP RAG / MCP dispatch instead of LangGraph tool loops |
 | Unobservable failures | SSE lifecycle + structured JSON logs + `/metrics` |
 | Weak retrieval queries | Router rewrites to a standalone search query |
-| User feedback disconnected | `trace_id` / `request_id` on `/feedback` |
+| User feedback disconnected | `trace_id` / `request_id` on `/v1/feedback` |
 
 ---
 
@@ -163,7 +163,7 @@ sequenceDiagram
   API-->>Client: SSE {type:"done"}
 
   opt user provides feedback
-    Client->>API: POST /feedback (trace_id or request_id, rating)
+    Client->>API: POST /v1/feedback (trace_id or request_id, rating)
     API->>LangSmith: create_feedback (when configured)
   end
 ```

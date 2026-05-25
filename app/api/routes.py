@@ -162,7 +162,7 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
         return JSONResponse(result, status_code=status_code)
 
 
-@router.post("/orchestrator/eval/router")
+@v1_router.post("/orchestrator/eval/router")
 async def orchestrator_eval_router(request: Request):
     """Evaluate intent router decision only (no tool execution)."""
     raw_bytes = await request.body()
@@ -243,7 +243,7 @@ async def orchestrator_eval_router(request: Request):
         }
 
 
-@router.post("/feedback")
+@v1_router.post("/feedback")
 async def submit_feedback(body: FeedbackBody):
     """Submit feedback on an agent response."""
     if body.feedback_type and body.feedback_type not in FEEDBACK_TYPES:

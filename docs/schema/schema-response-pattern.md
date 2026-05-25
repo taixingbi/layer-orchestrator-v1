@@ -62,42 +62,61 @@ curl -N -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
 
 ```json
 {
-  "request": {
-    "type": "request_id",
-    "session_id": "ses-123",
+  "meta": {
     "request_id": "req-123",
+    "session_id": "ses-123",
     "trace_id": "req-123",
     "conversation_id": "conv-smoke-1",
-    "is_new_conversation": false
-  },
-
-  "rewrite": {
-    "type": "rewrite",
-    "text": "in app of huntai, what is orchestrator design?"
-  },
-
-  "route": {
-    "type": "route",
-    "route": "tool",
-    "route_detail": {
-      "type": "tool",
-      "name": "github_search",
-      "confidence": 0.99,
-      "reason": "Deterministic: HuntAI/layer repo or gateway architecture question"
+    "is_new_conversation": false,
+    "user": {
+      "id": "taixing",
+      "roles": "hr",
+      "groups": "engineering",
+      "teams": "rag-platform"
     },
-    "route_source": "deterministic_rule",
-    "text": "in app of huntai, what is orchestrator design?"
+    "route": {
+      "type": "tool",
+      "tool": "github_search",
+      "confidence": 0.99,
+      "reason": "Deterministic: HuntAI/layer repo or gateway architecture question",
+      "source": "deterministic_rule"
+    },
+    "tool": {
+      "name": "github_search",
+      "type": "github",
+      "version": "v1",
+      "key": "tool_github_search"
+    },
+    "rewrite": "in app of huntai, what is orchestrator design?"
   },
-
-  "stream": {
-    "answer_delta_count": 124,
-
-    "merged_text": "- The orchestrator in HuntAI is designed to manage and route requests to various AI services such as chat completions, embeddings, and reranking [4].\n- It supports HTTP chat completions, RAG queries, and a unified `/v1/orchestrator/answer` endpoint for both streaming and non-streaming responses [4].\n- The architecture involves a FastAPI service that handles requests, applies load-aware routing, and communicates with backend services like vLLM for inference [4].\n- The orchestrator uses correlation IDs for tracking requests and supports optional conversation IDs for reranking tasks [4].\n- Detailed documentation for the request and response schema is available in the repository [4]."
-  },
-
+  "stream": [
+    {
+      "type": "request_id",
+      "session_id": "ses-123",
+      "request_id": "req-123",
+      "trace_id": "req-123",
+      "conversation_id": "conv-smoke-1",
+      "is_new_conversation": false
+    },
+    {
+      "type": "rewrite",
+      "text": "in app of huntai, what is orchestrator design?"
+    },
+    {
+      "type": "route",
+      "route": "tool",
+      "route_detail": {
+        "type": "tool",
+        "name": "github_search",
+        "confidence": 0.99,
+        "reason": "Deterministic: HuntAI/layer repo or gateway architecture question"
+      },
+      "route_source": "deterministic_rule",
+      "text": "in app of huntai, what is orchestrator design?"
+    }
+  ],
   "answer": {
-    "text": "- The orchestrator in HuntAI is designed to manage and route requests to various AI services such as chat completions, embeddings, and reranking [4].\n- It supports HTTP chat completions, RAG queries, and a unified `/v1/orchestrator/answer` endpoint for both streaming and non-streaming responses [4].\n- The architecture involves a FastAPI service that handles requests, applies load-aware routing, and communicates with backend services like vLLM for inference [4].\n- The orchestrator uses correlation IDs for tracking requests and supports optional conversation IDs for reranking tasks [4].\n- Detailed documentation for the request and response schema is available in the repository [4].",
-
+    "text": "- The orchestrator design is described in the README of [4] layer-orchestrator-v1.\n- It acts as an HTTP chat completions service via `POST /v1/chat/completions`.\n- Supports HTTP RAG (Retrieval-Augmented Generation).\n- Provides a unified `/v1/orchestrator/answer` endpoint with optional SSE support.\n- Handles correlation IDs in headers like `X-Request-Id`, `X-Session-Id`, and `X-Trace-Id`.",
     "citations": [
       {
         "cite_id": 1,
@@ -145,82 +164,42 @@ curl -N -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
       }
     ]
   },
-
   "follow_up_questions": [
-    "What specific backend services does the orchestrator communicate with?",
-    "Can you provide more details on how the orchestrator applies load-aware routing?",
-    "Is there any particular tool or library used for managing correlation IDs in the orchestrator?"
+    "What are the main components of the orchestrator design?",
+    "Can you explain how the orchestrator handles HTTP requests?",
+    "Is there any specific configuration needed for SSE support?"
   ],
-
-  "meta": {
-    "request_id": "req-123",
-    "session_id": "ses-123",
-    "trace_id": "req-123",
-    "conversation_id": "conv-smoke-1",
-    "is_new_conversation": false,
-
-    "user": {
-      "id": "taixing",
-      "roles": "hr",
-      "groups": "engineering",
-      "teams": "rag-platform"
-    },
-
-    "route": {
-      "type": "tool",
-      "tool": "github_search",
-      "confidence": 0.99,
-      "reason": "Deterministic: HuntAI/layer repo or gateway architecture question",
-      "source": "deterministic_rule"
-    },
-
-    "tool": {
-      "name": "github_search",
-      "type": "github",
-      "version": "v1",
-      "key": "tool_github_search"
-    },
-
-    "rewrite": "in app of huntai, what is orchestrator design?"
-  },
-
   "latency_ms": {
-    "total": 8071.24,
-
+    "total": 7621.55,
     "intent_router": {
-      "total": 1.55
+      "total": 1.48
     },
-
     "tool_github_search": {
-      "retrieve_rerank": 3970,
-      "chat": 2897,
-      "follow_up_chat": 1138,
-      "total": 8013
+      "retrieve_rerank": 3770,
+      "chat": 2917,
+      "follow_up_chat": 887,
+      "total": 7586
     }
   },
-
   "usage": {
     "total": {
-      "prompt_tokens": 338,
-      "completion_tokens": 53,
-      "total_tokens": 391
+      "prompt_tokens": 307,
+      "completion_tokens": 42,
+      "total_tokens": 349
     },
-
     "tool_github_search": {
       "total": {
-        "prompt_tokens": 338,
-        "completion_tokens": 53,
-        "total_tokens": 391
+        "prompt_tokens": 307,
+        "completion_tokens": 42,
+        "total_tokens": 349
       }
     }
   },
-
   "status": {
     "ok": true,
     "state": "completed",
     "code": "ok"
   },
-
   "type": "done"
 }
 ```
@@ -256,78 +235,6 @@ curl -N -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
 
 ```json
 {
-  "request": {
-    "type": "request_id",
-    "session_id": "ses-123",
-    "request_id": "req-123",
-    "trace_id": "req-123",
-    "conversation_id": "conv-smoke-1",
-    "is_new_conversation": false
-  },
-  "rewrite": {
-    "type": "rewrite",
-    "text": "taixing visa status in us"
-  },
-  "route": {
-    "type": "route",
-    "route": "tool",
-    "route_detail": {
-      "type": "tool",
-      "name": "user_profile",
-      "confidence": 1.0,
-      "reason": "Needs Taixing Bi-specific facts"
-    },
-    "route_source": "llm_router",
-    "text": "taixing visa status in us"
-  },
-  "stream": {
-    "answer_delta_count": 26,
-    "answer_delta_text": [
-      "Ta",
-      "ix",
-      "ing",
-      " Bi",
-      "'s",
-      " visa",
-      " status",
-      " in",
-      " the",
-      " US",
-      " is",
-      " H",
-      "4",
-      " E",
-      "AD",
-      ",",
-      " and",
-      " there",
-      " is",
-      " no",
-      " visa",
-      " sponsorship",
-      " required",
-      " [",
-      "1",
-      "]."
-    ],
-    "merged_text": "Taixing Bi's visa status in the US is H4 EAD, and there is no visa sponsorship required [1]."
-  },
-  "answer": {
-    "text": "Taixing Bi's visa status in the US is H4 EAD, and there is no visa sponsorship required [1].",
-    "citations": [
-      {
-        "cite_id": 1,
-        "chunk_id": "1607b45e-1c07-5c29-975d-bbf47ef3129c",
-        "source": "personal_profile",
-        "text": "Q: What is Taixing Bi's visa status / work authorization?\nA: H4 EAD. No visa sponsorship required."
-      }
-    ]
-  },
-  "follow_up_questions": [
-    "Can Taixing apply for a different type of visa?",
-    "Are there any restrictions on Taixing's job search while holding an H4 EAD?",
-    "What are the next steps for Taixing to use the H4 EAD for employment?"
-  ],
   "meta": {
     "request_id": "req-123",
     "session_id": "ses-123",
@@ -355,24 +262,66 @@ curl -N -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
     },
     "rewrite": "taixing visa status in us"
   },
+  "stream": [
+    {
+      "type": "request_id",
+      "session_id": "ses-123",
+      "request_id": "req-123",
+      "trace_id": "req-123",
+      "conversation_id": "conv-smoke-1",
+      "is_new_conversation": false
+    },
+    {
+      "type": "rewrite",
+      "text": "taixing visa status in us"
+    },
+    {
+      "type": "route",
+      "route": "tool",
+      "route_detail": {
+        "type": "tool",
+        "name": "user_profile",
+        "confidence": 1.0,
+        "reason": "Needs Taixing Bi-specific facts"
+      },
+      "route_source": "llm_router",
+      "text": "taixing visa status in us"
+    }
+  ],
+  "answer": {
+    "text": "Taixing Bi's visa status in the US is H4 EAD, and there is no need for visa sponsorship [1].",
+    "citations": [
+      {
+        "cite_id": 1,
+        "chunk_id": "1607b45e-1c07-5c29-975d-bbf47ef3129c",
+        "source": "personal_profile",
+        "text": "Q: What is Taixing Bi's visa status / work authorization?\nA: H4 EAD. No visa sponsorship required."
+      }
+    ]
+  },
+  "follow_up_questions": [
+    "Can Taixing Bi switch to a different visa type in the future?",
+    "Does Taixing Bi need to renew the H4 EAD periodically?",
+    "What are the requirements for maintaining H4 EAD status?"
+  ],
   "latency_ms": {
-    "total": 4893.61,
+    "total": 5078.02,
     "intent_router": {
-      "total": 2018.53
+      "total": 2276.61
     },
     "tool_rag": {
-      "embed": 86,
-      "retrieve_rerank": 154,
-      "chat": 620,
-      "follow_up_chat": 1988,
-      "total": 2856
+      "embed": 97,
+      "retrieve_rerank": 177,
+      "chat": 638,
+      "follow_up_chat": 1864,
+      "total": 2784
     }
   },
   "usage": {
     "total": {
-      "prompt_tokens": 1257,
-      "completion_tokens": 166,
-      "total_tokens": 1423
+      "prompt_tokens": 1258,
+      "completion_tokens": 162,
+      "total_tokens": 1420
     },
     "intent_router": {
       "prompt_tokens": 516,
@@ -383,18 +332,18 @@ curl -N -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
       "type": "usage",
       "chat": {
         "prompt_tokens": 319,
-        "completion_tokens": 27,
-        "total_tokens": 346
+        "completion_tokens": 28,
+        "total_tokens": 347
       },
       "follow_up_chat": {
-        "prompt_tokens": 422,
-        "completion_tokens": 85,
-        "total_tokens": 507
+        "prompt_tokens": 423,
+        "completion_tokens": 80,
+        "total_tokens": 503
       },
       "total": {
-        "prompt_tokens": 741,
-        "completion_tokens": 112,
-        "total_tokens": 853
+        "prompt_tokens": 742,
+        "completion_tokens": 108,
+        "total_tokens": 850
       }
     }
   },
@@ -437,35 +386,6 @@ curl -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
 
 ```json
 {
-  "request": {
-    "type": "request_id",
-    "session_id": "ses-123",
-    "request_id": "req-123",
-    "trace_id": "req-123",
-    "conversation_id": "conv-smoke-1",
-    "is_new_conversation": false
-  },
-  "rewrite": {
-    "type": "rewrite",
-    "text": "what is ai llm?"
-  },
-  "route": {
-    "type": "route",
-    "route": "direct_reply",
-    "route_detail": {
-      "type": "internal_intent",
-      "name": "help",
-      "confidence": 1.0,
-      "reason": "General knowledge about AI terminology"
-    },
-    "route_source": "llm_router",
-    "text": "what is ai llm?"
-  },
-  "answer": {
-    "text": "AI LLM refers to Artificial Intelligence Large Language Model, which is a type of machine learning model designed to understand and generate human-like text based on the input it receives.",
-    "citations": []
-  },
-  "follow_up_questions": [],
   "meta": {
     "request_id": "req-123",
     "session_id": "ses-123",
@@ -482,14 +402,47 @@ curl -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
       "type": "internal_intent",
       "intent": "help",
       "confidence": 1.0,
-      "source": "llm_router",
-      "reason": "General knowledge about AI terminology"
+      "reason": "General knowledge about AI terminology",
+      "source": "llm_router"
     },
     "rewrite": "what is ai llm?"
   },
+  "stream": [
+    {
+      "type": "request_id",
+      "session_id": "ses-123",
+      "request_id": "req-123",
+      "trace_id": "req-123",
+      "conversation_id": "conv-smoke-1",
+      "is_new_conversation": false
+    },
+    {
+      "type": "rewrite",
+      "text": "what is ai llm?"
+    },
+    {
+      "type": "route",
+      "route": "direct_reply",
+      "route_detail": {
+        "type": "internal_intent",
+        "name": "help",
+        "confidence": 1.0,
+        "reason": "General knowledge about AI terminology"
+      },
+      "route_source": "llm_router",
+      "text": "what is ai llm?"
+    }
+  ],
+  "answer": {
+    "text": "AI LLM refers to Artificial Intelligence Large Language Model, which is a type of machine learning model designed to understand and generate human-like text based on the input it receives.",
+    "citations": []
+  },
+  "follow_up_questions": [],
   "latency_ms": {
-    "total": 1742.95,
-    "intent_router": { "total": 1741.4 }
+    "total": 1809.68,
+    "intent_router": {
+      "total": 1808.07
+    }
   },
   "usage": {
     "total": {
