@@ -29,7 +29,7 @@ app/
 
 - `app/main.py`  
   FastAPI entrypoint. Exposes:
-  - `POST /orchestrator/answer` (set `stream=true` for SSE, default aggregated JSON)
+  - `POST /v1/orchestrator/answer` (set `stream=true` for SSE, default aggregated JSON)
   - `POST /orchestrator/eval/router`
   - `POST /feedback`
   - `GET /health` (liveness; config only)
@@ -63,7 +63,7 @@ app/
 - `app/observability/`  
   Structured JSON logging, request context, Prometheus metrics, token usage, LangSmith feedback.
 
-## Primary Flow: `/orchestrator/answer`
+## Primary Flow: `/v1/orchestrator/answer`
 
 Field-by-field request and response schema: **[schema-request-response.md](schema-request-response.md)** (includes optional body **`conversation_id`**, effective id and **`is_new_conversation`** on responses and the first SSE event). Threading, logging, and downstream headers are summarized in **[conversation-id.md](conversation-id.md)**.
 
@@ -89,13 +89,13 @@ When the router selects `user_profile`, the pipeline calls RAG directly:
 - **Default:** `app/tools/user_profile.py` → MCP `rag_query` with `stream: true` when `MCP_RAG_BASE_URL` is set (`USE_MCP_RAG=true`, default).
 - **HTTP fallback:** `USE_MCP_RAG=false` → `query_rag_http_with_meta` in `app/clients/rag_http.py` (single JSON response, no token streaming).
 
-With MCP + `stream=true` on `/orchestrator/answer`, the orchestrator forwards **`answer_delta`** SSE events as tokens arrive, then a final **`answer`** with citations and usage.
+With MCP + `stream=true` on `/v1/orchestrator/answer`, the orchestrator forwards **`answer_delta`** SSE events as tokens arrive, then a final **`answer`** with citations and usage.
 
 The user-facing `answer` is the RAG service response text. No orchestrator answer LLM runs after retrieval.
 
 ## Data Contracts
 
-### SSE events (`/orchestrator/answer` with `stream=true`)
+### SSE events (`/v1/orchestrator/answer` with `stream=true`)
 
 **Wire events** (client-visible):
 

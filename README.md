@@ -2,7 +2,7 @@
 
 ## FastAPI Orchestrator
 
-FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …/v1/chat/completions`), **HTTP RAG**, and unified **`/orchestrator/answer`** (`stream=true` for SSE). Send correlation ids on headers (`X-Request-Id`, `X-Session-Id`, `X-Trace-Id`). Optional **`conversation_id`** may be sent in the **`/orchestrator/answer`** and **`/orchestrator/eval/router`** JSON body; if omitted or blank, the server assigns `conv_<uuidhex>` and returns **`is_new_conversation`: true**. See [schema-request-response.md](docs/schema/schema-request-response.md).
+FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …/v1/chat/completions`), **HTTP RAG**, and unified **`/v1/orchestrator/answer`** (`stream=true` for SSE). Send correlation ids on headers (`X-Request-Id`, `X-Session-Id`, `X-Trace-Id`). Optional **`conversation_id`** may be sent in the **`/v1/orchestrator/answer`** and **`/orchestrator/eval/router`** JSON body; if omitted or blank, the server assigns `conv_<uuidhex>` and returns **`is_new_conversation`: true**. See [schema-request-response.md](docs/schema/schema-request-response.md).
 
 ## Layout
 
@@ -17,7 +17,7 @@ FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …
 
 ## Documentation
 
-- [Request & response schema](docs/schema/schema-request-response.md) — JSON bodies, headers, `/orchestrator/answer`, `/orchestrator/eval/router`, SSE events, limits, `conversation_id`, and `is_new_conversation`.
+- [Request & response schema](docs/schema/schema-request-response.md) — JSON bodies, headers, `/v1/orchestrator/answer`, `/orchestrator/eval/router`, SSE events, limits, `conversation_id`, and `is_new_conversation`.
 - [Response examples](docs/schema/schema-response-examples.md) — full GitHub and RAG smoke-test JSON envelopes.
 - [Conversation id](docs/conversation-id.md) — threading, resolution, logs, and propagation to gateway + RAG.
 - [Gateway inference](docs/gateway-inference.md) — chat completions URL, model, headers, `curl` example, and tool-calling note.
@@ -65,7 +65,7 @@ Copy or create `.env` at the **project root** (loaded by `app/config.py`). Typic
 | `TAVILY_SEARCH_DEPTH` | Tavily search depth (default: `advanced`) |
 | `TAVILY_MAX_RESULTS` | Max Tavily results (default: `5`) |
 | `ROUTER_PROMPT_VERSION` | Intent router prompt file id under `app/prompts/` (default: `router-v3.00`) |
-| `MAX_REQUEST_BODY_MB` | Max request body size for `/orchestrator/answer` (default: `1`) |
+| `MAX_REQUEST_BODY_MB` | Max request body size for `/v1/orchestrator/answer` (default: `1`) |
 | `MAX_HISTORY_MESSAGES` | Max `history` items accepted per answer request (recommended `30-50`, default: `50`) |
 | `MAX_QUESTION_CHARS` | Max `question` length in characters (default: `8000`, about 2k tokens) |
 | `MAX_CONTEXT_CHARS` | Max total chars across `question` + all `history.content` + effective `conversation_id` (after optional server assignment; default: `120000`) |
@@ -74,6 +74,7 @@ Copy or create `.env` at the **project root** (loaded by `app/config.py`). Typic
 | `MAX_CONCURRENT_DOWNSTREAM_CALLS` | Max concurrent downstream tool/RAG executions (default: `32`; set `0` to disable cap) |
 | `TOOLS_TIMEOUT_S` | Timeout for the HTTP RAG client (seconds; default: `60`) |
 | `READINESS_TIMEOUT_S` | Timeout for `GET /ready` outbound probes to LLM and RAG (seconds; default: `5`) |
+| `READINESS_RAG_QUESTION` | Probe question for RAG on `GET /ready` (default: `.`) |
 | `INVOKE_TIMEOUT_S` | Legacy LangGraph invoke timeout (seconds; default: `120`; unused by default pipeline) |
 | `LOG_LEVEL` | Logging level (default: `INFO`) |
 | `LOG_TIMEZONE` | IANA timezone for log timestamps (default: `America/New_York`) |
@@ -124,7 +125,7 @@ Exposes HTTP and pipeline metrics including request counts, latency histograms (
 ## Orchestrator (SSE with `stream=true`)
 
 ```bash
-curl -N -s -X POST http://127.0.0.1:8000/orchestrator/answer \
+curl -N -s -X POST http://127.0.0.1:8000/v1/orchestrator/answer \
   -H "Content-Type: application/json" \
   -H "X-Session-Id: 123456" \
   -H "X-Request-Id: 12345678" \
@@ -141,7 +142,7 @@ curl -N -s -X POST http://127.0.0.1:8000/orchestrator/answer \
 Uses the same internal streaming pipeline; the endpoint aggregates events into one JSON response.
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/orchestrator/answer \
+curl -s -X POST http://127.0.0.1:8000/v1/orchestrator/answer \
   -H "Content-Type: application/json" \
   -H "X-Session-Id: 123456" \
   -H "X-Request-Id: 12345678" \

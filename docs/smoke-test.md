@@ -33,7 +33,7 @@ curl -sS "http://192.168.86.179:30184/metrics"
 Returns one aggregated JSON object. The pipeline uses a single **intent/rewrite router** LLM (`latency_ms.intent_router`) unless a **server short-circuit** applies (prompt-injection guard or empty-history small-talk; see [intent-router.md](intent-router.md)), then either returns an immediate `answer` (routes `direct_reply`, `clarify`, `reject`) or runs RAG when `route` is `rag`. The `route` field is lowercase (`rag`, not `RAG`). Optional **`conversation_id`** in the JSON body selects the thread id; if omitted or whitespace, the server assigns `conv_<uuidhex>` and sets **`is_new_conversation`**. The response always includes the effective **`conversation_id`** and **`is_new_conversation`**.
 
 ```bash
-curl -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
+curl -sS -X POST "http://192.168.86.179:30184/v1/orchestrator/answer" \
   -H "Content-Type: application/json" \
   -H "X-Session-Id: ses-123" \
   -H "X-Request-Id: req-123" \
@@ -53,7 +53,7 @@ curl -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
 Prior turns are `user` / `assistant` pairs; the latest user message is `question`. The router uses history in one LLM call to produce a standalone `rewritten_question` and `route`; RAG runs only when `route` is `rag`.
 
 ```bash
-curl -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
+curl -sS -X POST "http://192.168.86.179:30184/v1/orchestrator/answer" \
   -H "Content-Type: application/json" \
   -H "X-Session-Id: ses-123" \
   -H "X-Request-Id: req-124" \
@@ -76,7 +76,7 @@ Optional user context (`X-User-Id`, `X-User-Roles`, `X-User-Groups`, `X-User-Tea
 SSE does **not** include `{"type":"state",...}` phase events (those are logs/metrics only). Expect `request_id`, `rewrite`, `route`, `answer`, then `done` with **`latency_ms`** and **`usage`** (same shape as non-stream). Phase breakdown is not streamed line-by-line; timings and token usage are aggregated on `done`.
 
 ```bash
-curl -N -sS -X POST "http://192.168.86.179:30184/orchestrator/answer" \
+curl -N -sS -X POST "http://192.168.86.179:30184/v1/orchestrator/answer" \
   -H "Content-Type: application/json" \
   -H "X-Session-Id: ses-123" \
   -H "X-Request-Id: req-123" \
@@ -174,7 +174,7 @@ print("size bytes:", __import__("os").path.getsize("/tmp/orch_big.json"))
 PY
 
 curl --max-time 10 -sS -o /tmp/orch_413_body.json -w "HTTP %{http_code}\n" \
-  -X POST "http://192.168.86.179:30184/orchestrator/answer" \
+  -X POST "http://192.168.86.179:30184/v1/orchestrator/answer" \
   -H "Content-Type: application/json" \
   --data-binary @/tmp/orch_big.json
 
@@ -187,7 +187,7 @@ cat /tmp/orch_413_body.json
 hist="$(jq -n '[range(0;51) | {role:"user", content:"hi"}]')"
 json="$(jq -n --arg q "test" --argjson h "$hist" '{question: $q, history: $h}')"
 curl -sS -o /tmp/orch_400_history.json -w "HTTP %{http_code}\n" \
-  -X POST "http://192.168.86.179:30184/orchestrator/answer" \
+  -X POST "http://192.168.86.179:30184/v1/orchestrator/answer" \
   -H "Content-Type: application/json" \
   --data "$json"
 cat /tmp/orch_400_history.json
@@ -225,7 +225,7 @@ print("total_context_chars:", total_context_chars)
 PY
 
 curl --max-time 10 -sS -o /tmp/orch_400_context.json -w "HTTP %{http_code}\n" \
-  -X POST "http://192.168.86.179:30184/orchestrator/answer" \
+  -X POST "http://192.168.86.179:30184/v1/orchestrator/answer" \
   -H "Content-Type: application/json" \
   --data-binary @/tmp/orch_context_big.json
 
@@ -240,7 +240,7 @@ If total processing exceeds `REQUEST_TIMEOUT_MS`, non-stream responses return `5
 
 `POST /feedback` records thumbs up/down on a prior answer. The handler always logs the event; it **forwards to LangSmith** only when `LANGCHAIN_API_KEY` or `LANGSMITH_API_KEY` is set and a run id is supplied. The server picks the LangSmith `run_id` in order: **`agent_graph_run_id`** (root graph run UUID from tracing, best match), **`trace_id`**, then **`request_id`**. LangSmith expects a real run UUID unless your project maps `trace_id` to that run.
 
-**Thumbs up** (correlate with the same `trace_id` / `request_id` you used on `/orchestrator/answer`):
+**Thumbs up** (correlate with the same `trace_id` / `request_id` you used on `/v1/orchestrator/answer`):
 
 ```bash
 curl -sS -X POST "http://192.168.86.179:30184/feedback" \

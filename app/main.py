@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from starlette.requests import Request
 
-from .api.routes import router
+from .api.routes import router, v1_router
 from .core.normalize import max_request_body_bytes
 
 _http_log = logging.getLogger("layer_orchestrator.http")
@@ -61,7 +61,7 @@ async def _http_request_logging_middleware(request: Request, call_next):
             latency_s=(time.perf_counter() - t0),
         )
         return response
-    if request.url.path == "/orchestrator/answer":
+    if request.url.path == "/v1/orchestrator/answer":
         raw_cl = (request.headers.get("content-length") or "").strip()
         if raw_cl:
             try:
@@ -148,3 +148,4 @@ async def _http_request_logging_middleware(request: Request, call_next):
 
 
 app.include_router(router)
+app.include_router(v1_router)

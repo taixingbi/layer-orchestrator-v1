@@ -1,4 +1,4 @@
-# Response examples (`/orchestrator/answer`)
+# Response examples (`/v1/orchestrator/answer`)
 
 Full JSON envelopes for common routes. **Terminal** `done` / `error` matches **`stream: false`** body shape (plus `"type": "done"` or `"type": "error"` on stream).
 
@@ -44,7 +44,7 @@ Examples below group stream events and the terminal **`done`** in one JSON objec
 **Question:** *"in app of huntai, what is orchestrator design?"*
 
 ```bash
-curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
+curl -N -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
   -H "Content-Type: application/json" \
   -H "X-Session-Id: ses-123" \
   -H "X-Request-Id: req-123" \
@@ -70,10 +70,12 @@ curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
     "conversation_id": "conv-smoke-1",
     "is_new_conversation": false
   },
+
   "rewrite": {
     "type": "rewrite",
     "text": "in app of huntai, what is orchestrator design?"
   },
+
   "route": {
     "type": "route",
     "route": "tool",
@@ -86,74 +88,139 @@ curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
     "route_source": "deterministic_rule",
     "text": "in app of huntai, what is orchestrator design?"
   },
+
+  "stream": {
+    "answer_delta_count": 124,
+
+    "merged_text": "- The orchestrator in HuntAI is designed to manage and route requests to various AI services such as chat completions, embeddings, and reranking [4].\n- It supports HTTP chat completions, RAG queries, and a unified `/v1/orchestrator/answer` endpoint for both streaming and non-streaming responses [4].\n- The architecture involves a FastAPI service that handles requests, applies load-aware routing, and communicates with backend services like vLLM for inference [4].\n- The orchestrator uses correlation IDs for tracking requests and supports optional conversation IDs for reranking tasks [4].\n- Detailed documentation for the request and response schema is available in the repository [4]."
+  },
+
   "answer": {
-    "text": "- The orchestrator in HuntAI manages and routes requests to AI services.\n- HTTP chat completions, RAG, and unified `/orchestrator/answer` with SSE.\n- Correlation IDs, config via `app/config.py`, FastAPI entry in `app/main.py`.",
+    "text": "- The orchestrator in HuntAI is designed to manage and route requests to various AI services such as chat completions, embeddings, and reranking [4].\n- It supports HTTP chat completions, RAG queries, and a unified `/v1/orchestrator/answer` endpoint for both streaming and non-streaming responses [4].\n- The architecture involves a FastAPI service that handles requests, applies load-aware routing, and communicates with backend services like vLLM for inference [4].\n- The orchestrator uses correlation IDs for tracking requests and supports optional conversation IDs for reranking tasks [4].\n- Detailed documentation for the request and response schema is available in the repository [4].",
+
     "citations": [
-      { "cite_id": 1, "source": "layer-mcp-github-v1 README" },
-      { "cite_id": 4, "source": "layer-orchestrator-v1 README" }
+      {
+        "cite_id": 1,
+        "source": "layer-mcp-github-v1 README"
+      },
+      {
+        "cite_id": 2,
+        "source": "layer-web-v1 README"
+      },
+      {
+        "cite_id": 3,
+        "source": "layer-gateway-api-v1 README"
+      },
+      {
+        "cite_id": 4,
+        "source": "layer-orchestrator-v1 README"
+      },
+      {
+        "cite_id": 5,
+        "source": "layer-rag-query-v1 README"
+      },
+      {
+        "cite_id": 6,
+        "source": "layer-gateway-inference-v1 README"
+      },
+      {
+        "cite_id": 7,
+        "source": "layer-gateway-embed-v1 README"
+      },
+      {
+        "cite_id": 8,
+        "source": "layer-gateway-reranker-v1 README"
+      },
+      {
+        "cite_id": 9,
+        "source": "layer-rag-ingest-v1 README"
+      },
+      {
+        "cite_id": 10,
+        "source": "k3s README"
+      },
+      {
+        "cite_id": 11,
+        "source": "layer-grafana-loki-central-logger README"
+      }
     ]
   },
+
   "follow_up_questions": [
-    "What specific backend services does the orchestrator call?",
-    "Can you provide more details on how the orchestrator handles retries and timeouts?",
-    "Where can I find environment configuration for the orchestrator?"
+    "What specific backend services does the orchestrator communicate with?",
+    "Can you provide more details on how the orchestrator applies load-aware routing?",
+    "Is there any particular tool or library used for managing correlation IDs in the orchestrator?"
   ],
+
   "meta": {
     "request_id": "req-123",
     "session_id": "ses-123",
     "trace_id": "req-123",
     "conversation_id": "conv-smoke-1",
     "is_new_conversation": false,
+
     "user": {
       "id": "taixing",
       "roles": "hr",
       "groups": "engineering",
       "teams": "rag-platform"
     },
+
     "route": {
       "type": "tool",
       "tool": "github_search",
       "confidence": 0.99,
-      "source": "deterministic_rule",
-      "reason": "Deterministic: HuntAI/layer repo or gateway architecture question"
+      "reason": "Deterministic: HuntAI/layer repo or gateway architecture question",
+      "source": "deterministic_rule"
     },
+
     "tool": {
       "name": "github_search",
       "type": "github",
       "version": "v1",
       "key": "tool_github_search"
     },
+
     "rewrite": "in app of huntai, what is orchestrator design?"
   },
+
   "latency_ms": {
-    "total": 8891.67,
-    "intent_router": { "total": 0.42 },
+    "total": 8071.24,
+
+    "intent_router": {
+      "total": 1.55
+    },
+
     "tool_github_search": {
-      "retrieve_rerank": 3493,
-      "chat": 4303,
-      "follow_up_chat": 1050,
-      "total": 8855
+      "retrieve_rerank": 3970,
+      "chat": 2897,
+      "follow_up_chat": 1138,
+      "total": 8013
     }
   },
+
   "usage": {
     "total": {
-      "prompt_tokens": 406,
-      "completion_tokens": 49,
-      "total_tokens": 455
+      "prompt_tokens": 338,
+      "completion_tokens": 53,
+      "total_tokens": 391
     },
+
     "tool_github_search": {
       "total": {
-        "prompt_tokens": 406,
-        "completion_tokens": 49,
-        "total_tokens": 455
+        "prompt_tokens": 338,
+        "completion_tokens": 53,
+        "total_tokens": 391
       }
     }
   },
+
   "status": {
     "ok": true,
     "state": "completed",
     "code": "ok"
   },
+
   "type": "done"
 }
 ```
@@ -171,7 +238,7 @@ curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
 **Question:** *"taixing visa status in us"*
 
 ```bash
-curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
+curl -N -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
   -H "Content-Type: application/json" \
   -H "X-Session-Id: ses-123" \
   -H "X-Request-Id: req-123" \
@@ -213,8 +280,40 @@ curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
     "route_source": "llm_router",
     "text": "taixing visa status in us"
   },
+  "stream": {
+    "answer_delta_count": 26,
+    "answer_delta_text": [
+      "Ta",
+      "ix",
+      "ing",
+      " Bi",
+      "'s",
+      " visa",
+      " status",
+      " in",
+      " the",
+      " US",
+      " is",
+      " H",
+      "4",
+      " E",
+      "AD",
+      ",",
+      " and",
+      " there",
+      " is",
+      " no",
+      " visa",
+      " sponsorship",
+      " required",
+      " [",
+      "1",
+      "]."
+    ],
+    "merged_text": "Taixing Bi's visa status in the US is H4 EAD, and there is no visa sponsorship required [1]."
+  },
   "answer": {
-    "text": "Taixing Bi's visa status in the US is H4 EAD, and there is no visa sponsorship required. [1]",
+    "text": "Taixing Bi's visa status in the US is H4 EAD, and there is no visa sponsorship required [1].",
     "citations": [
       {
         "cite_id": 1,
@@ -224,15 +323,10 @@ curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
       }
     ]
   },
-  "stream": {
-    "answer_delta_count": 27,
-    "answer_delta_text": ["Ta", "ix", "ing", " Bi", "'s", " visa", " status", " in", " the", " US", " is", " H", "4", " E", "AD", ",", " and", " there", " is", " no", " visa", " sponsorship", " required", ".", " [", "1", "]"],
-    "merged_text": "Taixing Bi's visa status in the US is H4 EAD, and there is no visa sponsorship required. [1]"
-  },
   "follow_up_questions": [
-    "Can Taixing apply for a different type of visa in the future?",
-    "What are the requirements for maintaining H4 EAD status?",
-    "Is there any additional documentation needed to maintain H4 EAD status?"
+    "Can Taixing apply for a different type of visa?",
+    "Are there any restrictions on Taixing's job search while holding an H4 EAD?",
+    "What are the next steps for Taixing to use the H4 EAD for employment?"
   ],
   "meta": {
     "request_id": "req-123",
@@ -250,8 +344,8 @@ curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
       "type": "tool",
       "tool": "user_profile",
       "confidence": 1.0,
-      "source": "llm_router",
-      "reason": "Needs Taixing Bi-specific facts"
+      "reason": "Needs Taixing Bi-specific facts",
+      "source": "llm_router"
     },
     "tool": {
       "name": "user_profile",
@@ -262,20 +356,22 @@ curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
     "rewrite": "taixing visa status in us"
   },
   "latency_ms": {
-    "total": 4988.74,
-    "intent_router": { "total": 2255.62 },
+    "total": 4893.61,
+    "intent_router": {
+      "total": 2018.53
+    },
     "tool_rag": {
-      "embed": 77,
-      "retrieve_rerank": 151,
-      "chat": 640,
-      "follow_up_chat": 1848,
-      "total": 2724
+      "embed": 86,
+      "retrieve_rerank": 154,
+      "chat": 620,
+      "follow_up_chat": 1988,
+      "total": 2856
     }
   },
   "usage": {
     "total": {
-      "prompt_tokens": 1258,
-      "completion_tokens": 165,
+      "prompt_tokens": 1257,
+      "completion_tokens": 166,
       "total_tokens": 1423
     },
     "intent_router": {
@@ -287,17 +383,17 @@ curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
       "type": "usage",
       "chat": {
         "prompt_tokens": 319,
-        "completion_tokens": 28,
-        "total_tokens": 347
+        "completion_tokens": 27,
+        "total_tokens": 346
       },
       "follow_up_chat": {
-        "prompt_tokens": 423,
-        "completion_tokens": 83,
-        "total_tokens": 506
+        "prompt_tokens": 422,
+        "completion_tokens": 85,
+        "total_tokens": 507
       },
       "total": {
-        "prompt_tokens": 742,
-        "completion_tokens": 111,
+        "prompt_tokens": 741,
+        "completion_tokens": 112,
         "total_tokens": 853
       }
     }
@@ -323,7 +419,7 @@ curl -N -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
 **Question:** *"what is AI llm?"*
 
 ```bash
-curl -sS -X POST http://192.168.86.179:30184/orchestrator/answer \
+curl -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
   -H "Content-Type: application/json" \
   -H "X-Session-Id: ses-123" \
   -H "X-Request-Id: req-123" \

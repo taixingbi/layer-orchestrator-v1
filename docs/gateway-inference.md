@@ -27,7 +27,7 @@ Chat calls may include:
 - `X-Conversation-Id` (effective thread id when the client supplied one or the orchestrator assigned `conv_<uuidhex>`)
 - `X-Is-New-Conversation` (`true` or `false` when `X-Conversation-Id` is sent; indicates whether the orchestrator minted a new id on this request)
 
-Values come from the incoming HTTP request when provided (e.g. `/orchestrator/answer`). The gateway may ignore or log them.
+Values come from the incoming HTTP request when provided (e.g. `/v1/orchestrator/answer`). The gateway may ignore or log them.
 
 ## Sanity check with `curl`
 

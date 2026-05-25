@@ -1,6 +1,6 @@
 # Tool response schema (MCP / upstream)
 
-JSON shape returned by **MCP tool services** (`rag_query`, `ask_repo`) on the terminal **`done`** event (or equivalent JSON body). The orchestrator normalizes this into [`/orchestrator/answer`](schema-request-response.md) — see [Mapping to orchestrator](#mapping-to-orchestrator) below.
+JSON shape returned by **MCP tool services** (`rag_query`, `ask_repo`) on the terminal **`done`** event (or equivalent JSON body). The orchestrator normalizes this into [`/v1/orchestrator/answer`](schema-request-response.md) — see [Mapping to orchestrator](#mapping-to-orchestrator) below.
 
 ---
 
@@ -48,7 +48,7 @@ Opaque phase-keyed objects. The orchestrator **passthroughs them unchanged** und
 
 ## Mapping to orchestrator client envelope
 
-| Upstream ([schema-tool.md](schema-tool.md)) | Client [`/orchestrator/answer`](schema-request-response.md) |
+| Upstream ([schema-tool.md](schema-tool.md)) | Client [`/v1/orchestrator/answer`](schema-request-response.md) |
 |---------------------------------------------|-------------------------------------------------------------|
 | `meta` (correlation, user, tool) | `meta` (plus orchestrator `route`, `rewrite`) |
 | `answer.text` | `answer.text` |

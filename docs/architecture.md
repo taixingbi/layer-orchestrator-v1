@@ -1,4 +1,4 @@
-## `/orchestrator/answer` — execution flow
+## `/v1/orchestrator/answer` — execution flow
 
 This endpoint provides a **streaming, reliability-first orchestration pipeline** for answering questions over Taixing-focused knowledge.
 
@@ -135,7 +135,7 @@ sequenceDiagram
   participant RAG as RAG HTTP / MCP
   participant LangSmith
 
-  Client->>API: POST /orchestrator/answer {"stream": true}
+  Client->>API: POST /v1/orchestrator/answer {"stream": true}
   API-->>Client: SSE {type:"request_id"}
 
   alt server short-circuit (intent / small-talk / injection)

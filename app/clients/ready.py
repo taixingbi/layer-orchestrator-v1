@@ -11,7 +11,23 @@ import httpx
 from ..config import gateway_extra_headers, normalized_llm_base_url, settings
 
 _READINESS_RID = "readiness-check"
-_READINESS_Q = "."
+_NO_CHUNKS_MARKER = "no chunks retrieved"
+
+
+def _rag_no_chunks_response(response: httpx.Response) -> bool:
+    """True when RAG is up but returned empty retrieval for the probe query."""
+    text = (response.text or "").strip()
+    if not text:
+        return False
+    try:
+        data = response.json()
+    except json.JSONDecodeError:
+        return _NO_CHUNKS_MARKER in text.lower()
+    if isinstance(data, dict):
+        detail = data.get("detail")
+        if isinstance(detail, str) and _NO_CHUNKS_MARKER in detail.lower():
+            return True
+    return _NO_CHUNKS_MARKER in text.lower()
 
 
 def _dep_ok(latency_ms: float) -> Dict[str, Any]:
@@ -97,7 +113,7 @@ async def check_rag_http(client: httpx.AsyncClient) -> Dict[str, Any]:
 
     url = f"{base}/v1/rag/query"
     payload = {
-        "question": _READINESS_Q,
+        "question": settings.readiness_rag_question,
         "collection_base": settings.rag_collection_base,
         "k": 1,
         "k_max": 1,
@@ -115,6 +131,8 @@ async def check_rag_http(client: httpx.AsyncClient) -> Dict[str, Any]:
         r = await client.post(url, headers=headers, json=payload)
         latency_ms = (time.perf_counter() - t0) * 1000
         if r.status_code >= 400:
+            if r.status_code == 400 and _rag_no_chunks_response(r):
+                return _dep_ok(latency_ms)
             return _dep_fail(
                 "error",
                 latency_ms,

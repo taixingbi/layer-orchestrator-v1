@@ -39,6 +39,7 @@ from ..schemas.request import (
 from ..schemas.route import legacy_route_from_detail, route_detail_to_dict, routes_equivalent
 
 router = APIRouter()
+v1_router = APIRouter(prefix="/v1")
 _http_log = logging.getLogger("layer_orchestrator.http")
 
 
@@ -93,7 +94,7 @@ def _router_eval_payload(
     }
 
 
-@router.post("/orchestrator/answer")
+@v1_router.post("/orchestrator/answer")
 async def orchestrator_answer(body: AnswerBody, request: Request):
     """Unified endpoint: stream=true returns SSE; stream=false returns aggregated JSON."""
     raw_bytes = await request.body()

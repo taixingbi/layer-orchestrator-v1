@@ -218,7 +218,7 @@ def build_answer_envelope(
     error: Optional[str] = None,
     extra_meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Full `/orchestrator/answer` body (non-stream and stream terminal events)."""
+    """Full `/v1/orchestrator/answer` body (non-stream and stream terminal events)."""
     out: Dict[str, Any] = {
         "meta": build_meta(
             request_id=request_id,

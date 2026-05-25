@@ -1,10 +1,10 @@
 # Request and response schema
 
-HTTP request bodies, headers, and JSON/SSE response shapes for this service. Correlation ids (`session_id`, `request_id`, `trace_id`) and user relay fields **must** be sent on headers only; sending them in the JSON body returns **400**. Optional **`conversation_id`** (client thread id) may be sent in the JSON body for `/orchestrator/answer` and `/orchestrator/eval/router`. If omitted, null, or whitespace-only after trim, the server assigns `conv_<uuidhex>` and sets **`is_new_conversation`: true**; otherwise the client id is used and **`is_new_conversation`** is **false**. Responses include the effective **`conversation_id`** and **`is_new_conversation`**. For threading, logs, and outbound gateway/RAG behavior, see **[conversation-id.md](conversation-id.md)**.
+HTTP request bodies, headers, and JSON/SSE response shapes for this service. Correlation ids (`session_id`, `request_id`, `trace_id`) and user relay fields **must** be sent on headers only; sending them in the JSON body returns **400**. Optional **`conversation_id`** (client thread id) may be sent in the JSON body for `/v1/orchestrator/answer` and `/orchestrator/eval/router`. If omitted, null, or whitespace-only after trim, the server assigns `conv_<uuidhex>` and sets **`is_new_conversation`: true**; otherwise the client id is used and **`is_new_conversation`** is **false**. Responses include the effective **`conversation_id`** and **`is_new_conversation`**. For threading, logs, and outbound gateway/RAG behavior, see **[conversation-id.md](conversation-id.md)**.
 
 ---
 
-## `POST /orchestrator/answer`
+## `POST /v1/orchestrator/answer`
 
 ### Headers (optional unless noted)
 
@@ -278,7 +278,7 @@ Same envelope where possible, plus top-level `error`:
 
 ---
 
-## `POST /orchestrator/answer` — stream (`stream: true`)
+## `POST /v1/orchestrator/answer` — stream (`stream: true`)
 
 Response: **SSE**, each line `data: <json>\n\n`.
 
@@ -302,7 +302,7 @@ Router-only evaluation endpoint. Runs rewrite/route logic and deterministic chec
 
 ### Headers (optional)
 
-Same correlation headers as `/orchestrator/answer`:
+Same correlation headers as `/v1/orchestrator/answer`:
 
 - `X-Session-Id`
 - `X-Request-Id`
@@ -323,7 +323,7 @@ Same correlation headers as `/orchestrator/answer`:
 }
 ```
 
-`history` items use the same shape as `/orchestrator/answer`: `{ "role": "user" | "assistant", "content": "string" }`.
+`history` items use the same shape as `/v1/orchestrator/answer`: `{ "role": "user" | "assistant", "content": "string" }`.
 
 When `expected_route` is set, the response includes `evaluation.route_match` and `evaluation.checks.route_match` comparing it to `decision.route`. When omitted, `evaluation.expected_route` and `evaluation.route_match` are `null` (no expectation); `checks.route_match` is still `true` (vacuous pass).
 
@@ -467,7 +467,9 @@ Returns the deployment version id (same value as `app_version` on `/health` — 
 
 ## `GET /ready`
 
-Readiness probe: calls the **LLM gateway** (`POST …/v1/chat/completions` with `max_tokens: 1`) and the **RAG service** (`POST …/v1/rag/query` with a minimal body). Uses `READINESS_TIMEOUT_S` (default `5`) per request.
+Readiness probe: calls the **LLM gateway** (`POST …/v1/chat/completions` with `max_tokens: 1`) and the **RAG service** (`POST …/v1/rag/query` with probe question from `READINESS_RAG_QUESTION`, default `"."`). Uses `READINESS_TIMEOUT_S` (default `5`) per request.
+
+RAG may return **HTTP 400** with `No chunks retrieved for this query` when the probe has no hits; that still counts as **healthy** (service reachable). Other **4xx/5xx** responses or transport errors mark RAG as failed.
 
 ### Response (`200` when both dependencies are healthy)
 

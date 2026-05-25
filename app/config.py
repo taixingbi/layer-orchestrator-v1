@@ -70,6 +70,7 @@ class Settings:
     tools_timeout_s: float = float(os.getenv("TOOLS_TIMEOUT_S", "60"))
     invoke_timeout_s: float = float(os.getenv("INVOKE_TIMEOUT_S", "120"))
     readiness_timeout_s: float = float(os.getenv("READINESS_TIMEOUT_S", "5"))
+    readiness_rag_question: str = (os.getenv("READINESS_RAG_QUESTION") or ".").strip() or "."
 
 
 settings = Settings()

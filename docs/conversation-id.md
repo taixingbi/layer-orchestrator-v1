@@ -1,10 +1,10 @@
 # `conversation_id`
 
-**What it is:** A thread id for your chat. Send it in the JSON body on `POST /orchestrator/answer` and `POST /orchestrator/eval/router`.
+**What it is:** A thread id for your chat. Send it in the JSON body on `POST /v1/orchestrator/answer` and `POST /orchestrator/eval/router`.
 
 **If you skip it or send only blanks:** The server assigns `conv_` + 32 hex chars and sets **`is_new_conversation`: true** in API responses. If you send a non-blank id, **`is_new_conversation`** is **false**.
 
-**Where you see it:** JSON response (or first SSE `request_id` event). **Structured logs** include top-level **`conversation_id`** (effective id for `/orchestrator/answer` and `/orchestrator/eval/router` on `http_request_complete`; otherwise from request context when bound).
+**Where you see it:** JSON response (or first SSE `request_id` event). **Structured logs** include top-level **`conversation_id`** (effective id for `/v1/orchestrator/answer` and `/orchestrator/eval/router` on `http_request_complete`; otherwise from request context when bound).
 
 ## Gateways (outbound design)
 
