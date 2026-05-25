@@ -51,10 +51,11 @@ def test_stream_done_matches_non_stream_envelope():
         intent_router={"prompt_tokens": 5, "completion_tokens": 1, "total_tokens": 6},
         tool_rag={"total": {"prompt_tokens": 90, "completion_tokens": 9, "total_tokens": 99}},
     )
+    acc.apply({"type": "answer_delta", "text": "answer body"})
     acc.apply(
         {
-            "type": "answer_delta",
-            "answer": {"text": "answer body", "citations": [{"doc_id": "d1"}]},
+            "type": "done",
+            "citations": [{"doc_id": "d1"}],
             "follow_up_questions": ["q1"],
             "usage": usage,
         }

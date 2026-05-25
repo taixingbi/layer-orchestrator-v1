@@ -14,7 +14,7 @@ Request/headers/limits: [schema-request-response.md](schema-request-response.md)
 
 ### Stream vs `done`
 
-During streaming, the server emits: `request_id` → `rewrite` → **`route`** → **`answer_delta`** (text chunks and/or a terminal chunk with `answer` / citations) → **`done`**.
+During streaming, the server emits: `request_id` → `rewrite` → **`route`** → **`answer_delta`** (`text` only) → **`done`** (full envelope with citations / usage).
 
 The **`route`** event always uses this shape (legacy flat `route` + nested `route_detail`):
 
@@ -630,11 +630,7 @@ curl -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
   },
   "answer_delta": {
     "type": "answer_delta",
-    "answer": {
-      "text": "Hello! How can I help you today with questions about Taixing Bi or your internal knowledge base?",
-      "citations": []
-    },
-    "follow_up_questions": []
+    "text": "Hello! How can I help you today with questions about Taixing Bi or your internal knowledge base?"
   },
   "latency_ms": {
     "total": 2.24,

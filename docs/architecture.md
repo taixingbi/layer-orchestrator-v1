@@ -68,18 +68,10 @@ Tool phases emit internal `state` events (`phase`: `rag` or `tool`) for logs, me
 ### 5. Final answer emission
 
 ```json
-{
-  "type": "answer_delta",
-  "answer": {
-    "text": "<final answer>",
-    "citations": []
-  },
-  "follow_up_questions": [],
-  "usage": {}
-}
+{ "type": "answer_delta", "text": "<answer text chunk or full reply>" }
 ```
 
-Text-only chunks use `{ "type": "answer_delta", "text": "<partial>" }`.
+Citations, `follow_up_questions`, and `usage` appear on **`done`** only.
 
 On the `rag` path, `text` is verbatim RAG-formatted retrieval output (no separate answer-synthesis LLM in the pipeline).
 

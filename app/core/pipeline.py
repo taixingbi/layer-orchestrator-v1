@@ -56,26 +56,8 @@ def _tool_stream_phase(tool_name: str) -> str:
     return "tool"
 
 
-def _answer_delta_event(
-    text: str,
-    *,
-    citations: Optional[List[Any]] = None,
-    follow_up_questions: Optional[List[Any]] = None,
-    usage: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """SSE text chunk, or terminal chunk with citations / follow-ups before `done`."""
-    if citations is not None or follow_up_questions is not None or usage is not None:
-        event: Dict[str, Any] = {
-            "type": "answer_delta",
-            "answer": {
-                "text": text,
-                "citations": list(citations) if citations is not None else [],
-            },
-            "follow_up_questions": list(follow_up_questions) if follow_up_questions is not None else [],
-        }
-        if usage is not None:
-            event["usage"] = usage
-        return event
+def _answer_delta_event(text: str) -> Dict[str, Any]:
+    """SSE answer text chunk only; citations / follow-ups / usage go on `done`."""
     return {"type": "answer_delta", "text": text}
 
 
@@ -106,6 +88,8 @@ async def _yield_request_complete_done(
     conversation_id: Optional[str] = None,
     is_new_conversation: bool = False,
     usage: Optional[Dict[str, Any]] = None,
+    citations: Optional[List[Any]] = None,
+    follow_up_questions: Optional[List[Any]] = None,
 ) -> AsyncIterator[dict]:
     done_ts = utc_now_iso()
     complete_state = state_event(
@@ -141,6 +125,10 @@ async def _yield_request_complete_done(
     }
     if usage is not None:
         done_event["usage"] = usage
+    if citations is not None:
+        done_event["citations"] = list(citations)
+    if follow_up_questions is not None:
+        done_event["follow_up_questions"] = list(follow_up_questions)
     yield done_event
 
 
@@ -343,7 +331,7 @@ async def stream_answer_query(
             answer_text = _internal_answer(route_detail, direct_answer=direct_answer)
             if route_detail.name in ("identity", "greeting", "help", "capabilities") and not answer_text:
                 answer_text = resolve_intent_answer(route_detail.name) or answer_text
-            yield _answer_delta_event(answer_text, usage=request_usage)
+            yield _answer_delta_event(answer_text)
             async for ev in _yield_request_complete_done(
                 t0,
                 request_id,
@@ -368,9 +356,12 @@ async def stream_answer_query(
                 metadata={"tool": route_detail.name},
             )
             delta_queue: asyncio.Queue[Optional[str]] = asyncio.Queue()
+            streamed_any = False
 
             def _emit_delta(chunk: str) -> None:
+                nonlocal streamed_any
                 if chunk:
+                    streamed_any = True
                     delta_queue.put_nowait(chunk)
 
             async def _tool_task() -> Tuple[str, List[Any], List[Any], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
@@ -438,12 +429,8 @@ async def stream_answer_query(
                 latency_ms=(time.perf_counter() - tool_started_perf) * 1000,
                 metadata=tool_meta,
             )
-            yield _answer_delta_event(
-                answer_text,
-                citations=citations,
-                follow_up_questions=follow_ups,
-                usage=request_usage,
-            )
+            if not streamed_any and (answer_text or "").strip():
+                yield _answer_delta_event(answer_text)
             async for ev in _yield_request_complete_done(
                 t0,
                 request_id,
@@ -452,6 +439,8 @@ async def stream_answer_query(
                 conversation_id=conv or None,
                 is_new_conversation=is_new_conversation,
                 usage=request_usage,
+                citations=citations,
+                follow_up_questions=follow_ups,
             ):
                 yield ev
             return

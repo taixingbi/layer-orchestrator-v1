@@ -172,7 +172,7 @@ Response: **SSE**, each line `data: <json>\n\n`.
 | `request_id` | Early correlation ids |
 | `rewrite` | `{ "type": "rewrite", "text": "..." }` |
 | `route` | `{ "type": "route", "route": "<legacy flat>", "route_detail": { ... }, "route_source": "...", "text": "<rewrite>" }` — see [schema-response-pattern.md](schema-response-pattern.md) |
-| `answer_delta` | Text chunk: `{ "type": "answer_delta", "text": "..." }`. Terminal chunk (optional): same `type` with `"answer": { "text", "citations" }`, `"follow_up_questions"`, optional `"usage"` before `done`. |
+| `answer_delta` | `{ "type": "answer_delta", "text": "..." }` only (text chunks; concatenated on the client or in terminal `done`) |
 | `done` | **Full response envelope** (see above) plus `"type": "done"` |
 | `error` | **Full envelope** with `status.ok: false`, plus `"type": "error"`, `"text"` |
 
