@@ -2,7 +2,7 @@
 
 ## FastAPI Orchestrator
 
-FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …/v1/chat/completions`), **HTTP RAG**, and unified **`POST /v1/orchestrator/answer`** (always **SSE**; wire events use **`answer_delta`** only). **`POST /v1/feedback`** is SSE; **`POST /v1/orchestrator/eval/router`** is JSON only. Send correlation ids on headers (`X-Request-Id`, `X-Session-Id`, `X-Trace-Id`). Optional **`conversation_id`** may be sent in the **`/v1/orchestrator/answer`** and **`/v1/orchestrator/eval/router`** JSON body; if omitted or blank, the server assigns `conv_<uuidhex>` and returns **`is_new_conversation`: true**. See [schema-request-response.md](docs/schema/schema-request-response.md).
+FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …/v1/chat/completions`), **HTTP RAG**, and unified **`POST /v1/orchestrator/answer`** (`stream` default **true** → SSE with **`answer_delta`**; `stream: false` → JSON). **`POST /v1/feedback`** is SSE; **`POST /v1/orchestrator/eval/router`** is JSON only. Send correlation ids on headers (`X-Request-Id`, `X-Session-Id`, `X-Trace-Id`). Optional **`conversation_id`** may be sent in the **`/v1/orchestrator/answer`** and **`/v1/orchestrator/eval/router`** JSON body; if omitted or blank, the server assigns `conv_<uuidhex>` and returns **`is_new_conversation`: true**. See [schema-request-response.md](docs/schema/schema-request-response.md).
 
 ## Layout
 
@@ -122,9 +122,9 @@ curl -s http://127.0.0.1:8000/metrics
 
 Exposes HTTP and pipeline metrics including request counts, latency histograms (for p50/p95/p99 via PromQL `histogram_quantile`), route decisions, router/RAG phase durations, and timeout counters.
 
-## Orchestrator (SSE)
+## Orchestrator (SSE, default)
 
-Always `text/event-stream`. Parse the terminal `{"type":"done",...}` event (or consume `rewrite` / `route` / `answer_delta` along the way).
+Omit `stream` or set `"stream": true`. Use `curl -N` and parse SSE events through terminal `{"type":"done",...}`.
 
 ```bash
 curl -N -s -X POST http://127.0.0.1:8000/v1/orchestrator/answer \
@@ -136,6 +136,23 @@ curl -N -s -X POST http://127.0.0.1:8000/v1/orchestrator/answer \
     "question": "what is taixing visa status?",
     "conversation_id": "conv-demo-1"
   }'
+```
+
+## Orchestrator (non-stream JSON)
+
+Set `"stream": false` for one JSON object (same shape as terminal SSE `done`, without `type`).
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/v1/orchestrator/answer \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: 123456" \
+  -H "X-Request-Id: 12345678" \
+  -H "X-Trace-Id: 12345678" \
+  -d '{
+    "question": "what is taixing visa status?",
+    "stream": false,
+    "conversation_id": "conv-demo-1"
+  }' | jq .
 ```
 
 ## Feedback (SSE)

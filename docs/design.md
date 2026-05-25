@@ -29,7 +29,7 @@ app/
 
 - `app/main.py`  
   FastAPI entrypoint. Exposes:
-  - `POST /v1/orchestrator/answer` (always SSE)
+  - `POST /v1/orchestrator/answer` (`stream` default `true` → SSE; `stream: false` → JSON)
   - `POST /v1/orchestrator/eval/router`
   - `POST /v1/feedback`
   - `GET /health` (liveness; config only)

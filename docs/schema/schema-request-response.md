@@ -35,7 +35,7 @@ Response includes `X-Request-Id` (middleware).
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `question` | string | — | Latest user message |
-| `stream` | boolean | `true` | **Ignored.** Response is always SSE (`text/event-stream`). |
+| `stream` | boolean | `true` | `true` → SSE (`text/event-stream`); `false` → single JSON object |
 | `history` | array | `[]` | Prior turns; each item `{ "role": "user" \| "assistant", "content": "string" }` |
 | `conversation_id` | string | `null` | Optional client-owned thread id (max 256 chars after trim). Blank → server assigns `conv_<uuidhex>`; see **`is_new_conversation`** on responses |
 
@@ -56,13 +56,14 @@ Violations and timeout behavior:
 
 - `413` when request body is too large.
 - `400` when question/history/context validation fails.
-- Stream emits an SSE `error` event and closes when request timeout or stream idle timeout is exceeded.
+- `504` for non-stream request timeout (`REQUEST_TIMEOUT_MS` exceeded).
+- Stream mode emits an SSE `error` event and closes when request timeout or stream idle timeout is exceeded.
 
 ---
 
-## Response envelope (terminal SSE `done` / `error`)
+## Response envelope (`stream: false` and terminal SSE `done` / `error`)
 
-The answer endpoint **always** streams SSE. The **final** `done` / `error` event uses the top-level client envelope (aligned with [tool upstream schema](schema-tool.md)). Intermediate events (`rewrite`, `route`, `answer_delta`) are optional; clients may use only `done` / `error`. Full skeleton and examples: [schema-response-pattern.md](schema-response-pattern.md).
+Non-stream JSON and the **final** SSE `done` / `error` event use the **same** top-level shape (aligned with [tool upstream schema](schema-tool.md)). Intermediate stream events (`rewrite`, `route`, `answer_delta`) are optional; clients may use only `done` / `error`. Full skeleton and examples: [schema-response-pattern.md](schema-response-pattern.md).
 
 ### Top-level fields
 
