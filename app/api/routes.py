@@ -24,7 +24,7 @@ from ..core.normalize import (
     validate_eval_router_body_limits,
 )
 from ..core.router import decision_to_route_detail, normalize_post_router, run_intent_rewrite_router
-from ..core.sse import SSE_HEADERS, answer_json, sse_stream_answer_gen
+from ..core.sse import SSE_HEADERS, answer_json, sse_feedback_gen, sse_stream_answer_gen
 from ..core.intent_router import RouterDecision
 from ..observability.feedback import FEEDBACK_TYPES, FeedbackBody, submit_langsmith_feedback
 from ..observability.metrics import inc_timeout, metrics_content_type, metrics_payload
@@ -96,7 +96,7 @@ def _router_eval_payload(
 
 @v1_router.post("/orchestrator/answer")
 async def orchestrator_answer(body: AnswerBody, request: Request):
-    """Unified endpoint: stream=true returns SSE; stream=false returns aggregated JSON."""
+    """Unified endpoint: stream=true (default) returns SSE; stream=false returns aggregated JSON."""
     raw_bytes = await request.body()
     conversation_id, is_new_conversation = resolve_effective_conversation_id(body.conversation_id)
     request.state.conversation_id = conversation_id
@@ -244,10 +244,22 @@ async def orchestrator_eval_router(request: Request):
 
 
 @v1_router.post("/feedback")
-async def submit_feedback(body: FeedbackBody):
-    """Submit feedback on an agent response."""
+async def submit_feedback(body: FeedbackBody, request: Request):
+    """Submit feedback on an agent response; always returns SSE."""
+    session_id, request_id, trace_id = header_ids(request)
     if body.feedback_type and body.feedback_type not in FEEDBACK_TYPES:
-        return {"status": "error", "message": f"feedback_type must be one of: {', '.join(sorted(FEEDBACK_TYPES))}"}
+        msg = f"feedback_type must be one of: {', '.join(sorted(FEEDBACK_TYPES))}"
+        return StreamingResponse(
+            sse_feedback_gen(
+                request_id=request_id,
+                session_id=session_id,
+                trace_id=trace_id,
+                status="error",
+                message=msg,
+            ),
+            media_type="text/event-stream",
+            headers=SSE_HEADERS,
+        )
     run_id_for_feedback = body.agent_graph_run_id or body.trace_id or body.request_id
     logging.getLogger("layer_orchestrator.feedback").info(
         "feedback_received",
@@ -268,7 +280,17 @@ async def submit_feedback(body: FeedbackBody):
             feedback_type=body.feedback_type,
             comment=body.comment,
         )
-    return {"status": "ok", "message": "Feedback received"}
+    return StreamingResponse(
+        sse_feedback_gen(
+            request_id=request_id,
+            session_id=session_id,
+            trace_id=trace_id,
+            status="ok",
+            message="Feedback received",
+        ),
+        media_type="text/event-stream",
+        headers=SSE_HEADERS,
+    )
 
 
 @router.get("/health")

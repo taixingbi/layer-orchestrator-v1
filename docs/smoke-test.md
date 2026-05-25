@@ -28,12 +28,29 @@ Use this for dashboards/alerts (request count, error rate, route count, p50/p95/
 curl -sS "http://192.168.86.179:30184/metrics"
 ```
 
-## Orchestrator (non-stream JSON)
+## Orchestrator (non-stream JSON, `stream: false`)
 
-Returns one aggregated JSON object. The pipeline uses a single **intent/rewrite router** LLM (`latency_ms.intent_router`) unless a **server short-circuit** applies (prompt-injection guard or empty-history small-talk; see [intent-router.md](intent-router.md)), then either returns an immediate `answer` (routes `direct_reply`, `clarify`, `reject`) or runs RAG when `route` is `rag`. The `route` field is lowercase (`rag`, not `RAG`). Optional **`conversation_id`** in the JSON body selects the thread id; if omitted or whitespace, the server assigns `conv_<uuidhex>` and sets **`is_new_conversation`**. The response always includes the effective **`conversation_id`** and **`is_new_conversation`**.
+Returns one aggregated JSON object (same envelope as terminal SSE `done`). Set `"stream": false` explicitly.
 
 ```bash
 curl -sS -X POST "http://192.168.86.179:30184/v1/orchestrator/answer" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: ses-123" \
+  -H "X-Request-Id: req-123" \
+  -H "X-Trace-Id: req-123" \
+  -d '{
+    "question": "what is taixing visa status in us?",
+    "stream": false,
+    "conversation_id": "conv-smoke-1"
+  }' | jq .
+```
+
+## Orchestrator (SSE, default)
+
+Omit `stream` or use `"stream": true`. Use `curl -N` and parse the final `{"type":"done",...}` event (or consume intermediate `rewrite` / `route` / `answer` / `answer_delta` events). Correlation ids go in **headers**; optional **`conversation_id`** in the body. SSE does **not** include `{"type":"state",...}` (logs/metrics only). Internal intents (`greeting`, `help`, …) emit one `answer` then `done` (no `answer_delta`). The pipeline uses a single **intent/rewrite router** LLM unless a **server short-circuit** applies (see [intent-router.md](intent-router.md)), then either returns an immediate `answer` or runs a tool route.
+
+```bash
+curl -N -sS -X POST "http://192.168.86.179:30184/v1/orchestrator/answer" \
   -H "Content-Type: application/json" \
   -H "X-Session-Id: ses-123" \
   -H "X-Request-Id: req-123" \
@@ -45,7 +62,7 @@ curl -sS -X POST "http://192.168.86.179:30184/v1/orchestrator/answer" \
   -d '{
     "question": "what is taixing visa status in us?",
     "conversation_id": "conv-smoke-1"
-  }' | jq .
+  }'
 ```
 
 ## Orchestrator with conversation `history` (follow-up question)
@@ -66,30 +83,6 @@ curl -sS -X POST "http://192.168.86.179:30184/v1/orchestrator/answer" \
       {"role": "assistant", "content": "Taixing has H4 EAD and does not need sponsorship."}
     ]
   }' | jq .
-```
-
-## Orchestrator (SSE with `stream=true`)
-
-`-N` turns off curl buffering so Server-Sent Events stream line-by-line.  
-`request_id`, `session_id`, and `trace_id` must be passed in **headers** (not in the JSON body). Optional **`conversation_id`** may be sent in the **body**; the first `{"type":"request_id",...}` event includes the effective **`conversation_id`** and **`is_new_conversation`**, and the same fields appear when the stream is aggregated to JSON.  
-Optional user context (`X-User-Id`, `X-User-Roles`, `X-User-Groups`, `X-User-Teams`) is forwarded to the RAG service on `POST /v1/rag/query`.  
-SSE does **not** include `{"type":"state",...}` phase events (those are logs/metrics only). Expect `request_id`, `rewrite`, `route`, `answer`, then `done` with **`latency_ms`** and **`usage`** (same shape as non-stream). Phase breakdown is not streamed line-by-line; timings and token usage are aggregated on `done`.
-
-```bash
-curl -N -sS -X POST "http://192.168.86.179:30184/v1/orchestrator/answer" \
-  -H "Content-Type: application/json" \
-  -H "X-Session-Id: ses-123" \
-  -H "X-Request-Id: req-123" \
-  -H "X-Trace-Id: req-123" \
-  -H "X-User-Id: taixing" \
-  -H "X-User-Roles: hr" \
-  -H "X-User-Groups: engineering" \
-  -H "X-User-Teams: rag-platform" \
-  -d '{
-    "question": "what is taixing visa status in us?",
-    "stream": true,
-    "conversation_id": "conv-smoke-1"
-  }'
 ```
 
 ## RAG direct (SSE-capable endpoint)
@@ -234,16 +227,16 @@ cat /tmp/orch_400_context.json
 
 ### Request timeout (`504`)
 
-If total processing exceeds `REQUEST_TIMEOUT_MS`, non-stream responses return `504` with an error body; SSE responses emit a timeout error event and close.
+If total processing exceeds `REQUEST_TIMEOUT_MS`, SSE emits a timeout `error` event and closes.
 
 ## Feedback
 
-`POST /v1/feedback` records thumbs up/down on a prior answer. The handler always logs the event; it **forwards to LangSmith** only when `LANGCHAIN_API_KEY` or `LANGSMITH_API_KEY` is set and a run id is supplied. The server picks the LangSmith `run_id` in order: **`agent_graph_run_id`** (root graph run UUID from tracing, best match), **`trace_id`**, then **`request_id`**. LangSmith expects a real run UUID unless your project maps `trace_id` to that run.
+`POST /v1/feedback` records thumbs up/down on a prior answer (always **SSE**; one `done` or `error` event). The handler always logs the event; it **forwards to LangSmith** only when `LANGCHAIN_API_KEY` or `LANGSMITH_API_KEY` is set and a run id is supplied. The server picks the LangSmith `run_id` in order: **`agent_graph_run_id`** (root graph run UUID from tracing, best match), **`trace_id`**, then **`request_id`**. LangSmith expects a real run UUID unless your project maps `trace_id` to that run.
 
 **Thumbs up** (correlate with the same `trace_id` / `request_id` you used on `/v1/orchestrator/answer`):
 
 ```bash
-curl -sS -X POST "http://192.168.86.179:30184/v1/feedback" \
+curl -N -sS -X POST "http://192.168.86.179:30184/v1/feedback" \
   -H "Content-Type: application/json" \
   -d '{
     "trace_id": "req-123",
@@ -255,7 +248,7 @@ curl -sS -X POST "http://192.168.86.179:30184/v1/feedback" \
 **Thumbs down** with optional `feedback_type` and `comment`:
 
 ```bash
-curl -sS -X POST "http://192.168.86.179:30184/v1/feedback" \
+curl -N -sS -X POST "http://192.168.86.179:30184/v1/feedback" \
   -H "Content-Type: application/json" \
   -d '{
     "trace_id": "req-123",
@@ -271,7 +264,7 @@ curl -sS -X POST "http://192.168.86.179:30184/v1/feedback" \
 **With LangSmith root run id** (from a non-stream or SSE `answer` event when tracing is enabled):
 
 ```bash
-curl -sS -X POST "http://192.168.86.179:30184/v1/feedback" \
+curl -N -sS -X POST "http://192.168.86.179:30184/v1/feedback" \
   -H "Content-Type: application/json" \
   -d '{
     "agent_graph_run_id": "YOUR_LANGSMITH_ROOT_RUN_UUID",

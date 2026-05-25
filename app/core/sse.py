@@ -455,3 +455,33 @@ def sse_stream_answer_gen(
                 yield f"data: {json.dumps(chunk)}\n\n"
 
     return _gen()
+
+
+def sse_feedback_gen(
+    *,
+    request_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
+    status: str,
+    message: str,
+) -> AsyncIterator[str]:
+    """Single-event SSE for POST /v1/feedback."""
+
+    async def _gen():
+        ok = status == "ok"
+        event: Dict[str, Any] = {
+            "type": "done" if ok else "error",
+            "status": status,
+            "message": message,
+        }
+        if request_id is not None:
+            event["request_id"] = request_id
+        if session_id is not None:
+            event["session_id"] = session_id
+        if trace_id is not None:
+            event["trace_id"] = trace_id
+        if not ok:
+            event["text"] = message
+        yield f"data: {json.dumps(event)}\n\n"
+
+    return _gen()

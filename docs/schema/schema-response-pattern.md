@@ -1,8 +1,8 @@
 # Response examples (`/v1/orchestrator/answer`)
 
-Full JSON envelopes for common routes. **Terminal** `done` / `error` matches **`stream: false`** body shape (plus `"type": "done"` or `"type": "error"` on stream).
+Full JSON envelopes for common routes. **Terminal** SSE `done` / `error` carries the client envelope (plus `"type": "done"` or `"type": "error"`).
 
-Schema reference: [schema-request-response.md](schema-request-response.md). Upstream MCP payloads: [schema-tool.md](schema-tool.md).
+Request/headers/limits: [schema-request-response.md](schema-request-response.md). Upstream MCP payloads: [schema-tool.md](schema-tool.md). This doc holds the **canonical response skeleton** and route examples.
 
 ### Tool name ↔ timing / usage keys
 
@@ -36,6 +36,126 @@ The **`route`** event always uses this shape (legacy flat `route` + nested `rout
 The **`done`** event uses the client envelope: `meta.route` is normalized (`tool` or `intent`, plus `source`); `meta.tool` is present **only** when a tool ran.
 
 Examples below group stream events and the terminal **`done`** in one JSON object for readability (keys `request`, `rewrite`, `route`, … are **not** merged in a single live SSE line).
+
+---
+
+## Canonical skeleton
+
+Placeholders show all possible keys; a given response only includes the tool phase that ran (`tool_rag` **or** `tool_github_search` **or** `tool_tavily_search`). Optional `meta.rag` / `meta.github` / `meta.web` appear on [upstream MCP payloads](schema-tool.md) only — the orchestrator does not copy them into client `meta` today.
+
+**Answer** (`stream: true`, default): final SSE `done` / `error` matches the JSON below plus `"type": "done"` or `"type": "error"` (and `"text"` on errors). **`stream: false`**: same envelope as JSON (no `type` field).
+
+**Feedback** (`POST /v1/feedback`): always SSE; single `done` or `error` event with `status` and `message`.
+
+```json
+{
+  "meta": {
+    "request_id": "string",
+    "session_id": "string | null",
+    "trace_id": "string",
+    "conversation_id": "string",
+    "is_new_conversation": false,
+    "user": {
+      "id": "string",
+      "roles": "string",
+      "groups": "string",
+      "teams": "string"
+    },
+    "route": {
+      "type": "tool | internal_intent",
+      "tool": "user_profile | github_search | web_search (type tool only)",
+      "intent": "help | clarify | reject | identity | greeting | capabilities (type internal_intent only)",
+      "confidence": 0.99,
+      "source": "deterministic_rule | llm_router | smalltalk_seed | smalltalk_pattern | injection_guard | override_rule",
+      "reason": "optional string"
+    },
+    "tool": {
+      "name": "user_profile | github_search | web_search",
+      "type": "rag | github | web",
+      "version": "v1",
+      "key": "tool_rag | tool_github_search | tool_tavily_search"
+    },
+    "rewrite": "optional rewritten question"
+  },
+  "answer": {
+    "text": "string",
+    "citations": [
+      {
+        "cite_id": 1,
+        "source": "string",
+        "text": "string",
+        "chunk_id": "optional",
+        "repo": "optional",
+        "url": "optional"
+      }
+    ]
+  },
+  "follow_up_questions": ["string"],
+  "latency_ms": {
+    "total": 0,
+    "intent_router": { "total": 0 },
+    "tool_rag": {
+      "embed": 0,
+      "retrieve_rerank": 0,
+      "chat": 0,
+      "follow_up_chat": 0,
+      "total": 0
+    },
+    "tool_github_search": {
+      "retrieve_rerank": 0,
+      "chat": 0,
+      "follow_up_chat": 0,
+      "total": 0
+    },
+    "tool_tavily_search": {
+      "search": 0,
+      "chat": 0,
+      "total": 0
+    }
+  },
+  "usage": {
+    "total": {
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0
+    },
+    "intent_router": {
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0
+    },
+    "tool_rag": {
+      "chat": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 },
+      "follow_up_chat": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 },
+      "total": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 }
+    },
+    "tool_github_search": {
+      "chat": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 },
+      "follow_up_chat": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 },
+      "total": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 }
+    },
+    "tool_tavily_search": {
+      "search": { "requests": 0 },
+      "chat": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 },
+      "total": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 }
+    }
+  },
+  "status": {
+    "ok": true,
+    "state": "completed",
+    "code": "ok"
+  }
+}
+```
+
+On failure, add top-level `"error": "string"` and set `status.ok` to `false`, `status.state` to `"failed"`, `status.code` to e.g. `"error"` or `"tool_timeout"`.
+
+### Full examples (smoke-test)
+
+| Route | Section |
+|-------|---------|
+| GitHub `github_search` | [GitHub (`github_search`)](#github-github_search) |
+| RAG `user_profile` | [RAG (`user_profile`)](#rag-user_profile) |
 
 ---
 
@@ -465,7 +585,95 @@ curl -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
 }
 ```
 
-**Notes**
+**Question:** *"Hi"*
 
-- No **`meta.tool`** on internal intents (no tool was invoked).
-- **`route.route_detail.name`** is the intent id; **`meta.route.intent`** mirrors it on `done`.
+```bash
+curl -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: ses-123" \
+  -H "X-Request-Id: req-123" \
+  -H "X-Trace-Id: req-123" \
+  -H "X-User-Id: taixing" \
+  -H "X-User-Roles: hr" \
+  -H "X-User-Groups: engineering" \
+  -H "X-User-Teams: rag-platform" \
+  -d '{
+    "question": "hi",
+    "stream": true,
+    "conversation_id": "conv-smoke-1"
+  }'
+```
+
+```json
+{
+  "request": {
+    "type": "request_id",
+    "session_id": "ses-123",
+    "request_id": "req-123",
+    "trace_id": "req-123",
+    "conversation_id": "conv-smoke-1",
+    "is_new_conversation": false
+  },
+  "rewrite": {
+    "type": "rewrite",
+    "text": "hi?"
+  },
+  "route": {
+    "type": "route",
+    "route": "direct_reply",
+    "route_detail": {
+      "type": "internal_intent",
+      "name": "greeting",
+      "confidence": 0.99,
+      "reason": "Matched greeting intent greeting_hi"
+    },
+    "route_source": "deterministic_rule",
+    "text": "hi?"
+  },
+  "answer": {
+    "text": "Hello! How can I help you today with questions about Taixing Bi or your internal knowledge base?",
+    "citations": []
+  },
+  "follow_up_questions": [],
+  "latency_ms": {
+    "total": 2.24,
+    "intent_router": {
+      "total": 0.83
+    }
+  },
+  "usage": {
+    "total": {
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0
+    }
+  },
+  "status": {
+    "ok": true,
+    "state": "completed",
+    "code": "ok"
+  },
+  "meta": {
+    "request_id": "req-123",
+    "session_id": "ses-123",
+    "trace_id": "req-123",
+    "conversation_id": "conv-smoke-1",
+    "is_new_conversation": false,
+    "user": {
+      "id": "taixing",
+      "roles": "hr",
+      "groups": "engineering",
+      "teams": "rag-platform"
+    },
+    "route": {
+      "type": "internal_intent",
+      "intent": "greeting",
+      "confidence": 0.99,
+      "reason": "Matched greeting intent greeting_hi",
+      "source": "deterministic_rule"
+    },
+    "rewrite": "hi?"
+  }
+}
+```
+

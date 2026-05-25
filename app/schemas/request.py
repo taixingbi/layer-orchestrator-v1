@@ -14,7 +14,10 @@ class HistoryTurn(BaseModel):
 
 class AnswerBody(BaseModel):
     question: str
-    stream: bool = False
+    stream: bool = Field(
+        default=True,
+        description="true (default) → SSE (text/event-stream); false → single aggregated JSON object",
+    )
     history: List[HistoryTurn] = Field(default_factory=list)
     conversation_id: Optional[str] = Field(
         default=None,

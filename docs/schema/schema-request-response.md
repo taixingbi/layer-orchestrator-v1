@@ -26,7 +26,7 @@ Response includes `X-Request-Id` (middleware).
 ```json
 {
   "question": "string (required)",
-  "stream": false,
+  "stream": true,
   "history": [],
   "conversation_id": "string (optional)"
 }
@@ -35,7 +35,7 @@ Response includes `X-Request-Id` (middleware).
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `question` | string | — | Latest user message |
-| `stream` | boolean | `false` | `true` → SSE (`text/event-stream`); `false` → single JSON object |
+| `stream` | boolean | `true` | `true` → SSE (`text/event-stream`); `false` → single JSON object |
 | `history` | array | `[]` | Prior turns; each item `{ "role": "user" \| "assistant", "content": "string" }` |
 | `conversation_id` | string | `null` | Optional client-owned thread id (max 256 chars after trim). Blank → server assigns `conv_<uuidhex>`; see **`is_new_conversation`** on responses |
 
@@ -63,7 +63,7 @@ Violations and timeout behavior:
 
 ## Response envelope (`stream: false` and terminal SSE `done` / `error`)
 
-Non-stream JSON and the **final** SSE event use the **same** top-level shape (aligned with [tool upstream schema](schema-tool.md)). Intermediate stream events (`rewrite`, `route`, `answer_delta`, partial `answer`) are optional; clients may use only `done` / `error`.
+Non-stream JSON and the **final** SSE event use the **same** top-level shape (aligned with [tool upstream schema](schema-tool.md)). Intermediate stream events (`rewrite`, `route`, `answer_delta`, partial `answer`) are optional; clients may use only `done` / `error`. Full skeleton and examples: [schema-response-pattern.md](schema-response-pattern.md).
 
 ### Top-level fields
 
@@ -106,123 +106,9 @@ Orchestrator handler ids in `meta.route.tool` / `meta.tool.name`. `meta.tool.key
 
 `latency_ms.tool_*` and `usage.tool_*` are **passthrough** of upstream MCP/HTTP payloads ([schema-tool.md](schema-tool.md)). `latency_ms.intent_router.total` is orchestrator router wall time. `usage.total` sums all phases.
 
-### Canonical skeleton
+### Canonical skeleton and examples
 
-Placeholders show all possible keys; a given response only includes the tool phase that ran (`tool_rag` **or** `tool_github_search` **or** `tool_tavily_search`). Optional `meta.rag` / `meta.github` / `meta.web` appear on [upstream MCP payloads](schema-tool.md) only — the orchestrator does not copy them into client `meta` today.
-
-**Non-stream** (`stream: false`): body matches the JSON below (no `type` field).
-
-**Stream** (`stream: true`): final SSE `done` / `error` is the same object plus `"type": "done"` or `"type": "error"` (and `"text"` on errors).
-
-```json
-{
-  "meta": {
-    "request_id": "string",
-    "session_id": "string | null",
-    "trace_id": "string",
-    "conversation_id": "string",
-    "is_new_conversation": false,
-    "user": {
-      "id": "string",
-      "roles": "string",
-      "groups": "string",
-      "teams": "string"
-    },
-    "route": {
-      "type": "tool | internal_intent",
-      "tool": "user_profile | github_search | web_search (type tool only)",
-      "intent": "help | clarify | reject | identity | greeting | capabilities (type internal_intent only)",
-      "confidence": 0.99,
-      "source": "deterministic_rule | llm_router | smalltalk_seed | smalltalk_pattern | injection_guard | override_rule",
-      "reason": "optional string"
-    },
-    "tool": {
-      "name": "user_profile | github_search | web_search",
-      "type": "rag | github | web",
-      "version": "v1",
-      "key": "tool_rag | tool_github_search | tool_tavily_search"
-    },
-    "rewrite": "optional rewritten question"
-  },
-  "answer": {
-    "text": "string",
-    "citations": [
-      {
-        "cite_id": 1,
-        "source": "string",
-        "text": "string",
-        "chunk_id": "optional",
-        "repo": "optional",
-        "url": "optional"
-      }
-    ]
-  },
-  "follow_up_questions": ["string"],
-  "latency_ms": {
-    "total": 0,
-    "intent_router": { "total": 0 },
-    "tool_rag": {
-      "embed": 0,
-      "retrieve_rerank": 0,
-      "chat": 0,
-      "follow_up_chat": 0,
-      "total": 0
-    },
-    "tool_github_search": {
-      "retrieve_rerank": 0,
-      "chat": 0,
-      "follow_up_chat": 0,
-      "total": 0
-    },
-    "tool_tavily_search": {
-      "search": 0,
-      "chat": 0,
-      "total": 0
-    }
-  },
-  "usage": {
-    "total": {
-      "prompt_tokens": 0,
-      "completion_tokens": 0,
-      "total_tokens": 0
-    },
-    "intent_router": {
-      "prompt_tokens": 0,
-      "completion_tokens": 0,
-      "total_tokens": 0
-    },
-    "tool_rag": {
-      "chat": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 },
-      "follow_up_chat": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 },
-      "total": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 }
-    },
-    "tool_github_search": {
-      "chat": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 },
-      "follow_up_chat": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 },
-      "total": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 }
-    },
-    "tool_tavily_search": {
-      "search": { "requests": 0 },
-      "chat": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 },
-      "total": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 }
-    }
-  },
-  "status": {
-    "ok": true,
-    "state": "completed",
-    "code": "ok"
-  }
-}
-```
-
-On failure, add top-level `"error": "string"` and set `status.ok` to `false`, `status.state` to `"failed"`, `status.code` to e.g. `"error"` or `"tool_timeout"`.
-
-### Full examples (smoke-test)
-
-| Route | Document |
-|-------|----------|
-| GitHub `github_search` | [schema-response-pattern.md — GitHub](schema-response-pattern.md#github-github_search) |
-| RAG `user_profile` | [schema-response-pattern.md — RAG](schema-response-pattern.md#rag-user_profile) |
+Placeholder JSON, stream vs non-stream notes, failure shape, and smoke-test examples: **[schema-response-pattern.md](schema-response-pattern.md#canonical-skeleton)**.
 
 ---
 
@@ -278,7 +164,7 @@ Same envelope where possible, plus top-level `error`:
 
 ---
 
-## `POST /v1/orchestrator/answer` — stream (`stream: true`)
+## `POST /v1/orchestrator/answer` — stream (`stream: true`, default)
 
 Response: **SSE**, each line `data: <json>\n\n`.
 
@@ -292,7 +178,7 @@ Response: **SSE**, each line `data: <json>\n\n`.
 | `done` | **Full response envelope** (see above) plus `"type": "done"` |
 | `error` | **Full envelope** with `status.ok: false`, plus `"type": "error"`, `"text"` |
 
-The **`done`** object matches non-stream JSON (`meta`, `answer`, `latency_ms`, `usage`, `status`).
+The **`done`** object is the client envelope (`meta`, `answer`, `latency_ms`, `usage`, `status`).
 
 ---
 
@@ -427,10 +313,14 @@ Top-level **`conversation_id`** is always the effective thread id (client or ser
 
 LangSmith `create_feedback` is called only when credentials are configured. The run id passed to LangSmith is resolved in order: **`agent_graph_run_id` → `trace_id` → `request_id`**. LangSmith expects a valid traced run UUID unless your deployment maps ids differently.
 
-### Responses
+### Response (SSE)
 
-- Success: `{ "status": "ok", "message": "Feedback received" }`
-- Invalid `feedback_type`: `{ "status": "error", "message": "..." }`
+Always `text/event-stream`, single event per request:
+
+- Success: `data: {"type":"done","status":"ok","message":"Feedback received",...}\n\n`
+- Invalid `feedback_type`: `data: {"type":"error","status":"error","message":"...","text":"..."}\n\n`
+
+Optional correlation fields on the event: `request_id`, `session_id`, `trace_id` (from headers when present).
 
 ---
 

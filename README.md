@@ -2,7 +2,7 @@
 
 ## FastAPI Orchestrator
 
-FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …/v1/chat/completions`), **HTTP RAG**, and unified **`/v1/orchestrator/answer`** (`stream=true` for SSE). Send correlation ids on headers (`X-Request-Id`, `X-Session-Id`, `X-Trace-Id`). Optional **`conversation_id`** may be sent in the **`/v1/orchestrator/answer`** and **`/v1/orchestrator/eval/router`** JSON body; if omitted or blank, the server assigns `conv_<uuidhex>` and returns **`is_new_conversation`: true**. See [schema-request-response.md](docs/schema/schema-request-response.md).
+FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …/v1/chat/completions`), **HTTP RAG**, and unified **`POST /v1/orchestrator/answer`** (`stream` defaults to **true** → SSE; `stream: false` → JSON). **`POST /v1/feedback`** is always SSE; **`POST /v1/orchestrator/eval/router`** is JSON only. Send correlation ids on headers (`X-Request-Id`, `X-Session-Id`, `X-Trace-Id`). Optional **`conversation_id`** may be sent in the **`/v1/orchestrator/answer`** and **`/v1/orchestrator/eval/router`** JSON body; if omitted or blank, the server assigns `conv_<uuidhex>` and returns **`is_new_conversation`: true**. See [schema-request-response.md](docs/schema/schema-request-response.md).
 
 ## Layout
 
@@ -122,7 +122,9 @@ curl -s http://127.0.0.1:8000/metrics
 
 Exposes HTTP and pipeline metrics including request counts, latency histograms (for p50/p95/p99 via PromQL `histogram_quantile`), route decisions, router/RAG phase durations, and timeout counters.
 
-## Orchestrator (SSE with `stream=true`)
+## Orchestrator (SSE, default)
+
+Omit `stream` or set `"stream": true` for `text/event-stream`. Parse the terminal `{"type":"done",...}` event (or consume `rewrite` / `route` / `answer` / `answer_delta` along the way).
 
 ```bash
 curl -N -s -X POST http://127.0.0.1:8000/v1/orchestrator/answer \
@@ -132,14 +134,13 @@ curl -N -s -X POST http://127.0.0.1:8000/v1/orchestrator/answer \
   -H "X-Trace-Id: 12345678" \
   -d '{
     "question": "what is taixing visa status?",
-    "stream": true,
     "conversation_id": "conv-demo-1"
   }'
 ```
 
-## Orchestrator Non-Stream (aggregated JSON)
+## Orchestrator (non-stream JSON)
 
-Uses the same internal streaming pipeline; the endpoint aggregates events into one JSON response.
+Set `"stream": false` for one aggregated JSON response (same envelope as terminal SSE `done`).
 
 ```bash
 curl -s -X POST http://127.0.0.1:8000/v1/orchestrator/answer \
@@ -149,20 +150,19 @@ curl -s -X POST http://127.0.0.1:8000/v1/orchestrator/answer \
   -H "X-Trace-Id: 12345678" \
   -d '{
     "question": "what is taixing visa status?",
+    "stream": false,
     "conversation_id": "conv-demo-1"
   }' | jq .
 ```
 
-To stream from the same endpoint, set `"stream": true` in the body.
+## Feedback (SSE)
 
-## Feedback
-
-Submit feedback on an agent response. The server tries, in order: **`agent_graph_run_id`** (LangSmith root run UUID), **`trace_id`**, then **`request_id`**, as the `run_id` passed to LangSmith `create_feedback`. LangSmith only accepts a real run UUID unless your tracing maps `trace_id` to that run.
+Submit feedback on an agent response (single SSE `done` or `error` event). The server tries, in order: **`agent_graph_run_id`** (LangSmith root run UUID), **`trace_id`**, then **`request_id`**, as the `run_id` passed to LangSmith `create_feedback`. LangSmith only accepts a real run UUID unless your tracing maps `trace_id` to that run.
 
 **Thumbs up (with trace_id):**
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/v1/feedback \
+curl -N -s -X POST http://127.0.0.1:8000/v1/feedback \
   -H "Content-Type: application/json" \
   -d '{"trace_id":"12345678","rating":"thumbs_up"}'
 ```
@@ -170,7 +170,7 @@ curl -s -X POST http://127.0.0.1:8000/v1/feedback \
 **Thumbs down (with type and comment):**
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/v1/feedback \
+curl -N -s -X POST http://127.0.0.1:8000/v1/feedback \
   -H "Content-Type: application/json" \
   -d '{
     "trace_id": "12345678",

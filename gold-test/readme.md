@@ -25,7 +25,7 @@ bash gold-test/run-router-eval.sh
 Use another prompt file under **`app/prompts/<version>.txt`**:
 
 ```bash
-ROUTER_PROMPT_VERSION=router-v1.01 bash gold-test/run-router-eval.sh
+ROUTER_PROMPT_VERSION=router-v1.03 bash gold-test/run-router-eval.sh
 ```
 
 On **stdout**, the script prints only a **`File` / `Match rate`** table (per result CSV plus an **`(all suites)`** row). **`router_prompt_version=…`** is printed on **stderr**. The full Markdown report is always written to **`REPORT_PATH`** (default **`result/router-eval-report-<ROUTER_PROMPT_VERSION>.md`**).
