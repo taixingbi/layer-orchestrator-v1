@@ -16,7 +16,7 @@ def test_v1_orchestrator_answer_default_sse():
     assert "text/event-stream" in (response.headers.get("content-type") or "")
 
 
-def test_v1_orchestrator_answer_stream_false_json():
+def test_v1_orchestrator_answer_stream_false_still_sse():
     client = TestClient(app)
     response = client.post(
         "/v1/orchestrator/answer",
@@ -24,7 +24,7 @@ def test_v1_orchestrator_answer_stream_false_json():
         headers={"X-Request-Id": "test-req"},
     )
     assert response.status_code != 404
-    assert "application/json" in (response.headers.get("content-type") or "")
+    assert "text/event-stream" in (response.headers.get("content-type") or "")
 
 
 def test_v1_orchestrator_eval_router_exists():

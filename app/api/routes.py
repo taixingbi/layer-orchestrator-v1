@@ -24,10 +24,10 @@ from ..core.normalize import (
     validate_eval_router_body_limits,
 )
 from ..core.router import decision_to_route_detail, normalize_post_router, run_intent_rewrite_router
-from ..core.sse import SSE_HEADERS, answer_json, sse_feedback_gen, sse_stream_answer_gen
+from ..core.sse import SSE_HEADERS, sse_feedback_gen, sse_stream_answer_gen
 from ..core.intent_router import RouterDecision
 from ..observability.feedback import FEEDBACK_TYPES, FeedbackBody, submit_langsmith_feedback
-from ..observability.metrics import inc_timeout, metrics_content_type, metrics_payload
+from ..observability.metrics import metrics_content_type, metrics_payload
 from ..clients.ready import run_readiness
 from ..observability.context import bind_conversation_logging_context
 from ..schemas.request import (
@@ -96,7 +96,7 @@ def _router_eval_payload(
 
 @v1_router.post("/orchestrator/answer")
 async def orchestrator_answer(body: AnswerBody, request: Request):
-    """Unified endpoint: stream=true (default) returns SSE; stream=false returns aggregated JSON."""
+    """Unified answer endpoint; always returns SSE (text/event-stream)."""
     raw_bytes = await request.body()
     conversation_id, is_new_conversation = resolve_effective_conversation_id(body.conversation_id)
     request.state.conversation_id = conversation_id
@@ -112,54 +112,22 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
         hist = history_from_answer_body(body)
         req_timeout = request_timeout_s()
         idle_timeout = stream_idle_timeout_s()
-    if body.stream:
-        return StreamingResponse(
-            sse_stream_answer_gen(
-                body.question,
-                session_id=session_id,
-                request_id=request_id,
-                trace_id=trace_id,
-                rag_user=rag_user,
-                history=hist,
-                conversation_id=conversation_id,
-                is_new_conversation=is_new_conversation,
-                request_timeout_s=req_timeout,
-                stream_idle_timeout_s=idle_timeout,
-            ),
-            media_type="text/event-stream",
-            headers=SSE_HEADERS,
-        )
-    async with bind_conversation_logging_context(conversation_id, is_new_conversation):
-        try:
-            result = await asyncio.wait_for(
-                answer_json(
-                    body.question,
-                    session_id=session_id,
-                    request_id=request_id,
-                    trace_id=trace_id,
-                    rag_user=rag_user,
-                    history=hist,
-                    conversation_id=conversation_id,
-                    is_new_conversation=is_new_conversation,
-                ),
-                timeout=req_timeout,
-            )
-        except asyncio.TimeoutError:
-            inc_timeout("request")
-            return JSONResponse(
-                {
-                    "status": "error",
-                    "error": "request timeout exceeded",
-                    "request_id": request_id,
-                    "session_id": session_id,
-                    "trace_id": trace_id,
-                    "conversation_id": conversation_id,
-                    "is_new_conversation": is_new_conversation,
-                },
-                status_code=504,
-            )
-        status_code = 200 if (result.get("status") or {}).get("ok") else 500
-        return JSONResponse(result, status_code=status_code)
+    return StreamingResponse(
+        sse_stream_answer_gen(
+            body.question,
+            session_id=session_id,
+            request_id=request_id,
+            trace_id=trace_id,
+            rag_user=rag_user,
+            history=hist,
+            conversation_id=conversation_id,
+            is_new_conversation=is_new_conversation,
+            request_timeout_s=req_timeout,
+            stream_idle_timeout_s=idle_timeout,
+        ),
+        media_type="text/event-stream",
+        headers=SSE_HEADERS,
+    )
 
 
 @v1_router.post("/orchestrator/eval/router")

@@ -56,27 +56,26 @@ def _tool_stream_phase(tool_name: str) -> str:
     return "tool"
 
 
-def _answer_event(
+def _answer_delta_event(
     text: str,
     *,
     citations: Optional[List[Any]] = None,
     follow_up_questions: Optional[List[Any]] = None,
     usage: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    event: Dict[str, Any] = {
-        "type": "answer",
-        "answer": {
-            "text": text,
-            "citations": list(citations) if citations is not None else [],
-        },
-        "follow_up_questions": list(follow_up_questions) if follow_up_questions is not None else [],
-    }
-    if usage is not None:
-        event["usage"] = usage
-    return event
-
-
-def _answer_delta_event(text: str) -> Dict[str, Any]:
+    """SSE text chunk, or terminal chunk with citations / follow-ups before `done`."""
+    if citations is not None or follow_up_questions is not None or usage is not None:
+        event: Dict[str, Any] = {
+            "type": "answer_delta",
+            "answer": {
+                "text": text,
+                "citations": list(citations) if citations is not None else [],
+            },
+            "follow_up_questions": list(follow_up_questions) if follow_up_questions is not None else [],
+        }
+        if usage is not None:
+            event["usage"] = usage
+        return event
     return {"type": "answer_delta", "text": text}
 
 
@@ -344,7 +343,7 @@ async def stream_answer_query(
             answer_text = _internal_answer(route_detail, direct_answer=direct_answer)
             if route_detail.name in ("identity", "greeting", "help", "capabilities") and not answer_text:
                 answer_text = resolve_intent_answer(route_detail.name) or answer_text
-            yield _answer_event(answer_text, usage=request_usage)
+            yield _answer_delta_event(answer_text, usage=request_usage)
             async for ev in _yield_request_complete_done(
                 t0,
                 request_id,
@@ -439,7 +438,7 @@ async def stream_answer_query(
                 latency_ms=(time.perf_counter() - tool_started_perf) * 1000,
                 metadata=tool_meta,
             )
-            yield _answer_event(
+            yield _answer_delta_event(
                 answer_text,
                 citations=citations,
                 follow_up_questions=follow_ups,

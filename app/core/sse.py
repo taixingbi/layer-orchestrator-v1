@@ -211,15 +211,18 @@ class AnswerResponseAccumulator:
                 self.body["route_detail"] = event.get("route_detail")
             if event.get("route_source") is not None:
                 self.body["route_source"] = event.get("route_source")
-        elif t == "answer":
+        elif t == "answer_delta":
             if isinstance(event.get("answer"), dict):
                 ans = event["answer"]
                 self.body["answer_text"] = ans.get("text")
                 self.body["citations"] = ans.get("citations", [])
-            else:
-                self.body["answer_text"] = event.get("text")
+            elif event.get("text"):
+                prev = self.body.get("answer_text") or ""
+                self.body["answer_text"] = prev + (event.get("text") or "")
+            if event.get("citations") is not None and not isinstance(event.get("answer"), dict):
                 self.body["citations"] = event.get("citations", [])
-            self.body["follow_up_questions"] = event.get("follow_up_questions", [])
+            if event.get("follow_up_questions") is not None:
+                self.body["follow_up_questions"] = event.get("follow_up_questions", [])
             usage = event.get("usage")
             if usage is not None:
                 self.body["usage"] = usage

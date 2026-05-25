@@ -16,7 +16,7 @@ class AnswerBody(BaseModel):
     question: str
     stream: bool = Field(
         default=True,
-        description="true (default) → SSE (text/event-stream); false → single aggregated JSON object",
+        description="Deprecated; response is always SSE (text/event-stream). Value is ignored.",
     )
     history: List[HistoryTurn] = Field(default_factory=list)
     conversation_id: Optional[str] = Field(

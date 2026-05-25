@@ -28,26 +28,9 @@ Use this for dashboards/alerts (request count, error rate, route count, p50/p95/
 curl -sS "http://192.168.86.179:30184/metrics"
 ```
 
-## Orchestrator (non-stream JSON, `stream: false`)
+## Orchestrator (SSE)
 
-Returns one aggregated JSON object (same envelope as terminal SSE `done`). Set `"stream": false` explicitly.
-
-```bash
-curl -sS -X POST "http://192.168.86.179:30184/v1/orchestrator/answer" \
-  -H "Content-Type: application/json" \
-  -H "X-Session-Id: ses-123" \
-  -H "X-Request-Id: req-123" \
-  -H "X-Trace-Id: req-123" \
-  -d '{
-    "question": "what is taixing visa status in us?",
-    "stream": false,
-    "conversation_id": "conv-smoke-1"
-  }' | jq .
-```
-
-## Orchestrator (SSE, default)
-
-Omit `stream` or use `"stream": true`. Use `curl -N` and parse the final `{"type":"done",...}` event (or consume intermediate `rewrite` / `route` / `answer` / `answer_delta` events). Correlation ids go in **headers**; optional **`conversation_id`** in the body. SSE does **not** include `{"type":"state",...}` (logs/metrics only). Internal intents (`greeting`, `help`, …) emit one `answer` then `done` (no `answer_delta`). The pipeline uses a single **intent/rewrite router** LLM unless a **server short-circuit** applies (see [intent-router.md](intent-router.md)), then either returns an immediate `answer` or runs a tool route.
+Use `curl -N` and parse the final `{"type":"done",...}` event (or consume `rewrite` / `route` / `answer_delta` events). Correlation ids go in **headers**; optional **`conversation_id`** in the body. SSE does **not** include `{"type":"state",...}` (logs/metrics only). Internal intents (`greeting`, `help`, …) emit one `answer_delta` then `done`. The pipeline uses a single **intent/rewrite router** LLM unless a **server short-circuit** applies (see [intent-router.md](intent-router.md)), then either returns an immediate `answer` or runs a tool route.
 
 ```bash
 curl -N -sS -X POST "http://192.168.86.179:30184/v1/orchestrator/answer" \

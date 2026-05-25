@@ -35,7 +35,7 @@ Response includes `X-Request-Id` (middleware).
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `question` | string | — | Latest user message |
-| `stream` | boolean | `true` | `true` → SSE (`text/event-stream`); `false` → single JSON object |
+| `stream` | boolean | `true` | **Ignored.** Response is always SSE (`text/event-stream`). |
 | `history` | array | `[]` | Prior turns; each item `{ "role": "user" \| "assistant", "content": "string" }` |
 | `conversation_id` | string | `null` | Optional client-owned thread id (max 256 chars after trim). Blank → server assigns `conv_<uuidhex>`; see **`is_new_conversation`** on responses |
 
@@ -56,14 +56,13 @@ Violations and timeout behavior:
 
 - `413` when request body is too large.
 - `400` when question/history/context validation fails.
-- `504` for non-stream request timeout (`REQUEST_TIMEOUT_MS` exceeded).
-- Stream mode emits an SSE `error` event and closes when request timeout or stream idle timeout is exceeded.
+- Stream emits an SSE `error` event and closes when request timeout or stream idle timeout is exceeded.
 
 ---
 
-## Response envelope (`stream: false` and terminal SSE `done` / `error`)
+## Response envelope (terminal SSE `done` / `error`)
 
-Non-stream JSON and the **final** SSE event use the **same** top-level shape (aligned with [tool upstream schema](schema-tool.md)). Intermediate stream events (`rewrite`, `route`, `answer_delta`, partial `answer`) are optional; clients may use only `done` / `error`. Full skeleton and examples: [schema-response-pattern.md](schema-response-pattern.md).
+The answer endpoint **always** streams SSE. The **final** `done` / `error` event uses the top-level client envelope (aligned with [tool upstream schema](schema-tool.md)). Intermediate events (`rewrite`, `route`, `answer_delta`) are optional; clients may use only `done` / `error`. Full skeleton and examples: [schema-response-pattern.md](schema-response-pattern.md).
 
 ### Top-level fields
 
@@ -173,8 +172,7 @@ Response: **SSE**, each line `data: <json>\n\n`.
 | `request_id` | Early correlation ids |
 | `rewrite` | `{ "type": "rewrite", "text": "..." }` |
 | `route` | `{ "type": "route", "route": "<legacy flat>", "route_detail": { ... }, "route_source": "...", "text": "<rewrite>" }` — see [schema-response-pattern.md](schema-response-pattern.md) |
-| `answer_delta` | `{ "type": "answer_delta", "text": "..." }` |
-| `answer` | `{ "type": "answer", "answer": { "text", "citations" }, "follow_up_questions": [] }` |
+| `answer_delta` | Text chunk: `{ "type": "answer_delta", "text": "..." }`. Terminal chunk (optional): same `type` with `"answer": { "text", "citations" }`, `"follow_up_questions"`, optional `"usage"` before `done`. |
 | `done` | **Full response envelope** (see above) plus `"type": "done"` |
 | `error` | **Full envelope** with `status.ok: false`, plus `"type": "error"`, `"text"` |
 

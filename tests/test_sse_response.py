@@ -53,7 +53,7 @@ def test_stream_done_matches_non_stream_envelope():
     )
     acc.apply(
         {
-            "type": "answer",
+            "type": "answer_delta",
             "answer": {"text": "answer body", "citations": [{"doc_id": "d1"}]},
             "follow_up_questions": ["q1"],
             "usage": usage,
@@ -75,6 +75,20 @@ def test_stream_done_matches_non_stream_envelope():
     assert done["answer"] == non_stream["answer"]
     assert done["usage"] == non_stream["usage"]
     assert done["latency_ms"] == non_stream["latency_ms"]
+
+
+def test_answer_delta_text_chunks_concatenate():
+    acc = AnswerResponseAccumulator(
+        request_id="req-1",
+        session_id=None,
+        trace_id="req-1",
+        conversation_id="conv-1",
+        is_new_conversation=False,
+    )
+    acc.apply({"type": "answer_delta", "text": "Hello "})
+    acc.apply({"type": "answer_delta", "text": "world"})
+    done = acc.finalize(ok=True, code="ok")
+    assert done["answer"]["text"] == "Hello world"
 
 
 def test_stream_error_envelope():

@@ -14,7 +14,7 @@ Request/headers/limits: [schema-request-response.md](schema-request-response.md)
 
 ### Stream vs `done`
 
-During **`stream: true`**, the server emits separate SSE events: `request_id` → `rewrite` → **`route`** → optional `answer_delta` → `answer` → **`done`**.
+During streaming, the server emits: `request_id` → `rewrite` → **`route`** → **`answer_delta`** (text chunks and/or a terminal chunk with `answer` / citations) → **`done`**.
 
 The **`route`** event always uses this shape (legacy flat `route` + nested `route_detail`):
 
@@ -43,7 +43,7 @@ Examples below group stream events and the terminal **`done`** in one JSON objec
 
 Placeholders show all possible keys; a given response only includes the tool phase that ran (`tool_rag` **or** `tool_github_search` **or** `tool_tavily_search`). Optional `meta.rag` / `meta.github` / `meta.web` appear on [upstream MCP payloads](schema-tool.md) only — the orchestrator does not copy them into client `meta` today.
 
-**Answer** (`stream: true`, default): final SSE `done` / `error` matches the JSON below plus `"type": "done"` or `"type": "error"` (and `"text"` on errors). **`stream: false`**: same envelope as JSON (no `type` field).
+**Answer** (always SSE): final `done` / `error` matches the JSON below plus `"type": "done"` or `"type": "error"` (and `"text"` on errors). Wire events use **`answer_delta`** only (no separate `answer` event type).
 
 **Feedback** (`POST /v1/feedback`): always SSE; single `done` or `error` event with `status` and `message`.
 
@@ -348,7 +348,6 @@ curl -N -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
   -H "X-User-Teams: rag-platform" \
   -d '{
     "question": "what is taixing visa status in us?",
-    "stream": true,
     "conversation_id": "conv-smoke-1"
   }'
 ```
@@ -599,7 +598,6 @@ curl -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
   -H "X-User-Teams: rag-platform" \
   -d '{
     "question": "hi",
-    "stream": true,
     "conversation_id": "conv-smoke-1"
   }'
 ```
@@ -630,11 +628,14 @@ curl -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
     "route_source": "deterministic_rule",
     "text": "hi?"
   },
-  "answer": {
-    "text": "Hello! How can I help you today with questions about Taixing Bi or your internal knowledge base?",
-    "citations": []
+  "answer_delta": {
+    "type": "answer_delta",
+    "answer": {
+      "text": "Hello! How can I help you today with questions about Taixing Bi or your internal knowledge base?",
+      "citations": []
+    },
+    "follow_up_questions": []
   },
-  "follow_up_questions": [],
   "latency_ms": {
     "total": 2.24,
     "intent_router": {

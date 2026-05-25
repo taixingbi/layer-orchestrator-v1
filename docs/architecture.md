@@ -61,7 +61,7 @@ After routing, `app/core/pipeline.py` dispatches **directly** (no LangGraph on t
 | `tool:github_search` | MCP `ask_repo` | `tool` |
 | `tool:web_search` | Tavily search | `tool` |
 
-Tool phases emit internal `state` events (`phase`: `rag` or `tool`) for logs, metrics, and non-stream `latency_ms` aggregation. **SSE clients do not receive `state` events**; they see `rewrite` → `route` → optional `answer_delta` → `answer` → `done`.
+Tool phases emit internal `state` events (`phase`: `rag` or `tool`) for logs, metrics, and `latency_ms` aggregation. **SSE clients do not receive `state` events**; they see `rewrite` → `route` → **`answer_delta`** (chunks and/or terminal chunk with citations) → `done`.
 
 ---
 
@@ -69,13 +69,17 @@ Tool phases emit internal `state` events (`phase`: `rag` or `tool`) for logs, me
 
 ```json
 {
-  "type": "answer",
-  "text": "<final answer>",
-  "citations": [],
+  "type": "answer_delta",
+  "answer": {
+    "text": "<final answer>",
+    "citations": []
+  },
   "follow_up_questions": [],
   "usage": {}
 }
 ```
+
+Text-only chunks use `{ "type": "answer_delta", "text": "<partial>" }`.
 
 On the `rag` path, `text` is verbatim RAG-formatted retrieval output (no separate answer-synthesis LLM in the pipeline).
 

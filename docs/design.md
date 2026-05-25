@@ -29,7 +29,7 @@ app/
 
 - `app/main.py`  
   FastAPI entrypoint. Exposes:
-  - `POST /v1/orchestrator/answer` (`stream` default `true` → SSE; `stream: false` → JSON)
+  - `POST /v1/orchestrator/answer` (always SSE)
   - `POST /v1/orchestrator/eval/router`
   - `POST /v1/feedback`
   - `GET /health` (liveness; config only)
@@ -89,7 +89,7 @@ When the router selects `user_profile`, the pipeline calls RAG directly:
 - **Default:** `app/tools/user_profile.py` → MCP `rag_query` with `stream: true` when `MCP_RAG_BASE_URL` is set (`USE_MCP_RAG=true`, default).
 - **HTTP fallback:** `USE_MCP_RAG=false` → `query_rag_http_with_meta` in `app/clients/rag_http.py` (single JSON response, no token streaming).
 
-With MCP + `stream=true` on `/v1/orchestrator/answer`, the orchestrator forwards **`answer_delta`** SSE events as tokens arrive, then a final **`answer`** with citations and usage.
+With MCP on `/v1/orchestrator/answer`, the orchestrator forwards **`answer_delta`** SSE events as tokens arrive, then a terminal **`answer_delta`** with `answer` / citations before **`done`**.
 
 The user-facing `answer` is the RAG service response text. No orchestrator answer LLM runs after retrieval.
 
@@ -99,7 +99,7 @@ The user-facing `answer` is the RAG service response text. No orchestrator answe
 
 **Wire events** (client-visible):
 
-- `request_id`, `rewrite`, `route`, `answer_delta`, `answer`, `error`, `done`
+- `request_id`, `rewrite`, `route`, `answer_delta`, `error`, `done`
 
 **Internal `state` events** (logs, metrics, non-stream aggregation only — **not** sent on the SSE wire):
 
