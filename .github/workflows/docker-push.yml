@@ -3,6 +3,7 @@
 # Repository secrets (Settings → Secrets and variables → Actions):
 # DOCKERHUB_USERNAME — Docker Hub username or org
 # DOCKERHUB_TOKEN — Access token (recommended), not your account password
+# HUNTAI_K3S_PAT — PAT with contents:write on taixingbi/huntai-k3s (GitOps image pin)
 #
 # Images: /<user>/layer-orchestrator-v1:latest, :<ci-version>, and :<git-sha>
 name: Push to Docker Hub
@@ -28,6 +29,8 @@ concurrency:
 jobs:
   push:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -69,3 +72,53 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/layer-orchestrator-v1:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  update-gitops:
+    needs: push
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: gitops-orchestrator-${{ github.sha }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout huntai-k3s
+        uses: actions/checkout@v4
+        with:
+          repository: taixingbi/huntai-k3s
+          token: ${{ secrets.HUNTAI_K3S_PAT }}
+          path: huntai-k3s
+
+      - name: Update orchestrator image tag
+        env:
+          TAG: ${{ needs.push.outputs.version }}
+        working-directory: huntai-k3s
+        shell: bash
+        run: |
+          set -euo pipefail
+          KUSTOMIZE_FILE="manifests/orchestrator/overlays/dev/kustomization.yaml"
+          EXPECTED="docker.io/taixingbi/layer-orchestrator-v1"
+          ACTUAL="$(grep -E '^\s+name:' "${KUSTOMIZE_FILE}" | head -1 | sed 's/.*name:[[:space:]]*//;s/"//g')"
+          if [ "${ACTUAL}" != "${EXPECTED}" ]; then
+            echo "Unexpected images[0].name: ${ACTUAL} (expected ${EXPECTED})" >&2
+            exit 1
+          fi
+          # Replace newTag under images (portable without yq)
+          sed -i -E "s|^([[:space:]]*newTag:[[:space:]]*).*$|\1\"${TAG}\"|" "${KUSTOMIZE_FILE}"
+          grep -q "newTag: \"${TAG}\"" "${KUSTOMIZE_FILE}"
+
+      - name: Commit and push
+        working-directory: huntai-k3s
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "No manifest change; skip commit"
+            exit 0
+          fi
+          git add manifests/orchestrator/overlays/dev/kustomization.yaml
+          git commit -m "chore(orchestrator-dev): pin image ${{ needs.push.outputs.version }}"
+          git push origin HEAD:main

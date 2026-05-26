@@ -186,12 +186,15 @@ curl -N -s -X POST http://127.0.0.1:8000/v1/feedback \
 
 Pushes to `main` build the [Dockerfile](Dockerfile) and push to Docker Hub via [`.github/workflows/docker-push.yml`](.github/workflows/docker-push.yml). You can also run the workflow manually (**workflow_dispatch**) from the Actions tab.
 
+On **`main` push** (after a successful build), the same workflow updates [huntai-k3s](https://github.com/taixingbi/huntai-k3s) `manifests/orchestrator/overlays/dev/kustomization.yaml` with the **12-char commit SHA** as `images[].newTag`. Argo CD Application `orchestrator-dev` syncs that Git change and rolls out the new image. See [deploy-gitops-argocd.md](https://github.com/taixingbi/huntai-k3s/blob/main/docs/deploy-gitops-argocd.md) in huntai-k3s.
+
 Add these repository secrets under **Settings → Secrets and variables → Actions**:
 
 | Secret | Description |
 |--------|-------------|
 | `DOCKERHUB_USERNAME` | Docker Hub username or organization |
 | `DOCKERHUB_TOKEN` | Docker Hub access token (recommended; not your account password) |
+| `HUNTAI_K3S_PAT` | PAT with **contents: write** on `taixingbi/huntai-k3s` (GitOps image pin on `main` push) |
 
 Version flow: `git tag/workflow input -> CI VERSION -> Docker build-arg APP_VERSION -> /health + logs`.
 
