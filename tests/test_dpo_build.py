@@ -29,7 +29,7 @@ def test_build_router_completion_rag():
 
 
 def test_build_dpo_from_gold_csvs():
-    prompt = dpo._load_router_system_prompt("router-v3.00")
+    prompt = dpo._load_router_system_prompt("router-v2.00")
     train, val, stats = dpo.build_dpo_dataset(
         gold_data_dir=GOLD_DATA,
         result_dir=None,
@@ -38,7 +38,7 @@ def test_build_dpo_from_gold_csvs():
         include_hack=False,
         fetch_live=False,
         orchestrator_url="",
-        router_prompt_version="router-v3.00",
+        router_prompt_version="router-v2.00",
         fetch_timeout_s=1.0,
         val_ratio=0.1,
     )

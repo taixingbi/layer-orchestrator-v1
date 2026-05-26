@@ -466,7 +466,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--output-dir", type=Path, default=default_out)
     parser.add_argument(
         "--router-prompt-version",
-        default="router-v3.00",
+        default="router-v2.00",
         help="Router prompt file id under app/prompts/",
     )
     parser.add_argument("--val-ratio", type=float, default=0.1)

@@ -24,7 +24,7 @@ from ..schemas.route import ToolRoute, is_user_profile_tool, parse_route_detail
 _router_log = logging.getLogger("layer_orchestrator.intent_router")
 
 _ROUTER_PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
-_DEFAULT_ROUTER_PROMPT_ID = "router-v1.00"
+_DEFAULT_ROUTER_PROMPT_ID = "router-v2.00"
 _ROUTER_PROMPT_VERSION_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
 

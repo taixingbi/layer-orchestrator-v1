@@ -64,7 +64,7 @@ class Settings:
     llm_gateway_base_url: Optional[str] = os.getenv("LLM_GATEWAY_BASE_URL")
     llm_model: str = os.getenv("LLM_MODEL") or "Qwen/Qwen2.5-7B-Instruct"
     # Intent router prompt text: app/prompts/{id}.txt (see ROUTER_PROMPT_VERSION)
-    default_router_prompt_version: str = (os.getenv("ROUTER_PROMPT_VERSION") or "router-v3.00").strip() or "router-v3.00"
+    default_router_prompt_version: str = (os.getenv("ROUTER_PROMPT_VERSION") or "router-v2.00").strip() or "router-v2.00"
 
     # Default timeouts (seconds)
     tools_timeout_s: float = float(os.getenv("TOOLS_TIMEOUT_S", "60"))

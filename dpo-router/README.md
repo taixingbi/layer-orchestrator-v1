@@ -23,7 +23,7 @@ bash dpo-router/run-build-dpo.sh
 After running [`gold-test/run-router-eval.sh`](../gold-test/run-router-eval.sh), rebuild so **rejected** comes from real mismatches in `gold-test/result/*.csv`:
 
 ```bash
-ROUTER_PROMPT_VERSION=router-v3.00 bash gold-test/run-router-eval.sh
+ROUTER_PROMPT_VERSION=router-v2.00 bash gold-test/run-router-eval.sh
 bash dpo-router/run-build-dpo.sh
 ```
 
@@ -40,7 +40,7 @@ Each line matches what the router LLM sees in production:
 ```json
 {
   "prompt": [
-    {"role": "system", "content": "<app/prompts/router-v3.00.txt rendered>"},
+    {"role": "system", "content": "<app/prompts/router-v2.00.txt rendered>"},
     {"role": "user", "content": "History:\n(none)\n\nLatest question:\n..."}
   ],
   "chosen": "{\"rewritten_question\":\"...\",\"route_detail\":{...},\"route\":\"tool\",...}",
@@ -50,7 +50,7 @@ Each line matches what the router LLM sees in production:
     "expected_route": "rag",
     "source_file": "router-gold-profile.csv",
     "rejected_source": "result_csv | live_eval | synthetic",
-    "router_prompt_version": "router-v3.00"
+    "router_prompt_version": "router-v2.00"
   }
 }
 ```
@@ -90,7 +90,7 @@ INCLUDE_SEED_FAQ=1 INCLUDE_HACK=1 bash dpo-router/run-build-dpo.sh
 | `GOLD_DATA` | `../gold-test/data` | Input CSV directory |
 | `GOLD_RESULT` | `../gold-test/result` | Eval result CSVs (optional) |
 | `OUTPUT_DIR` | `dpo-router/output` | Output JSONL directory |
-| `ROUTER_PROMPT_VERSION` | `router-v3.00` | Prompt file under `app/prompts/` |
+| `ROUTER_PROMPT_VERSION` | `router-v2.00` | Prompt file under `app/prompts/` |
 | `FETCH_LIVE` | `0` | Set `1` to call eval API for rejected |
 | `ORCHESTRATOR_URL` | — | Required when `FETCH_LIVE=1` |
 | `INCLUDE_SEED_FAQ` | `0` | Include seed-FAQ gold file |
@@ -107,7 +107,7 @@ Use [TRL `DPOTrainer`](https://huggingface.co/docs/trl/dpo_trainer) or your gate
 Post-train, re-run gold eval:
 
 ```bash
-ROUTER_PROMPT_VERSION=router-v3.00 bash gold-test/run-router-eval.sh
+ROUTER_PROMPT_VERSION=router-v2.00 bash gold-test/run-router-eval.sh
 ```
 
 ## See also
