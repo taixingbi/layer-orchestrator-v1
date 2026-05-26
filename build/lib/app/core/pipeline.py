@@ -90,7 +90,6 @@ async def _yield_request_complete_done(
     usage: Optional[Dict[str, Any]] = None,
     citations: Optional[List[Any]] = None,
     follow_up_questions: Optional[List[Any]] = None,
-    final_response_meta: Optional[Dict[str, Any]] = None,
 ) -> AsyncIterator[dict]:
     done_ts = utc_now_iso()
     complete_state = state_event(
@@ -113,18 +112,6 @@ async def _yield_request_complete_done(
         extra["gateway_meta"] = {"is_new_conversation": bool(is_new_conversation)}
     async with bind_pipeline_phase("request_complete"):
         _pipeline_log.info("request_completed", extra=extra)
-        if final_response_meta:
-            _pipeline_log.info(
-                "final_response_emitted",
-                extra={
-                    "event": "final_response_emitted",
-                    "request_id": request_id,
-                    "session_id": session_id or "-",
-                    "trace_id": (trace_id or request_id or "-"),
-                    "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
-                    "gateway_meta": final_response_meta,
-                },
-            )
     yield complete_state
     done_event: Dict[str, Any] = {
         "type": "done",
@@ -243,7 +230,6 @@ async def stream_answer_query(
     intent_router_usage: Optional[Dict[str, int]] = None
     tool_usage: Optional[Dict[str, Any]] = None
     route_detail: Optional[RouteDetail] = None
-    initial_route_detail: Optional[RouteDetail] = None
     route_source: str = "llm_router"
     rewrite_text = (query or "").strip()
     direct_answer: Optional[str] = None
@@ -285,7 +271,6 @@ async def stream_answer_query(
         pre_deterministic = pre is not None
         if pre:
             route_detail, direct_answer, rewrite_text = pre
-            initial_route_detail = route_detail
         else:
             async with bind_pipeline_phase("intent_router"):
                 decision = await run_intent_rewrite_router(
@@ -298,7 +283,6 @@ async def stream_answer_query(
                     is_new_conversation=is_new_conversation,
                     runtime_meta=router_runtime_meta,
                 )
-                initial_route_detail = decision_to_route_detail(decision)
                 decision = normalize_post_router(decision, latest_question=query, history=hist)
                 intent_router_usage = decision.router_usage
                 route_detail = decision_to_route_detail(decision)
@@ -324,9 +308,6 @@ async def stream_answer_query(
         )
 
         flat_route = legacy_route_from_detail(route_detail)
-        initial_flat_route = legacy_route_from_detail(initial_route_detail or route_detail)
-        initial_route_detail_dict = route_detail_to_dict(initial_route_detail or route_detail)
-        final_route_detail_dict = route_detail_to_dict(route_detail)
         router_ended_at = utc_now_iso()
         yield state_event(
             phase="intent_router",
@@ -359,21 +340,6 @@ async def stream_answer_query(
                 conversation_id=conv or None,
                 is_new_conversation=is_new_conversation,
                 usage=request_usage,
-                final_response_meta={
-                    "route_initial": initial_flat_route,
-                    "route_initial_detail": initial_route_detail_dict,
-                    "route_final": flat_route,
-                    "route_final_detail": final_route_detail_dict,
-                    "route_source": route_source,
-                    "override_applied": initial_flat_route != flat_route
-                    or initial_route_detail_dict != final_route_detail_dict,
-                    "answer_source": f"internal_intent:{route_detail.name}",
-                    "answer_len": len(answer_text or ""),
-                    "answer_preview": (answer_text or "")[:160] or None,
-                    "citations_count": 0,
-                    "follow_up_questions_count": 0,
-                    "is_new_conversation": bool(is_new_conversation),
-                },
             ):
                 yield ev
             return
@@ -475,21 +441,6 @@ async def stream_answer_query(
                 usage=request_usage,
                 citations=citations,
                 follow_up_questions=follow_ups,
-                final_response_meta={
-                    "route_initial": initial_flat_route,
-                    "route_initial_detail": initial_route_detail_dict,
-                    "route_final": flat_route,
-                    "route_final_detail": final_route_detail_dict,
-                    "route_source": route_source,
-                    "override_applied": initial_flat_route != flat_route
-                    or initial_route_detail_dict != final_route_detail_dict,
-                    "answer_source": f"tool:{route_detail.name}",
-                    "answer_len": len(answer_text or ""),
-                    "answer_preview": (answer_text or "")[:160] or None,
-                    "citations_count": len(citations or []),
-                    "follow_up_questions_count": len(follow_ups or []),
-                    "is_new_conversation": bool(is_new_conversation),
-                },
             ):
                 yield ev
             return
