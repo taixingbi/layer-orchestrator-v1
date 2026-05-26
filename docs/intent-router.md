@@ -100,6 +100,7 @@ Router prompts are **not** JSON: the loader reads **`{id}.txt`** as the system s
 - Successful LLM completion logs **`intent_router_completed`** with latency and previews.
 - Small-talk hits log **`intent_router_smalltalk_seed`** or **`intent_router_smalltalk_pattern`**.
 - Injection guard hits log **`intent_router_injection_guard`**.
+- After a successful or failed answer, **`final_response_emitted`** logs `gateway_meta.routing` (route initial/final, `override_applied`) and `gateway_meta.response` — the same canonical envelope as `POST /v1/orchestrator/answer` JSON / SSE `done` (`meta`, `answer`, `follow_up_questions`, `latency_ms`, `usage`, `status`). Built by [`build_final_response_log`](../app/observability/response_log.py).
 - Eval responses expose `router.prompt_source`, `router.prompt_file`, `router.smalltalk_intent`, etc. See [schema-request-response.md](schema-request-response.md).
 
 ## Related code

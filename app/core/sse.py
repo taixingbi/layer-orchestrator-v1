@@ -12,46 +12,13 @@ from ..observability.metrics import inc_timeout, observe_pipeline_event
 from ..observability.context import bind_conversation_logging_context
 from ..schemas.response import empty_answer_accumulator
 from .pipeline import stream_answer_query
+from .state import (
+    _TERMINAL_STATE_STATUSES,
+    merge_phase_states,
+    state_slice_from_event,
+)
 
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
-_TERMINAL_STATE_STATUSES = frozenset({"completed", "failed", "skipped"})
-
-
-def state_slice_from_event(event: dict) -> dict:
-    return {
-        "phase": event.get("phase"),
-        "status": event.get("status"),
-        "ui_message": event.get("ui_message") or event.get("message"),
-        "started_at": event.get("started_at"),
-        "ended_at": event.get("ended_at"),
-        "latency_ms": event.get("latency_ms"),
-        "metadata": dict(event.get("metadata") or {}),
-    }
-
-
-def merge_phase_states(existing: dict, incoming: dict) -> dict:
-    out = dict(existing)
-    ex_st = out.get("status")
-    in_st = incoming.get("status")
-    out["metadata"] = {**(out.get("metadata") or {}), **(incoming.get("metadata") or {})}
-    if ex_st in _TERMINAL_STATE_STATUSES:
-        if out.get("started_at") is None and incoming.get("started_at"):
-            out["started_at"] = incoming["started_at"]
-        return out
-    if in_st in _TERMINAL_STATE_STATUSES:
-        out["status"] = in_st
-        out["ui_message"] = incoming.get("ui_message") or out.get("ui_message")
-        if incoming.get("ended_at") is not None:
-            out["ended_at"] = incoming["ended_at"]
-        if incoming.get("latency_ms") is not None:
-            out["latency_ms"] = incoming["latency_ms"]
-        out["started_at"] = incoming.get("started_at") or out.get("started_at")
-        return out
-    out["status"] = in_st or ex_st
-    out["ui_message"] = incoming.get("ui_message") or out.get("ui_message")
-    if incoming.get("started_at"):
-        out["started_at"] = incoming["started_at"]
-    return out
 
 
 def _parse_iso_ts(value: Optional[str]) -> Optional[datetime]:
