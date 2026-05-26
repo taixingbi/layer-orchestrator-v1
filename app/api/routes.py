@@ -83,11 +83,12 @@ def _router_eval_payload(
     if history and not checks["history_followup_rewritten"]:
         notes.append("history exists but rewritten_question did not change from question")
     all_checks_pass = all(checks.values())
+    route_match = checks["route_match"] if exp is not None else None
     return {
         "expected_route": exp,
         "actual_route": actual_route,
         "route_detail": route_detail_to_dict(route_detail),
-        "route_match": (actual_route == exp) if exp is not None else None,
+        "route_match": route_match,
         "all_checks_pass": all_checks_pass,
         "checks": checks,
         "notes": notes,

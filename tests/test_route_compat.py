@@ -42,3 +42,26 @@ def test_routes_equivalent_rag_alias():
     detail = ToolRoute(name="user_profile", confidence=1.0, reason="kb")
     assert routes_equivalent("rag", "tool", detail)
     assert not routes_equivalent("tool", "direct_reply", detail)
+
+
+def test_eval_payload_route_match_uses_rag_alias():
+    from app.api.routes import _router_eval_payload
+    from app.core.intent_router import RouterDecision
+
+    decision = RouterDecision(
+        rewritten_question="What is Taixing Bi's current role?",
+        route="tool",
+        route_detail={"type": "tool", "name": "user_profile", "confidence": 1.0, "reason": "kb"},
+        can_answer_directly=False,
+        direct_answer=None,
+        reason="kb",
+    )
+    evaluation = _router_eval_payload(
+        decision,
+        question="What is Taixing Bi's current role?",
+        history=[],
+        expected_route="rag",
+    )
+    assert evaluation["actual_route"] == "tool"
+    assert evaluation["route_match"] is True
+    assert evaluation["checks"]["route_match"] is True
