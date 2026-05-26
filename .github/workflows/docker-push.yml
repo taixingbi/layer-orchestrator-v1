@@ -99,14 +99,32 @@ jobs:
           set -euo pipefail
           KUSTOMIZE_FILE="manifests/orchestrator/overlays/dev/kustomization.yaml"
           EXPECTED="docker.io/taixingbi/layer-orchestrator-v1"
-          ACTUAL="$(grep -E '^\s+name:' "${KUSTOMIZE_FILE}" | head -1 | sed 's/.*name:[[:space:]]*//;s/"//g')"
-          if [ "${ACTUAL}" != "${EXPECTED}" ]; then
-            echo "Unexpected images[0].name: ${ACTUAL} (expected ${EXPECTED})" >&2
+          if [ ! -f "${KUSTOMIZE_FILE}" ]; then
+            echo "Missing ${KUSTOMIZE_FILE}" >&2
             exit 1
           fi
-          # Replace newTag under images (portable without yq)
+          if ! grep -q '^images:' "${KUSTOMIZE_FILE}"; then
+            echo "Missing images: block in ${KUSTOMIZE_FILE} (push huntai-k3s GitOps overlay first)" >&2
+            cat "${KUSTOMIZE_FILE}" >&2
+            exit 1
+          fi
+          # Kustomize list item is "  - name:" not "  name:" — do not use '^\s+name:' alone.
+          ACTUAL="$(grep -E '^\s+-\s+name:' "${KUSTOMIZE_FILE}" | head -1 | sed -E 's/^[[:space:]]*-[[:space:]]*name:[[:space:]]*//;s/"//g;s/[[:space:]]*$//')"
+          if [ "${ACTUAL}" != "${EXPECTED}" ]; then
+            echo "Unexpected images[0].name: '${ACTUAL}' (expected '${EXPECTED}')" >&2
+            cat "${KUSTOMIZE_FILE}" >&2
+            exit 1
+          fi
+          if ! grep -qE '^[[:space:]]*newTag:' "${KUSTOMIZE_FILE}"; then
+            echo "Missing newTag in ${KUSTOMIZE_FILE}" >&2
+            exit 1
+          fi
           sed -i -E "s|^([[:space:]]*newTag:[[:space:]]*).*$|\1\"${TAG}\"|" "${KUSTOMIZE_FILE}"
-          grep -q "newTag: \"${TAG}\"" "${KUSTOMIZE_FILE}"
+          grep -q "newTag: \"${TAG}\"" "${KUSTOMIZE_FILE}" || {
+            echo "newTag was not updated to ${TAG}" >&2
+            cat "${KUSTOMIZE_FILE}" >&2
+            exit 1
+          }
 
       - name: Commit and push
         working-directory: huntai-k3s
