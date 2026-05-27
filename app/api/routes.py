@@ -36,7 +36,13 @@ from ..schemas.request import (
     history_from_answer_body,
     history_from_eval_body,
 )
-from ..schemas.route import legacy_route_from_detail, route_detail_to_dict, routes_equivalent
+from ..schemas.route import (
+    CANONICAL_ROUTES,
+    is_internal_route,
+    normalize_gold_expected_route,
+    route_detail_to_dict,
+    routes_equivalent,
+)
 
 router = APIRouter()
 v1_router = APIRouter(prefix="/v1")
@@ -51,18 +57,25 @@ def _router_eval_payload(
     expected_route: Optional[str],
 ) -> dict:
     route_detail = decision_to_route_detail(decision)
-    actual_route = legacy_route_from_detail(route_detail)
-    exp = expected_route.strip().lower() if isinstance(expected_route, str) and expected_route.strip() else None
+    actual_route = decision.route
+    exp = (
+        normalize_gold_expected_route(expected_route)
+        if isinstance(expected_route, str) and expected_route.strip()
+        else None
+    )
 
     checks: Dict[str, bool] = {
         "has_rewrite": bool((decision.rewritten_question or "").strip()),
-        "route_valid": actual_route in ("direct_reply", "clarify", "reject", "tool"),
-        "direct_reply_has_answer": (
-            actual_route != "direct_reply" or bool((decision.direct_answer or "").strip())
+        "route_valid": actual_route in CANONICAL_ROUTES,
+        "static_answer_ok": (
+            not is_internal_route(actual_route)
+            or actual_route in ("reject",)
+            or bool((decision.static_answer or "").strip())
+            or actual_route in ("greeting", "identity", "help", "capabilities")
         ),
     }
     if exp is not None:
-        checks["route_match"] = routes_equivalent(exp, actual_route, route_detail)
+        checks["route_match"] = routes_equivalent(exp, actual_route)
     else:
         checks["route_match"] = True
     if history:
@@ -78,8 +91,8 @@ def _router_eval_payload(
         notes.append("route is not in allowed set")
     if exp is not None and not checks["route_match"]:
         notes.append(f"route mismatch: expected {exp}, got {actual_route}")
-    if not checks["direct_reply_has_answer"]:
-        notes.append("direct_reply route returned empty answer")
+    if not checks["static_answer_ok"]:
+        notes.append("internal route returned empty static_answer")
     if history and not checks["history_followup_rewritten"]:
         notes.append("history exists but rewritten_question did not change from question")
     all_checks_pass = all(checks.values())
@@ -88,6 +101,7 @@ def _router_eval_payload(
         "expected_route": exp,
         "actual_route": actual_route,
         "route_detail": route_detail_to_dict(route_detail),
+        "route_source": decision.source,
         "route_match": route_match,
         "all_checks_pass": all_checks_pass,
         "checks": checks,
@@ -234,9 +248,10 @@ async def orchestrator_eval_router(request: Request):
             "decision": {
                 "rewritten_question": decision.rewritten_question,
                 "route": decision.route,
+                "confidence": decision.confidence,
+                "source": decision.source,
                 "route_detail": route_detail_to_dict(route_detail),
-                "legacy_route": legacy_route_from_detail(route_detail),
-                "answer": decision.direct_answer,
+                "static_answer": decision.static_answer,
                 "reason": decision.reason,
             },
             "evaluation": evaluation,

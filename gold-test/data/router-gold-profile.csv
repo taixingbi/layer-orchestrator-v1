@@ -1,11 +1,11 @@
 question,expected_route
-What is Taixing Bi's current role?,rag
-Where does Taixing Bi currently work?,rag
-Which work locations is Taixing Bi open to?,rag
-What is Taixing Bi's expected compensation range?,rag
-What is Taixing Bi's visa status / work authorization?,rag
-Which roles is Taixing Bi targeting?,rag
-What is Taixing Bi's LinkedIn profile?,rag
-What is Taixing Bi's phone number?,rag
-What is Taixing Bi's email address?,rag
-How many years of experience in Python do you have?,rag
+What is Taixing Bi's current role?,rag_private_kb
+Where does Taixing Bi currently work?,rag_private_kb
+Which work locations is Taixing Bi open to?,rag_private_kb
+What is Taixing Bi's expected compensation range?,rag_private_kb
+What is Taixing Bi's visa status / work authorization?,rag_private_kb
+Which roles is Taixing Bi targeting?,rag_private_kb
+What is Taixing Bi's LinkedIn profile?,rag_private_kb
+What is Taixing Bi's phone number?,rag_private_kb
+What is Taixing Bi's email address?,rag_private_kb
+How many years of experience in Python do you have?,rag_private_kb

@@ -24,16 +24,19 @@ from app.core.rewrite import (  # noqa: E402
     format_history_for_prompt,
     rewrite_to_third_person,
 )
-from app.schemas.route import route_detail_from_legacy, route_detail_to_dict  # noqa: E402
+from app.schemas.route import (  # noqa: E402
+    CANONICAL_ROUTES,
+    normalize_gold_expected_route,
+    normalize_legacy_route_to_canonical,
+)
 
 DEFAULT_SKIP_BASENAMES = frozenset(
     {
-        "router-gold-seed-faq",  # small-talk seed (no router LLM in prod)
-        "router-gold-hack",  # injection guard (no router LLM in prod)
+        "router-gold-seed-faq",
+        "router-gold-hack",
     }
 )
 
-# Heuristic internal_intent for direct_reply gold rows (meta / greeting / help).
 _DIRECT_REPLY_INTENT_PATTERNS: List[Tuple[re.Pattern[str], str]] = [
     (re.compile(r"^(hi|hello|hey)\b", re.I), "greeting"),
     (re.compile(r"how are you", re.I), "greeting"),
@@ -52,7 +55,7 @@ class GoldRow:
 
 
 def _load_router_system_prompt(version: str) -> str:
-    from app.core.intent_router import _render_stored_router_prompt, _resolve_router_system_content
+    from app.core.intent_router import _resolve_router_system_content
 
     content, _ = _resolve_router_system_content(
         body_override=None,
@@ -60,6 +63,20 @@ def _load_router_system_prompt(version: str) -> str:
         default_version=version,
     )
     return content
+
+
+def _canonical_expected_route(row: GoldRow) -> str:
+    er = normalize_gold_expected_route(row.expected_route)
+    if er == "help" and row.expected_route.strip().lower() == "direct_reply":
+        for pat, intent in _DIRECT_REPLY_INTENT_PATTERNS:
+            if pat.search(row.question):
+                return intent
+        return "help"
+    if er == "github_search" and row.expected_tool:
+        return normalize_legacy_route_to_canonical("tool", {"type": "tool", "name": row.expected_tool})
+    if er in CANONICAL_ROUTES:
+        return er
+    return normalize_legacy_route_to_canonical(er)
 
 
 def _parse_gold_csv(path: Path) -> List[GoldRow]:
@@ -95,117 +112,90 @@ def _parse_gold_csv(path: Path) -> List[GoldRow]:
     return rows
 
 
-def _direct_reply_intent(question: str) -> str:
-    for pat, intent in _DIRECT_REPLY_INTENT_PATTERNS:
-        if pat.search(question):
-            return intent
-    return "help"
-
-
-def _legacy_route_for_expected(row: GoldRow) -> str:
-    er = row.expected_route
-    if er == "rag":
-        return "tool"
-    return er
-
-
-def _tool_name_for_expected(row: GoldRow) -> str:
-    if row.expected_tool:
-        return row.expected_tool
-    if row.expected_route == "rag":
-        return "rag_private_kb"
-    if row.expected_route == "tool":
-        return "github_search"
-    return "rag_private_kb"
-
-
-def _route_detail_dict(row: GoldRow) -> Dict[str, Any]:
-    er = row.expected_route
-    if er in ("rag", "tool"):
-        return route_detail_to_dict(
-            route_detail_from_legacy("tool", reason="gold label", confidence=0.95)
-        ) | {"name": _tool_name_for_expected(row)}
-    if er == "direct_reply":
-        intent = _direct_reply_intent(row.question)
-        return {"type": "internal_intent", "name": intent, "confidence": 0.95, "reason": "gold label"}
-    if er == "clarify":
-        return {"type": "internal_intent", "name": "clarify", "confidence": 0.95, "reason": "gold label"}
-    if er == "reject":
-        return {"type": "internal_intent", "name": "reject", "confidence": 0.99, "reason": "gold label"}
-    return route_detail_to_dict(route_detail_from_legacy(er, reason="gold label", confidence=0.95))
-
-
-def _rewritten_question(row: GoldRow) -> str:
+def _rewritten_question(row: GoldRow, canonical_route: str) -> str:
     q = row.question.strip()
-    er = row.expected_route
-    if er in ("rag", "tool"):
+    if canonical_route in ("rag_private_kb", "github_search", "web_search"):
         return rewrite_to_third_person(q)
     return q
 
 
-def _direct_answer_for_chosen(row: GoldRow) -> Optional[str]:
-    er = row.expected_route
-    if er == "reject":
+def _static_answer_for_chosen(row: GoldRow, canonical_route: str) -> Optional[str]:
+    if canonical_route == "reject":
         return None
-    if er == "clarify":
+    if canonical_route == "clarify":
         return "Please clarify your question."
-    if er == "direct_reply":
-        intent = _direct_reply_intent(row.question)
-        if intent == "greeting":
-            return f"Hello, I'm an assistant for questions about {CANDIDATE_NAME}'s profile and related topics."
-        if intent == "identity":
-            return f"I'm an AI assistant focused on {CANDIDATE_NAME}'s profile and organizational knowledge."
-        if intent == "capabilities":
-            return (
-                f"I can answer questions about {CANDIDATE_NAME}'s profile, visa and work authorization "
-                "from your knowledge base, and related topics."
-            )
-        return None
+    if canonical_route == "greeting":
+        return f"Hello, I'm an assistant for questions about {CANDIDATE_NAME}'s profile and related topics."
+    if canonical_route == "identity":
+        return f"I'm an AI assistant focused on {CANDIDATE_NAME}'s profile and organizational knowledge."
+    if canonical_route == "capabilities":
+        return (
+            f"I can answer questions about {CANDIDATE_NAME}'s profile, visa and work authorization "
+            "from your knowledge base, and related topics."
+        )
     return None
 
 
 def build_router_completion(row: GoldRow, *, label: str = "gold") -> Dict[str, Any]:
-    route_detail = _route_detail_dict(row)
-    legacy = _legacy_route_for_expected(row)
+    route = _canonical_expected_route(row)
     return {
-        "rewritten_question": _rewritten_question(row),
-        "route_detail": route_detail,
-        "direct_answer": _direct_answer_for_chosen(row),
-        "reason": f"{label}: expected {row.expected_route}",
-        "route": legacy,
+        "rewritten_question": _rewritten_question(row, route),
+        "route": route,
+        "confidence": 0.95,
+        "reason": f"{label}: expected {route}",
+        "static_answer": _static_answer_for_chosen(row, route),
+        "repo": None,
     }
 
 
 def _synthetic_rejected_row(row: GoldRow) -> GoldRow:
     """Opposite-route completion for DPO when live eval output is unavailable."""
-    er = row.expected_route
-    if er in ("rag", "tool"):
+    er = _canonical_expected_route(row)
+    if er in ("rag_private_kb", "github_search", "web_search"):
         return GoldRow(
             question=row.question,
-            expected_route="direct_reply",
+            expected_route="help",
             source_file=row.source_file,
             history=row.history,
         )
-    if er == "direct_reply":
+    if er in ("greeting", "identity", "help", "capabilities"):
         return GoldRow(
             question=row.question,
-            expected_route="rag",
+            expected_route="rag_private_kb",
             source_file=row.source_file,
             history=row.history,
         )
     if er == "reject":
         return GoldRow(
             question=row.question,
-            expected_route="direct_reply",
+            expected_route="help",
             source_file=row.source_file,
             history=row.history,
         )
     return GoldRow(
         question=row.question,
-        expected_route="direct_reply",
+        expected_route="rag_private_kb",
         source_file=row.source_file,
         history=row.history,
     )
+
+
+def _dpo_eligible(row: GoldRow) -> bool:
+    """Train only ambiguous LLM-router cases (skip seed, guard, deterministic github)."""
+    base = Path(row.source_file).stem
+    if base in DEFAULT_SKIP_BASENAMES:
+        return False
+    er = _canonical_expected_route(row)
+    if er in ("reject", "clarify"):
+        return False
+    if not (row.question or "").strip():
+        return False
+    if er == "github_search":
+        from app.core.github_route import match_github_search
+
+        if match_github_search(row.question) is not None:
+            return False
+    return True
 
 
 def _build_user_message(row: GoldRow) -> str:
@@ -271,14 +261,13 @@ def _read_result_csv(path: Path) -> Dict[str, Dict[str, str]]:
 def _rejected_from_result(row: GoldRow, result: Dict[str, str]) -> Optional[Dict[str, Any]]:
     if result.get("route_match") == "true":
         return None
-    actual = (result.get("actual_route") or "").strip().lower()
+    actual = normalize_gold_expected_route((result.get("actual_route") or "").strip())
     if not actual:
         return None
     fake = GoldRow(
         question=row.question,
-        expected_route=actual if actual != "tool" else "rag",
+        expected_route=actual,
         source_file=row.source_file,
-        expected_tool="rag_private_kb" if actual == "tool" else None,
         history=row.history,
     )
     completion = build_router_completion(fake, label="eval_actual")
@@ -286,8 +275,8 @@ def _rejected_from_result(row: GoldRow, result: Dict[str, str]) -> Optional[Dict
     if rw:
         completion["rewritten_question"] = rw
     ans = (result.get("actual_answer") or "").strip()
-    if ans and actual == "direct_reply":
-        completion["direct_answer"] = ans
+    if ans and actual in ("greeting", "identity", "help", "capabilities", "clarify"):
+        completion["static_answer"] = ans
     return completion
 
 
@@ -303,7 +292,9 @@ def _fetch_eval_decision(
     body = json.dumps(
         {
             "question": question,
-            "expected_route": expected_route,
+            "expected_route": _canonical_expected_route(
+                GoldRow(question=question, expected_route=expected_route, source_file="live")
+            ),
             "router_prompt_version": router_prompt_version,
         }
     ).encode("utf-8")
@@ -321,16 +312,16 @@ def _fetch_eval_decision(
     decision = payload.get("decision")
     if not isinstance(decision, dict):
         return None
-    route = (decision.get("route") or "").strip()
-    route_detail = decision.get("route_detail")
-    if not route:
+    route = normalize_legacy_route_to_canonical((decision.get("route") or "").strip())
+    if route not in CANONICAL_ROUTES:
         return None
     return {
         "rewritten_question": decision.get("rewritten_question") or question,
-        "route_detail": route_detail if isinstance(route_detail, dict) else {},
-        "direct_answer": decision.get("answer"),
-        "reason": decision.get("reason") or "live eval",
         "route": route,
+        "confidence": float(decision.get("confidence") or 0.5),
+        "reason": decision.get("reason") or "live eval",
+        "static_answer": decision.get("static_answer"),
+        "repo": decision.get("repo"),
     }
 
 
@@ -376,6 +367,7 @@ def build_dpo_dataset(
     stats: Dict[str, Any] = {
         "rows_total": 0,
         "pairs_written": 0,
+        "skipped_ineligible": 0,
         "skipped_match": 0,
         "rejected_source": {"result_csv": 0, "live_eval": 0, "synthetic": 0},
         "by_expected_route": {},
@@ -392,7 +384,12 @@ def build_dpo_dataset(
         include_hack=include_hack,
     ):
         stats["rows_total"] += 1
-        stats["by_expected_route"][row.expected_route] = stats["by_expected_route"].get(row.expected_route, 0) + 1
+        canonical = _canonical_expected_route(row)
+        stats["by_expected_route"][canonical] = stats["by_expected_route"].get(canonical, 0) + 1
+
+        if not _dpo_eligible(row):
+            stats["skipped_ineligible"] += 1
+            continue
 
         chosen = build_router_completion(row, label="gold")
         rejected: Optional[Dict[str, Any]] = None
@@ -425,7 +422,7 @@ def build_dpo_dataset(
 
         meta = {
             "question": row.question,
-            "expected_route": row.expected_route,
+            "expected_route": canonical,
             "source_file": row.source_file,
             "rejected_source": rejected_src,
             "router_prompt_version": router_prompt_version,

@@ -5,6 +5,7 @@ from typing import List, Literal, Optional, Tuple
 from pydantic import BaseModel, Field, field_validator
 
 from ..core.rewrite import normalize_history_turns
+from .route import CanonicalRoute, CANONICAL_ROUTES, normalize_gold_expected_route
 
 
 class HistoryTurn(BaseModel):
@@ -41,7 +42,7 @@ class AnswerBody(BaseModel):
 
 class EvalRouterBody(BaseModel):
     question: str
-    expected_route: Optional[Literal["rag", "direct_reply", "clarify", "reject", "tool"]] = None
+    expected_route: Optional[CanonicalRoute] = None
     conversation_id: Optional[str] = Field(
         default=None,
         max_length=256,
@@ -59,6 +60,14 @@ class EvalRouterBody(BaseModel):
     )
     router_prompt_override: Optional[str] = None
     history: List[HistoryTurn] = Field(default_factory=list)
+
+    @field_validator("expected_route", mode="before")
+    @classmethod
+    def _normalize_expected_route(cls, v: object) -> Optional[str]:
+        if v is None:
+            return None
+        s = normalize_gold_expected_route(str(v))
+        return s if s in CANONICAL_ROUTES else "help"
 
     @field_validator("router_model", "router_prompt_version", "conversation_id", mode="before")
     @classmethod

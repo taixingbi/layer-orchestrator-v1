@@ -1,21 +1,21 @@
 question,expected_route
-Can you give examples of Python projects Taixing Bi has worked on?,rag
-What specific projects is Taixing Bi currently working on?,rag
-Does Taixing Bi have any previous roles related to AI infrastructure?,rag
-What qualifications does Taixing Bi have for this position?,rag
-Can you provide more details about Taixing Bi's role at Saks?,rag
-How long has Taixing Bi been working at Saks?,rag
-Can Taixing Bi choose between remote and hybrid options freely?,rag
-Can you explain what H4 EAD means?,direct_reply
-Are there any restrictions with H4 EAD?,direct_reply
-Can H4 EAD holders apply for Green Card sponsorship?,direct_reply
-Can you find any publications listed on Taixing Bi's LinkedIn profile?,rag
-What skills does Taixing Bi list on his LinkedIn profile?,rag
-What are Taixing Bi's educational qualifications mentioned on LinkedIn?,rag
-Is 347-560-4308 the primary or office phone number for taixing?,rag
-Are there any other ways to reach out to Taixing Bi besides phone?,rag
-Is taixingbijob@gmail.com the most reliable way to reach Taixing Bi?,rag
-Does Taixing Bi use any other professional email addresses?,rag
-Have taixing used Python for any major projects recently?,rag
-What specific areas of Python does taixing specialize in?,rag
-Can you describe a complex Python project Taixing worked on?,rag
+Can you give examples of Python projects Taixing Bi has worked on?,rag_private_kb
+What specific projects is Taixing Bi currently working on?,rag_private_kb
+Does Taixing Bi have any previous roles related to AI infrastructure?,rag_private_kb
+What qualifications does Taixing Bi have for this position?,rag_private_kb
+Can you provide more details about Taixing Bi's role at Saks?,rag_private_kb
+How long has Taixing Bi been working at Saks?,rag_private_kb
+Can Taixing Bi choose between remote and hybrid options freely?,rag_private_kb
+Can you explain what H4 EAD means?,help
+Are there any restrictions with H4 EAD?,help
+Can H4 EAD holders apply for Green Card sponsorship?,help
+Can you find any publications listed on Taixing Bi's LinkedIn profile?,rag_private_kb
+What skills does Taixing Bi list on his LinkedIn profile?,rag_private_kb
+What are Taixing Bi's educational qualifications mentioned on LinkedIn?,rag_private_kb
+Is 347-560-4308 the primary or office phone number for taixing?,rag_private_kb
+Are there any other ways to reach out to Taixing Bi besides phone?,rag_private_kb
+Is taixingbijob@gmail.com the most reliable way to reach Taixing Bi?,rag_private_kb
+Does Taixing Bi use any other professional email addresses?,rag_private_kb
+Have taixing used Python for any major projects recently?,rag_private_kb
+What specific areas of Python does taixing specialize in?,rag_private_kb
+Can you describe a complex Python project Taixing worked on?,rag_private_kb

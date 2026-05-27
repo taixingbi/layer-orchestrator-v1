@@ -1,17 +1,17 @@
 question,expected_route
-Hi?,direct_reply
-Hi Taixing?,direct_reply
-How are you?,direct_reply
-What is your name?,direct_reply
-Could I know your name?,direct_reply
-Who created you?,direct_reply
-What can you do?,direct_reply
-Are you real?,direct_reply
-Where are you from?,direct_reply
-How old are you?,direct_reply
-Can you think?,direct_reply
-Do you have feelings?,direct_reply
-What should I ask you?,direct_reply
-Tell me a funny story?,direct_reply
-Tell me about yourself?,direct_reply
-Tell me who you are?,direct_reply
+Hi?,greeting
+Hi Taixing?,greeting
+How are you?,greeting
+What is your name?,identity
+Could I know your name?,identity
+Who created you?,identity
+What can you do?,capabilities
+Are you real?,help
+Where are you from?,help
+How old are you?,help
+Can you think?,help
+Do you have feelings?,help
+What should I ask you?,help
+Tell me a funny story?,help
+Tell me about yourself?,identity
+Tell me who you are?,help

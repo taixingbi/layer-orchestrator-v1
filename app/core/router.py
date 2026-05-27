@@ -1,8 +1,8 @@
-"""Router integration: legacy RouterDecision + route_detail conversion."""
+"""Router integration: canonical RouterDecision + envelope route_detail conversion."""
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from .github_route import match_github_search
 from .intent_router import (
@@ -11,14 +11,7 @@ from .intent_router import (
     run_intent_rewrite_router,
 )
 from ..intents.registry import match_internal_intent
-from ..schemas.route import (
-    InternalIntentRoute,
-    RouteDetail,
-    ToolRoute,
-    legacy_route_from_detail,
-    parse_route_detail,
-    route_detail_to_dict,
-)
+from ..schemas.route import RouteDetail, canonical_to_route_detail
 
 __all__ = [
     "RouterDecision",
@@ -32,22 +25,15 @@ __all__ = [
 
 
 def decision_to_route_detail(decision: RouterDecision) -> RouteDetail:
-    """Convert legacy RouterDecision to nested route_detail."""
-    raw = getattr(decision, "route_detail", None)
-    parsed = parse_route_detail(raw)
-    if parsed is not None:
-        return parsed
-    route = (decision.route or "rag").strip().lower()
-    reason = decision.reason or ""
-    if route == "rag":
-        return ToolRoute(name="rag_private_kb", confidence=1.0, reason=reason)
-    if route == "tool":
-        return ToolRoute(name="github_search", confidence=1.0, reason=reason)
-    if route == "clarify":
-        return InternalIntentRoute(name="clarify", confidence=1.0, reason=reason)
-    if route == "reject":
-        return InternalIntentRoute(name="reject", confidence=1.0, reason=reason)
-    return InternalIntentRoute(name="help", confidence=1.0, reason=reason or "direct_reply")
+    """Derive nested route_detail from canonical decision.route (envelope boundary)."""
+    route = (decision.route or "rag_private_kb").strip().lower()
+    conf = float(decision.confidence) if decision.confidence is not None else 1.0
+    return canonical_to_route_detail(
+        route,
+        confidence=conf,
+        reason=decision.reason or "",
+        repo=decision.repo,
+    )
 
 
 def resolve_route(

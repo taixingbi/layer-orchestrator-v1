@@ -147,10 +147,11 @@ async def _yield_request_complete_done(
 
 
 def _route_event(detail: RouteDetail, rewrite: str, *, route_source: str) -> Dict[str, Any]:
-    flat = legacy_route_from_detail(detail)
+    from ..schemas.route import canonical_from_route_detail
+
     return {
         "type": "route",
-        "route": flat,
+        "route": canonical_from_route_detail(detail),
         "route_detail": route_detail_to_dict(detail),
         "route_source": route_source,
         "text": rewrite,
@@ -310,17 +311,11 @@ async def stream_answer_query(
                 intent_router_usage = decision.router_usage
                 route_detail = decision_to_route_detail(decision)
                 rewrite_text = (decision.rewritten_question or query or "").strip()
-                direct_answer = decision.direct_answer
-                if decision.route in ("direct_reply", "clarify", "reject") and not isinstance(
-                    route_detail, ToolRoute
-                ):
-                    name = decision.route if decision.route != "direct_reply" else "help"
-                    route_detail = InternalIntentRoute(
-                        name=name if name in ("clarify", "reject") else "help",
-                        confidence=1.0,
-                        reason=decision.reason or "",
-                    )
-        route_source = route_source_after_normalize(
+                direct_answer = decision.static_answer
+        llm_route_source: Optional[str] = None
+        if not pre_deterministic:
+            llm_route_source = decision.source  # type: ignore[possibly-undefined]
+        route_source = llm_route_source or route_source_after_normalize(
             pre_deterministic=pre_deterministic,
             prompt_source=router_runtime_meta.get("prompt_source"),
             reason=(

@@ -2,7 +2,6 @@
 
 from app.core.github_route import match_github_search
 from app.core.intent_router import RouterDecision, maybe_override_for_github_search
-from app.schemas.route import ToolRoute, parse_route_detail
 
 
 def test_match_github_search_huntai_gateway():
@@ -23,18 +22,20 @@ def test_match_github_search_negative_visa():
 
 def test_override_forces_github_search():
     decision = RouterDecision(
-        route="rag",
-        route_detail=ToolRoute(name="rag_private_kb", confidence=0.9).model_dump(),
+        route="rag_private_kb",
+        confidence=0.9,
+        reason="kb",
     )
-    detail = parse_route_detail(decision.route_detail)
-    assert detail.name == "rag_private_kb"
     out = maybe_override_for_github_search(decision, "in HuntAI, how to design gateway?")
-    assert out.route == "tool"
-    assert out.route_detail["name"] == "github_search"
+    assert out.route == "github_search"
     assert "github_repo_keyword" in (out.reason or "")
 
 
-def test_parse_route_detail_rejects_github_repo_search():
-    raw = {"type": "tool", "name": "github_repo_search", "confidence": 0.9}
-    detail = parse_route_detail(raw)
-    assert detail is None
+def test_empty_question_fallback_clarify():
+    import asyncio
+
+    from app.core.intent_router import run_intent_rewrite_router
+
+    decision = asyncio.run(run_intent_rewrite_router("", []))
+    assert decision.route == "clarify"
+    assert decision.source == "fallback"

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from .github_route import match_github_search
 from .rewrite import (
@@ -19,7 +19,16 @@ from .rewrite import (
 )
 from ..config import gateway_llm_invoke_kwargs, get_langsmith_tags, get_llm, settings
 from ..observability.usage import usage_from_langchain_message
-from ..schemas.route import ToolRoute, is_rag_private_kb_tool, parse_route_detail
+from ..schemas.route import (
+    CANONICAL_ROUTES,
+    CanonicalRoute,
+    ToolRoute,
+    is_internal_route,
+    is_rag_private_kb_route,
+    is_tool_route,
+    normalize_legacy_route_to_canonical,
+    parse_route_detail,
+)
 
 _router_log = logging.getLogger("layer_orchestrator.intent_router")
 
@@ -230,38 +239,75 @@ def _resolve_router_system_content(
     }
 
 
-_VALID_ROUTES = frozenset({"rag", "direct_reply", "clarify", "reject", "tool"})
+_SMALLTALK_INTENT_TO_CANONICAL: Dict[str, str] = {
+    "greeting_status": "greeting",
+    "assistant_intro": "identity",
+    "bot_name": "identity",
+    "capabilities": "capabilities",
+    "origin": "help",
+}
 
 
 class RouterDecision(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     rewritten_question: str = ""
-    route: Literal["rag", "direct_reply", "clarify", "reject", "tool"] = "rag"
-    can_answer_directly: bool = False
-    direct_answer: Optional[str] = None
+    route: CanonicalRoute = "rag_private_kb"
+    confidence: float = 1.0
     reason: str = ""
+    source: Optional[str] = None
+    static_answer: Optional[str] = None
+    repo: Optional[str] = None
     router_usage: Optional[Dict[str, int]] = None
-    route_detail: Optional[Dict[str, Any]] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_legacy_input(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        d = dict(data)
+        if d.get("direct_answer") is not None and d.get("static_answer") is None:
+            d["static_answer"] = d.get("direct_answer")
+        route_detail = d.get("route_detail")
+        raw_route = d.get("route")
+        if raw_route is not None:
+            d["route"] = normalize_legacy_route_to_canonical(
+                str(raw_route),
+                route_detail if isinstance(route_detail, dict) else None,
+            )
+        conf = d.get("confidence")
+        if conf is not None:
+            try:
+                d["confidence"] = float(conf)
+            except (TypeError, ValueError):
+                d["confidence"] = 1.0
+        return d
 
     @field_validator("route", mode="before")
     @classmethod
     def normalize_route(cls, v: object) -> str:
         if v is None:
-            return "rag"
-        s = str(v).strip().lower()
-        if s in _VALID_ROUTES:
+            return "rag_private_kb"
+        s = normalize_legacy_route_to_canonical(str(v))
+        if s in CANONICAL_ROUTES:
             return s
-        return "rag"
+        return "rag_private_kb"
 
-    @field_validator("can_answer_directly", mode="before")
+    @field_validator("confidence", mode="before")
     @classmethod
-    def coerce_bool(cls, v: object) -> bool:
-        if isinstance(v, bool):
-            return v
-        if isinstance(v, str):
-            return v.strip().lower() in ("true", "1", "yes", "y")
-        return bool(v)
+    def coerce_confidence(cls, v: object) -> float:
+        if v is None:
+            return 1.0
+        try:
+            f = float(v)
+            return max(0.0, min(1.0, f))
+        except (TypeError, ValueError):
+            return 1.0
+
+    @property
+    def direct_answer(self) -> Optional[str]:
+        """Backward compat for pipeline/eval reading direct_answer."""
+        return self.static_answer
 
 
 # Latest user message: if it matches this and does not name the candidate, prefer direct_reply over rag.
@@ -325,13 +371,15 @@ def _direct_reply_should_use_rag(latest_question: str, history: List[Tuple[str, 
     return False
 
 
-def maybe_override_direct_reply_for_kb_grounded(
+def maybe_override_internal_for_kb_grounded(
     decision: RouterDecision,
     latest_question: str,
     history: Optional[List[Tuple[str, str]]] = None,
 ) -> RouterDecision:
-    """If the router chose direct_reply but the ask needs KB citations, switch to rag_private_kb tool."""
-    if decision.route != "direct_reply":
+    """If the router chose an internal route but the ask needs KB citations, switch to rag_private_kb."""
+    if is_rag_private_kb_route(decision.route) or decision.route in ("clarify", "reject"):
+        return decision
+    if is_tool_route(decision.route):
         return decision
     hist = list(history or [])
     if not _direct_reply_should_use_rag(latest_question, hist):
@@ -339,36 +387,34 @@ def maybe_override_direct_reply_for_kb_grounded(
     q = (latest_question or "").strip()
     rq = (decision.rewritten_question or "").strip() or q
     rq = rewrite_to_third_person(rq) if q else rq
-    suffix = " [server: kb_grounded→tool:rag_private_kb]"
-    hit = ToolRoute(name="rag_private_kb", confidence=1.0, reason=(decision.reason or "").strip())
+    suffix = " [server: kb_grounded→rag_private_kb]"
     return decision.model_copy(
         update={
             "rewritten_question": rq or q,
-            "route": "tool",
-            "route_detail": hit.model_dump(exclude_none=True),
-            "can_answer_directly": False,
-            "direct_answer": None,
+            "route": "rag_private_kb",
+            "static_answer": None,
+            "source": "post_rule",
             "reason": ((decision.reason or "").strip() + suffix).strip(),
         },
     )
 
 
 def maybe_override_rag_for_general_question(decision: RouterDecision, latest_question: str) -> RouterDecision:
-    """If the router chose rag_private_kb but the ask is general immigration/process and not about the candidate, use direct_reply."""
-    if not is_rag_private_kb_tool(decision.route, decision.route_detail):
+    """General immigration topic not about the candidate → help with static_answer."""
+    if not is_rag_private_kb_route(decision.route):
         return decision
     q = (latest_question or "").strip()
     if not q or _latest_question_names_candidate(q):
         return decision
     if not _GENERAL_IMMIGRATION_OR_WORK_AUTH_RE.search(q):
         return decision
-    suffix = " [server: general_immigration_topic→direct_reply]"
+    suffix = " [server: general_immigration_topic→help]"
     reason = ((decision.reason or "").strip() + suffix).strip()
     return decision.model_copy(
         update={
-            "route": "direct_reply",
-            "can_answer_directly": True,
-            "direct_answer": _GENERAL_TOPIC_DIRECT_ANSWER,
+            "route": "help",
+            "static_answer": _GENERAL_TOPIC_DIRECT_ANSWER,
+            "source": "post_rule",
             "reason": reason,
         },
     )
@@ -381,7 +427,7 @@ def _ensure_rewritten_question_third_person(decision: RouterDecision, latest_que
     """Apply deterministic you→candidate rewrite for RAG queries; fix echoed second-person on other routes."""
     q = (latest_question or "").strip()
     base = (decision.rewritten_question or "").strip() or q
-    if is_rag_private_kb_tool(decision.route, decision.route_detail):
+    if is_rag_private_kb_route(decision.route):
         return decision.model_copy(update={"rewritten_question": rewrite_to_third_person(base)})
     rw = (decision.rewritten_question or "").strip()
     if q and rw.lower() == q.lower() and _SECOND_PERSON_IN_QUESTION_RE.search(q):
@@ -417,30 +463,56 @@ def _extract_json_object(raw: str) -> Optional[dict]:
     return None
 
 
-def fallback_router_decision(question: str, *, reason: str = "parse_fallback") -> RouterDecision:
+def fallback_router_decision(
+    question: str,
+    *,
+    reason: str = "parse_fallback",
+    route: CanonicalRoute = "rag_private_kb",
+) -> RouterDecision:
     q = (question or "").strip()
     rq = rewrite_to_third_person(q) if q else ""
-    hit = ToolRoute(name="rag_private_kb", confidence=1.0, reason=reason)
     return RouterDecision(
         rewritten_question=rq or q,
-        route="tool",
-        route_detail=hit.model_dump(exclude_none=True),
-        can_answer_directly=False,
-        direct_answer=None,
+        route=route,
+        static_answer=None,
         reason=reason,
+        source="fallback",
+        confidence=1.0,
     )
 
 
-def canonicalize_rag_to_tool(decision: RouterDecision) -> RouterDecision:
-    """Legacy flat route 'rag' is an alias for tool:rag_private_kb."""
-    if decision.route != "rag":
+def apply_low_confidence_policy(
+    decision: RouterDecision,
+    latest_question: str,
+    history: Optional[List[Tuple[str, str]]] = None,
+) -> RouterDecision:
+    """Low confidence → clarify, except KB-like questions → rag_private_kb."""
+    if decision.source == "fallback":
         return decision
-    hit = ToolRoute(name="rag_private_kb", confidence=1.0, reason=decision.reason or "")
+    threshold = settings.router_confidence_clarify_threshold
+    if decision.confidence >= threshold:
+        return decision
+    if decision.route in ("reject", "clarify"):
+        return decision
+    hist = list(history or [])
+    if _direct_reply_should_use_rag(latest_question, hist):
+        suffix = " [server: low_confidence→rag_private_kb]"
+        return decision.model_copy(
+            update={
+                "route": "rag_private_kb",
+                "static_answer": None,
+                "source": "post_rule",
+                "reason": ((decision.reason or "").strip() + suffix).strip(),
+            },
+        )
+    suffix = " [server: low_confidence→clarify]"
+    msg = f"Please add more detail. ({decision.reason or 'Unclear request.'})"
     return decision.model_copy(
         update={
-            "route": "tool",
-            "route_detail": hit.model_dump(exclude_none=True),
-            "can_answer_directly": False,
+            "route": "clarify",
+            "static_answer": msg,
+            "source": "post_rule",
+            "reason": ((decision.reason or "").strip() + suffix).strip(),
         },
     )
 
@@ -449,23 +521,21 @@ def maybe_override_for_github_search(
     decision: RouterDecision,
     latest_question: str,
 ) -> RouterDecision:
-    """If the ask is HuntAI/layer repo architecture, force github_search (overrides rag/direct_reply)."""
-    if decision.route == "tool":
-        parsed = parse_route_detail(getattr(decision, "route_detail", None))
-        if isinstance(parsed, ToolRoute) and parsed.name == "github_search":
-            return decision
+    """If the ask is HuntAI/layer repo architecture, force github_search."""
+    if decision.route == "github_search":
+        return decision
     if decision.route in ("clarify", "reject"):
         return decision
     hit = match_github_search(latest_question)
     if hit is None:
         return decision
-    suffix = " [server: github_repo_keyword→tool]"
+    suffix = " [server: github_repo_keyword→github_search]"
     return decision.model_copy(
         update={
-            "route": "tool",
-            "route_detail": hit.model_dump(exclude_none=True),
-            "can_answer_directly": False,
-            "direct_answer": None,
+            "route": "github_search",
+            "repo": hit.repo,
+            "static_answer": None,
+            "source": "post_rule",
             "reason": ((decision.reason or "").strip() + suffix).strip(),
         },
     )
@@ -477,23 +547,20 @@ def normalize_post_router(
     latest_question: str = "",
     history: Optional[List[Tuple[str, str]]] = None,
 ) -> RouterDecision:
-    """Post-router fixes: github repo keywords; KB-grounded direct_reply → rag_private_kb tool; empty direct_reply → clarify."""
+    """Post-router: github keywords, KB-grounded internal→rag, low confidence, empty clarify."""
     decision = maybe_override_for_github_search(decision, latest_question)
-    decision = maybe_override_direct_reply_for_kb_grounded(
-        decision, latest_question, history
-    )
-    decision = canonicalize_rag_to_tool(decision)
-    if decision.route != "direct_reply":
+    decision = maybe_override_internal_for_kb_grounded(decision, latest_question, history)
+    decision = apply_low_confidence_policy(decision, latest_question, history)
+    if decision.route != "clarify":
         return decision
-    if (decision.direct_answer or "").strip():
+    if (decision.static_answer or "").strip():
         return decision
     msg = f"Please add more detail. ({decision.reason or 'Unclear request.'})"
     return decision.model_copy(
         update={
-            "route": "clarify",
-            "can_answer_directly": False,
-            "direct_answer": msg,
-            "reason": (decision.reason or "") + " [server: empty direct_reply → clarify]",
+            "static_answer": msg,
+            "source": decision.source or "post_rule",
+            "reason": (decision.reason or "") + " [server: empty clarify → prompt]",
         },
     )
 
@@ -515,9 +582,10 @@ def _prompt_injection_hard_block(latest: str) -> Optional[RouterDecision]:
         return RouterDecision(
             rewritten_question=raw,
             route="reject",
-            can_answer_directly=False,
-            direct_answer=None,
+            static_answer=None,
             reason=f"{_INJECTION_GUARD_REASON}:{reason_id}]",
+            source="guard",
+            confidence=1.0,
         )
 
     # High-signal substring gates (spacing-insensitive beyond single-space collapse).
@@ -577,7 +645,14 @@ async def run_intent_rewrite_router(
         gw_thread["is_new_conversation"] = bool(is_new_conversation)
 
     if not q:
-        return fallback_router_decision(question, reason="empty_question")
+        return RouterDecision(
+            rewritten_question="",
+            route="clarify",
+            static_answer="Please provide a question.",
+            reason="empty_question",
+            source="fallback",
+            confidence=1.0,
+        )
 
     inj = _prompt_injection_hard_block(q)
     if inj:
@@ -627,12 +702,14 @@ async def run_intent_rewrite_router(
                     "gateway_meta": {"intent": intent, "question_preview": q[:80], **gw_thread},
                 },
             )
+            canonical = _SMALLTALK_INTENT_TO_CANONICAL.get(intent, "greeting")
             return RouterDecision(
                 rewritten_question=q,
-                route="direct_reply",
-                can_answer_directly=True,
-                direct_answer=answer,
+                route=canonical,  # type: ignore[arg-type]
+                static_answer=answer,
                 reason=f"[server: smalltalk:{intent}]",
+                source="smalltalk_seed",
+                confidence=1.0,
             )
 
     hist_block = format_history_for_prompt(hist, REWRITE_HISTORY_MAX_LINES)
@@ -704,8 +781,8 @@ async def run_intent_rewrite_router(
                 q,
             )
         decision = RouterDecision.model_validate(obj)
-        if isinstance(obj.get("route_detail"), dict):
-            decision = decision.model_copy(update={"route_detail": obj["route_detail"]})
+        if not decision.source:
+            decision = decision.model_copy(update={"source": "llm_router"})
         if not (decision.rewritten_question or "").strip():
             decision = decision.model_copy(
                 update={"rewritten_question": rewrite_to_third_person(q)},

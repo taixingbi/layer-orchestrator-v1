@@ -65,6 +65,9 @@ class Settings:
     llm_model: str = os.getenv("LLM_MODEL") or "Qwen/Qwen2.5-7B-Instruct"
     # Intent router prompt text: app/prompts/{id}.txt (see ROUTER_PROMPT_VERSION)
     default_router_prompt_version: str = (os.getenv("ROUTER_PROMPT_VERSION") or "router-v2.00").strip() or "router-v2.00"
+    router_confidence_clarify_threshold: float = float(
+        os.getenv("ROUTER_CONFIDENCE_CLARIFY_THRESHOLD", "0.65")
+    )
 
     # Default timeouts (seconds)
     tools_timeout_s: float = float(os.getenv("TOOLS_TIMEOUT_S", "60"))

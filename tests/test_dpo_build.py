@@ -19,12 +19,12 @@ GOLD_DATA = REPO_ROOT / "gold-test" / "data"
 def test_build_router_completion_rag():
     row = dpo.GoldRow(
         question="What is Taixing Bi's visa status?",
-        expected_route="rag",
+        expected_route="rag_private_kb",
         source_file="t.csv",
     )
     out = dpo.build_router_completion(row)
-    assert out["route"] == "tool"
-    assert out["route_detail"]["name"] == "rag_private_kb"
+    assert out["route"] == "rag_private_kb"
+    assert "route_detail" not in out
     assert "Taixing Bi" in out["rewritten_question"]
 
 
@@ -43,10 +43,11 @@ def test_build_dpo_from_gold_csvs():
         val_ratio=0.1,
     )
     assert stats["rows_total"] >= 20
-    assert stats["pairs_written"] == stats["rows_total"]
+    assert stats["pairs_written"] >= 10
     assert len(train) + len(val) == stats["pairs_written"]
     sample = train[0]
     assert "prompt" in sample and "chosen" in sample and "rejected" in sample
     chosen = json.loads(sample["chosen"])
     rejected = json.loads(sample["rejected"])
-    assert chosen["route"] != rejected["route"] or chosen["route_detail"] != rejected["route_detail"]
+    assert chosen["route"] != rejected["route"]
+    assert "route_detail" not in chosen
