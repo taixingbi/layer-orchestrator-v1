@@ -452,7 +452,7 @@ def maybe_override_for_github_search(
     """If the ask is HuntAI/layer repo architecture, force github_search (overrides rag/direct_reply)."""
     if decision.route == "tool":
         parsed = parse_route_detail(getattr(decision, "route_detail", None))
-        if isinstance(parsed, ToolRoute) and parsed.name in ("github_search", "github_repo_search"):
+        if isinstance(parsed, ToolRoute) and parsed.name == "github_search":
             return decision
     if decision.route in ("clarify", "reject"):
         return decision

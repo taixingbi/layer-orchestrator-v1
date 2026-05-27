@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 LegacyRoute = Literal["rag", "direct_reply", "clarify", "reject", "tool"]
 InternalIntentName = Literal[
@@ -17,17 +17,11 @@ InternalIntentName = Literal[
 ]
 ToolName = Literal["user_profile", "github_search", "web_search"]
 
-# Legacy router / eval names → canonical orchestrator tool id.
-_TOOL_NAME_ALIASES: Dict[str, str] = {
-    "github_repo_search": "github_search",
-}
-
-
 class InternalIntentRoute(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     type: Literal["internal_intent"] = "internal_intent"
-    name: str
+    name: InternalIntentName
     confidence: float = 1.0
     reason: str = ""
 
@@ -36,18 +30,13 @@ class ToolRoute(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     type: Literal["tool"] = "tool"
-    name: str
+    name: ToolName
     confidence: float = 1.0
     reason: str = ""
     repo: Optional[str] = None
 
 
 RouteDetail = Union[InternalIntentRoute, ToolRoute]
-
-
-def normalize_tool_name(name: str) -> str:
-    n = (name or "").strip()
-    return _TOOL_NAME_ALIASES.get(n, n)
 
 
 def legacy_route_from_detail(detail: Any) -> str:
@@ -133,11 +122,13 @@ def parse_route_detail(raw: Any) -> Optional[RouteDetail]:
         return None
     t = raw.get("type")
     if t == "internal_intent":
-        return InternalIntentRoute.model_validate(raw)
+        try:
+            return InternalIntentRoute.model_validate(raw)
+        except ValidationError:
+            return None
     if t == "tool":
-        route = ToolRoute.model_validate(raw)
-        canonical = normalize_tool_name(route.name)
-        if canonical != route.name:
-            return route.model_copy(update={"name": canonical})
-        return route
+        try:
+            return ToolRoute.model_validate(raw)
+        except ValidationError:
+            return None
     return None

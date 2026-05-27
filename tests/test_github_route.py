@@ -34,7 +34,7 @@ def test_override_forces_github_search():
     assert "github_repo_keyword" in (out.reason or "")
 
 
-def test_parse_route_detail_aliases_github_repo_search():
+def test_parse_route_detail_rejects_github_repo_search():
     raw = {"type": "tool", "name": "github_repo_search", "confidence": 0.9}
     detail = parse_route_detail(raw)
-    assert detail.name == "github_search"
+    assert detail is None
