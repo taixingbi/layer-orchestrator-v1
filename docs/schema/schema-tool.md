@@ -41,7 +41,7 @@ Opaque phase-keyed objects. The orchestrator **passthroughs them unchanged** und
 
 | Tool `meta.tool.name` | Orchestrator `latency_ms` / `usage` key |
 |-----------------------|---------------------------------------|
-| `user_profile` | `tool_rag` |
+| `rag_private_kb` | `tool_rag` |
 | `github_search` | `tool_github_search` |
 
 ---
@@ -78,7 +78,7 @@ Orchestrator adds `latency_ms.intent_router`, `usage.intent_router`, `usage.tota
       "teams": "string"
     },
     "tool": {
-      "name": "user_profile | github_search",
+      "name": "rag_private_kb | github_search",
       "type": "rag | github",
       "version": "v1"
     }
@@ -121,7 +121,7 @@ Provider-specific keys under `meta` (e.g. `rag`, `github`) are optional extensio
 
 ---
 
-## Example: MCP RAG (`user_profile` / `rag_query`)
+## Example: MCP RAG (`rag_private_kb` / `rag_query`)
 
 ```json
 {
@@ -137,7 +137,7 @@ Provider-specific keys under `meta` (e.g. `rag`, `github`) are optional extensio
       "teams": "rag-platform"
     },
     "tool": {
-      "name": "user_profile",
+      "name": "rag_private_kb",
       "type": "rag"
     },
     "rag": {

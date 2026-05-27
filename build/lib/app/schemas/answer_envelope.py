@@ -41,13 +41,13 @@ USAGE_KEY_TAVILY_SEARCH = LATENCY_KEY_TAVILY_SEARCH
 
 # Orchestrator tool id (route_detail.name) → client latency_ms / usage key.
 TOOL_LATENCY_USAGE_KEYS: Dict[str, str] = {
-    "user_profile": LATENCY_KEY_RAG,
+    "rag_private_kb": LATENCY_KEY_RAG,
     "github_search": LATENCY_KEY_GITHUB_SEARCH,
     "web_search": LATENCY_KEY_TAVILY_SEARCH,
 }
 
 _TOOL_TYPE = {
-    "user_profile": "rag",
+    "rag_private_kb": "rag_private_kb",
     "github_search": "github",
     "web_search": "web",
 }

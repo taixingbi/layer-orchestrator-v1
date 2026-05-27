@@ -31,7 +31,7 @@ def test_build_latency_ms_summary_nested_rag_service():
             "ended_at": "2026-01-01T12:00:04.918Z",
             "latency_ms": 2877.88,
             "metadata": {
-                "tool": "user_profile",
+                "tool": "rag_private_kb",
                 "rag_latency_ms": mcp_latency,
             },
         },
@@ -49,7 +49,7 @@ def test_build_latency_ms_summary_mcp_tool_latency_key():
             "status": "completed",
             "latency_ms": 100.0,
             "metadata": {
-                "tool": "user_profile",
+                "tool": "rag_private_kb",
                 "tool_latency_ms": mcp_latency,
             },
         },

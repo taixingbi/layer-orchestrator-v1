@@ -74,7 +74,7 @@ from ..schemas.answer_envelope import (
 
 _GITHUB_SEARCH_PHASE = "github-search"
 _GITHUB_SEARCH_TOOL = "github_search"
-_RAG_TOOL = "user_profile"
+_RAG_TOOL = "rag_private_kb"
 
 
 def _rag_state(by_phase: Dict[str, dict]) -> dict:

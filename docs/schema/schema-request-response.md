@@ -81,7 +81,7 @@ Non-stream JSON and the **final** SSE `done` / `error` event use the **same** to
 
 | Handler | `meta.route.type` | Route id field | `meta.tool` (if any) |
 |---------|-------------------|----------------|----------------------|
-| `user_profile` | `tool` | `meta.route.tool` | `{ name, type, version, key }` |
+| `rag_private_kb` | `tool` | `meta.route.tool` | `{ name, type, version, key }` |
 | `github_search` | `tool` | `meta.route.tool` | same |
 | `web_search` | `tool` | `meta.route.tool` | same |
 | internal intents | `internal_intent` | `meta.route.intent` | **omitted** (no tool ran) |
@@ -100,7 +100,7 @@ Orchestrator handler ids in `meta.route.tool` / `meta.tool.name`. `meta.tool.key
 
 | Handler | `latency_ms` / `usage` key |
 |---------|----------------------------|
-| `user_profile` | `tool_rag` |
+| `rag_private_kb` | `tool_rag` |
 | `github_search` | `tool_github_search` |
 | `web_search` | `tool_tavily_search` |
 
@@ -247,7 +247,7 @@ In both cases the response is **`direct_reply`** with that `answer` (no router L
   "decision": {
     "rewritten_question": "string",
     "route": "rag | direct_reply | clarify | reject | tool",
-    "route_detail": { "type": "tool", "name": "user_profile" },
+    "route_detail": { "type": "tool", "name": "rag_private_kb" },
     "legacy_route": "rag",
     "answer": "string | null",
     "reason": "string"

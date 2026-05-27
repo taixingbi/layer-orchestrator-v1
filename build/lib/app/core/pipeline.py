@@ -9,7 +9,8 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from ..config import settings
 from ..intents.registry import resolve_intent_answer
-from .state import state_event, utc_now_iso
+from ..observability.response_log import build_final_response_log
+from .state import PhaseStateCollector, state_event, utc_now_iso
 from ..observability.context import bind_pipeline_phase
 from ..schemas.route import (
     InternalIntentRoute,
@@ -49,7 +50,7 @@ def _get_downstream_semaphore() -> Optional[asyncio.Semaphore]:
 
 
 def _tool_stream_phase(tool_name: str) -> str:
-    if tool_name == "user_profile":
+    if tool_name == "rag_private_kb":
         return "rag"
     if tool_name == "github_search":
         return "github-search"
@@ -90,6 +91,7 @@ async def _yield_request_complete_done(
     usage: Optional[Dict[str, Any]] = None,
     citations: Optional[List[Any]] = None,
     follow_up_questions: Optional[List[Any]] = None,
+    final_response_meta: Optional[Dict[str, Any]] = None,
 ) -> AsyncIterator[dict]:
     done_ts = utc_now_iso()
     complete_state = state_event(
@@ -112,6 +114,18 @@ async def _yield_request_complete_done(
         extra["gateway_meta"] = {"is_new_conversation": bool(is_new_conversation)}
     async with bind_pipeline_phase("request_complete"):
         _pipeline_log.info("request_completed", extra=extra)
+        if final_response_meta:
+            _pipeline_log.info(
+                "final_response_emitted",
+                extra={
+                    "event": "final_response_emitted",
+                    "request_id": request_id,
+                    "session_id": session_id or "-",
+                    "trace_id": (trace_id or request_id or "-"),
+                    "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
+                    "gateway_meta": final_response_meta,
+                },
+            )
     yield complete_state
     done_event: Dict[str, Any] = {
         "type": "done",
@@ -169,7 +183,7 @@ async def _run_tool(
     from ..config import mcp_rag_enabled
 
     name = detail.name
-    if name == "user_profile":
+    if name == "rag_private_kb":
         if not mcp_rag_enabled() and not settings.rag_http_base_url:
             raise ValueError("RAG is not configured (RAG_HTTP_BASE_URL or MCP_RAG_BASE_URL)")
         result = await run_user_profile(
@@ -230,10 +244,17 @@ async def stream_answer_query(
     intent_router_usage: Optional[Dict[str, int]] = None
     tool_usage: Optional[Dict[str, Any]] = None
     route_detail: Optional[RouteDetail] = None
+    initial_route_detail: Optional[RouteDetail] = None
     route_source: str = "llm_router"
     rewrite_text = (query or "").strip()
     direct_answer: Optional[str] = None
     router_runtime_meta: Dict[str, Any] = {}
+    phase_collector = PhaseStateCollector()
+
+    def _emit_state(**kwargs: Any) -> dict:
+        ev = state_event(**kwargs)
+        phase_collector.record(ev)
+        return ev
 
     try:
         async with bind_pipeline_phase("request"):
@@ -259,7 +280,7 @@ async def stream_answer_query(
 
         router_started_perf = time.perf_counter()
         router_started_at = utc_now_iso()
-        yield state_event(
+        yield _emit_state(
             phase="intent_router",
             status="running",
             ui_message="Routing request...",
@@ -271,6 +292,7 @@ async def stream_answer_query(
         pre_deterministic = pre is not None
         if pre:
             route_detail, direct_answer, rewrite_text = pre
+            initial_route_detail = route_detail
         else:
             async with bind_pipeline_phase("intent_router"):
                 decision = await run_intent_rewrite_router(
@@ -283,6 +305,7 @@ async def stream_answer_query(
                     is_new_conversation=is_new_conversation,
                     runtime_meta=router_runtime_meta,
                 )
+                initial_route_detail = decision_to_route_detail(decision)
                 decision = normalize_post_router(decision, latest_question=query, history=hist)
                 intent_router_usage = decision.router_usage
                 route_detail = decision_to_route_detail(decision)
@@ -308,8 +331,11 @@ async def stream_answer_query(
         )
 
         flat_route = legacy_route_from_detail(route_detail)
+        initial_flat_route = legacy_route_from_detail(initial_route_detail or route_detail)
+        initial_route_detail_dict = route_detail_to_dict(initial_route_detail or route_detail)
+        final_route_detail_dict = route_detail_to_dict(route_detail)
         router_ended_at = utc_now_iso()
-        yield state_event(
+        yield _emit_state(
             phase="intent_router",
             status="completed",
             ui_message="Route selected",
@@ -340,6 +366,27 @@ async def stream_answer_query(
                 conversation_id=conv or None,
                 is_new_conversation=is_new_conversation,
                 usage=request_usage,
+                final_response_meta=build_final_response_log(
+                    request_id=request_id,
+                    session_id=session_id,
+                    trace_id=trace_id,
+                    conversation_id=conv or "",
+                    is_new_conversation=is_new_conversation,
+                    route_detail=route_detail,
+                    route_source=route_source,
+                    rewrite_text=rewrite_text,
+                    answer_text=answer_text,
+                    citations=[],
+                    follow_up_questions=[],
+                    usage=request_usage,
+                    phase_states=phase_collector.terminal_states(),
+                    rag_user=rag_user,
+                    route_initial=initial_flat_route,
+                    route_initial_detail=initial_route_detail_dict,
+                    route_final=flat_route,
+                    route_final_detail=final_route_detail_dict,
+                    answer_source=f"internal_intent:{route_detail.name}",
+                ),
             ):
                 yield ev
             return
@@ -348,7 +395,7 @@ async def stream_answer_query(
             tool_started = utc_now_iso()
             tool_started_perf = time.perf_counter()
             tool_phase = _tool_stream_phase(route_detail.name)
-            yield state_event(
+            yield _emit_state(
                 phase=tool_phase,
                 status="running",
                 ui_message=f"Running {route_detail.name}...",
@@ -404,7 +451,7 @@ async def stream_answer_query(
 
             tool_usage = t_usage
             usage_kw: Dict[str, Any] = {"intent_router": intent_router_usage}
-            if route_detail.name == "user_profile":
+            if route_detail.name == "rag_private_kb":
                 usage_kw["tool_rag"] = tool_usage
             elif route_detail.name == "github_search":
                 usage_kw["tool_github_search"] = tool_usage
@@ -414,13 +461,13 @@ async def stream_answer_query(
 
             tool_meta: Dict[str, Any] = {"tool": route_detail.name}
             if t_latency is not None:
-                if route_detail.name == "user_profile":
+                if route_detail.name == "rag_private_kb":
                     tool_meta["rag_latency_ms"] = t_latency
                 elif route_detail.name == "github_search":
                     tool_meta["github_latency_ms"] = t_latency
                 else:
                     tool_meta["tool_latency_ms"] = t_latency
-            yield state_event(
+            yield _emit_state(
                 phase=tool_phase,
                 status="completed",
                 ui_message=f"{route_detail.name} completed",
@@ -441,6 +488,27 @@ async def stream_answer_query(
                 usage=request_usage,
                 citations=citations,
                 follow_up_questions=follow_ups,
+                final_response_meta=build_final_response_log(
+                    request_id=request_id,
+                    session_id=session_id,
+                    trace_id=trace_id,
+                    conversation_id=conv or "",
+                    is_new_conversation=is_new_conversation,
+                    route_detail=route_detail,
+                    route_source=route_source,
+                    rewrite_text=rewrite_text,
+                    answer_text=answer_text,
+                    citations=citations,
+                    follow_up_questions=follow_ups,
+                    usage=request_usage,
+                    phase_states=phase_collector.terminal_states(),
+                    rag_user=rag_user,
+                    route_initial=initial_flat_route,
+                    route_initial_detail=initial_route_detail_dict,
+                    route_final=flat_route,
+                    route_final_detail=final_route_detail_dict,
+                    answer_source=f"tool:{route_detail.name}",
+                ),
             ):
                 yield ev
             return
@@ -449,8 +517,66 @@ async def stream_answer_query(
 
     except Exception as e:
         err_text = format_error(e)
+        err_code = status_code_for_exception(e)
         async with bind_pipeline_phase("error"):
             fail_ts = utc_now_iso()
+            if route_detail is not None:
+                flat_err = legacy_route_from_detail(route_detail)
+                init_flat = legacy_route_from_detail(initial_route_detail or route_detail)
+                init_detail = route_detail_to_dict(initial_route_detail or route_detail)
+                final_detail = route_detail_to_dict(route_detail)
+                if isinstance(route_detail, InternalIntentRoute):
+                    ans_src = f"internal_intent:{route_detail.name}"
+                elif isinstance(route_detail, ToolRoute):
+                    ans_src = f"tool:{route_detail.name}"
+                else:
+                    ans_src = "unknown"
+                err_usage_kw: Dict[str, Any] = {"intent_router": intent_router_usage}
+                if isinstance(route_detail, ToolRoute):
+                    if route_detail.name == "rag_private_kb":
+                        err_usage_kw["tool_rag"] = tool_usage
+                    elif route_detail.name == "github_search":
+                        err_usage_kw["tool_github_search"] = tool_usage
+                    elif route_detail.name == "web_search":
+                        err_usage_kw["tool_tavily_search"] = tool_usage
+                err_usage = build_usage_payload(**err_usage_kw)
+                final_meta = build_final_response_log(
+                    request_id=request_id,
+                    session_id=session_id,
+                    trace_id=trace_id,
+                    conversation_id=conv or "",
+                    is_new_conversation=is_new_conversation,
+                    route_detail=route_detail,
+                    route_source=route_source,
+                    rewrite_text=rewrite_text,
+                    answer_text="",
+                    citations=[],
+                    follow_up_questions=[],
+                    usage=err_usage,
+                    phase_states=phase_collector.terminal_states(),
+                    rag_user=rag_user,
+                    route_initial=init_flat,
+                    route_initial_detail=init_detail,
+                    route_final=flat_err,
+                    route_final_detail=final_detail,
+                    answer_source=ans_src,
+                    ok=False,
+                    error=err_text,
+                    state="failed",
+                    code=err_code,
+                )
+                async with bind_pipeline_phase("request_complete"):
+                    _pipeline_log.info(
+                        "final_response_emitted",
+                        extra={
+                            "event": "final_response_emitted",
+                            "request_id": request_id,
+                            "session_id": session_id or "-",
+                            "trace_id": (trace_id or request_id or "-"),
+                            "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
+                            "gateway_meta": final_meta,
+                        },
+                    )
             if not getattr(e, "_pipeline_logged", False):
                 err_extra: Dict[str, Any] = {
                     "event": "stream_answer_error",
@@ -464,7 +590,7 @@ async def stream_answer_query(
                 if conv:
                     err_extra["gateway_meta"] = dict(conv_gw)
                 _pipeline_log.error("stream_answer_error", extra=err_extra)
-        yield state_event(
+        yield _emit_state(
             phase="request_complete",
             status="failed",
             ui_message="Request failed",
@@ -489,7 +615,7 @@ async def stream_answer_query(
         }
         err_usage_kw: Dict[str, Any] = {"intent_router": intent_router_usage}
         if isinstance(route_detail, ToolRoute):
-            if route_detail.name == "user_profile":
+            if route_detail.name == "rag_private_kb":
                 err_usage_kw["tool_rag"] = tool_usage
             elif route_detail.name == "github_search":
                 err_usage_kw["tool_github_search"] = tool_usage

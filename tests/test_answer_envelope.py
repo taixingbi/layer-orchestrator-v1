@@ -10,13 +10,13 @@ from app.schemas.answer_envelope import (
 from app.schemas.route import InternalIntentRoute, ToolRoute
 
 
-def test_route_meta_user_profile():
-    detail = ToolRoute(name="user_profile", confidence=0.95, reason="kb")
+def test_route_meta_rag_private_kb():
+    detail = ToolRoute(name="rag_private_kb", confidence=0.95, reason="kb")
     route, tool = route_meta_from_detail(detail)
     assert route["type"] == "tool"
-    assert route["tool"] == "user_profile"
-    assert tool["name"] == "user_profile"
-    assert tool["type"] == "rag"
+    assert route["tool"] == "rag_private_kb"
+    assert tool["name"] == "rag_private_kb"
+    assert tool["type"] == "rag_private_kb"
     assert tool["key"] == "tool_rag"
 
 
@@ -61,7 +61,7 @@ def test_build_answer_envelope_shape():
         intent_router={"prompt_tokens": 5, "completion_tokens": 1, "total_tokens": 6},
         tool_rag=upstream_usage,
     )
-    detail = ToolRoute(name="user_profile", confidence=1.0)
+    detail = ToolRoute(name="rag_private_kb", confidence=1.0)
     out = build_answer_envelope(
         request_id="req-1",
         session_id="s1",
@@ -80,8 +80,8 @@ def test_build_answer_envelope_shape():
     )
     assert out["meta"]["request_id"] == "req-1"
     assert out["meta"]["user"]["id"] == "u1"
-    assert out["meta"]["route"]["tool"] == "user_profile"
-    assert out["meta"]["tool"]["name"] == "user_profile"
+    assert out["meta"]["route"]["tool"] == "rag_private_kb"
+    assert out["meta"]["tool"]["name"] == "rag_private_kb"
     assert out["meta"]["rewrite"] == "rewritten"
     assert out["answer"]["text"] == "hello"
     assert out["answer"]["citations"][0]["cite_id"] == 1

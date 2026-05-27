@@ -24,7 +24,7 @@ def test_build_router_completion_rag():
     )
     out = dpo.build_router_completion(row)
     assert out["route"] == "tool"
-    assert out["route_detail"]["name"] == "user_profile"
+    assert out["route_detail"]["name"] == "rag_private_kb"
     assert "Taixing Bi" in out["rewritten_question"]
 
 

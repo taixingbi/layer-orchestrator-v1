@@ -19,7 +19,7 @@ from .rewrite import (
 )
 from ..config import gateway_llm_invoke_kwargs, get_langsmith_tags, get_llm, settings
 from ..observability.usage import usage_from_langchain_message
-from ..schemas.route import ToolRoute, is_user_profile_tool, parse_route_detail
+from ..schemas.route import ToolRoute, is_rag_private_kb_tool, parse_route_detail
 
 _router_log = logging.getLogger("layer_orchestrator.intent_router")
 
@@ -330,7 +330,7 @@ def maybe_override_direct_reply_for_kb_grounded(
     latest_question: str,
     history: Optional[List[Tuple[str, str]]] = None,
 ) -> RouterDecision:
-    """If the router chose direct_reply but the ask needs KB citations, switch to user_profile tool."""
+    """If the router chose direct_reply but the ask needs KB citations, switch to rag_private_kb tool."""
     if decision.route != "direct_reply":
         return decision
     hist = list(history or [])
@@ -339,8 +339,8 @@ def maybe_override_direct_reply_for_kb_grounded(
     q = (latest_question or "").strip()
     rq = (decision.rewritten_question or "").strip() or q
     rq = rewrite_to_third_person(rq) if q else rq
-    suffix = " [server: kb_grounded→tool:user_profile]"
-    hit = ToolRoute(name="user_profile", confidence=1.0, reason=(decision.reason or "").strip())
+    suffix = " [server: kb_grounded→tool:rag_private_kb]"
+    hit = ToolRoute(name="rag_private_kb", confidence=1.0, reason=(decision.reason or "").strip())
     return decision.model_copy(
         update={
             "rewritten_question": rq or q,
@@ -354,8 +354,8 @@ def maybe_override_direct_reply_for_kb_grounded(
 
 
 def maybe_override_rag_for_general_question(decision: RouterDecision, latest_question: str) -> RouterDecision:
-    """If the router chose user_profile but the ask is general immigration/process and not about the candidate, use direct_reply."""
-    if not is_user_profile_tool(decision.route, decision.route_detail):
+    """If the router chose rag_private_kb but the ask is general immigration/process and not about the candidate, use direct_reply."""
+    if not is_rag_private_kb_tool(decision.route, decision.route_detail):
         return decision
     q = (latest_question or "").strip()
     if not q or _latest_question_names_candidate(q):
@@ -381,7 +381,7 @@ def _ensure_rewritten_question_third_person(decision: RouterDecision, latest_que
     """Apply deterministic you→candidate rewrite for RAG queries; fix echoed second-person on other routes."""
     q = (latest_question or "").strip()
     base = (decision.rewritten_question or "").strip() or q
-    if is_user_profile_tool(decision.route, decision.route_detail):
+    if is_rag_private_kb_tool(decision.route, decision.route_detail):
         return decision.model_copy(update={"rewritten_question": rewrite_to_third_person(base)})
     rw = (decision.rewritten_question or "").strip()
     if q and rw.lower() == q.lower() and _SECOND_PERSON_IN_QUESTION_RE.search(q):
@@ -420,7 +420,7 @@ def _extract_json_object(raw: str) -> Optional[dict]:
 def fallback_router_decision(question: str, *, reason: str = "parse_fallback") -> RouterDecision:
     q = (question or "").strip()
     rq = rewrite_to_third_person(q) if q else ""
-    hit = ToolRoute(name="user_profile", confidence=1.0, reason=reason)
+    hit = ToolRoute(name="rag_private_kb", confidence=1.0, reason=reason)
     return RouterDecision(
         rewritten_question=rq or q,
         route="tool",
@@ -432,10 +432,10 @@ def fallback_router_decision(question: str, *, reason: str = "parse_fallback") -
 
 
 def canonicalize_rag_to_tool(decision: RouterDecision) -> RouterDecision:
-    """Legacy flat route 'rag' is an alias for tool:user_profile."""
+    """Legacy flat route 'rag' is an alias for tool:rag_private_kb."""
     if decision.route != "rag":
         return decision
-    hit = ToolRoute(name="user_profile", confidence=1.0, reason=decision.reason or "")
+    hit = ToolRoute(name="rag_private_kb", confidence=1.0, reason=decision.reason or "")
     return decision.model_copy(
         update={
             "route": "tool",
@@ -477,7 +477,7 @@ def normalize_post_router(
     latest_question: str = "",
     history: Optional[List[Tuple[str, str]]] = None,
 ) -> RouterDecision:
-    """Post-router fixes: github repo keywords; KB-grounded direct_reply → user_profile tool; empty direct_reply → clarify."""
+    """Post-router fixes: github repo keywords; KB-grounded direct_reply → rag_private_kb tool; empty direct_reply → clarify."""
     decision = maybe_override_for_github_search(decision, latest_question)
     decision = maybe_override_direct_reply_for_kb_grounded(
         decision, latest_question, history

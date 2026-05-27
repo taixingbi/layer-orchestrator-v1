@@ -40,7 +40,7 @@ def decision_to_route_detail(decision: RouterDecision) -> RouteDetail:
     route = (decision.route or "rag").strip().lower()
     reason = decision.reason or ""
     if route == "rag":
-        return ToolRoute(name="user_profile", confidence=1.0, reason=reason)
+        return ToolRoute(name="rag_private_kb", confidence=1.0, reason=reason)
     if route == "tool":
         return ToolRoute(name="github_search", confidence=1.0, reason=reason)
     if route == "clarify":

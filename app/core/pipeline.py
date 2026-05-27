@@ -50,7 +50,7 @@ def _get_downstream_semaphore() -> Optional[asyncio.Semaphore]:
 
 
 def _tool_stream_phase(tool_name: str) -> str:
-    if tool_name == "user_profile":
+    if tool_name == "rag_private_kb":
         return "rag"
     if tool_name == "github_search":
         return "github-search"
@@ -183,7 +183,7 @@ async def _run_tool(
     from ..config import mcp_rag_enabled
 
     name = detail.name
-    if name == "user_profile":
+    if name == "rag_private_kb":
         if not mcp_rag_enabled() and not settings.rag_http_base_url:
             raise ValueError("RAG is not configured (RAG_HTTP_BASE_URL or MCP_RAG_BASE_URL)")
         result = await run_user_profile(
@@ -451,7 +451,7 @@ async def stream_answer_query(
 
             tool_usage = t_usage
             usage_kw: Dict[str, Any] = {"intent_router": intent_router_usage}
-            if route_detail.name == "user_profile":
+            if route_detail.name == "rag_private_kb":
                 usage_kw["tool_rag"] = tool_usage
             elif route_detail.name == "github_search":
                 usage_kw["tool_github_search"] = tool_usage
@@ -461,7 +461,7 @@ async def stream_answer_query(
 
             tool_meta: Dict[str, Any] = {"tool": route_detail.name}
             if t_latency is not None:
-                if route_detail.name == "user_profile":
+                if route_detail.name == "rag_private_kb":
                     tool_meta["rag_latency_ms"] = t_latency
                 elif route_detail.name == "github_search":
                     tool_meta["github_latency_ms"] = t_latency
@@ -533,7 +533,7 @@ async def stream_answer_query(
                     ans_src = "unknown"
                 err_usage_kw: Dict[str, Any] = {"intent_router": intent_router_usage}
                 if isinstance(route_detail, ToolRoute):
-                    if route_detail.name == "user_profile":
+                    if route_detail.name == "rag_private_kb":
                         err_usage_kw["tool_rag"] = tool_usage
                     elif route_detail.name == "github_search":
                         err_usage_kw["tool_github_search"] = tool_usage
@@ -615,7 +615,7 @@ async def stream_answer_query(
         }
         err_usage_kw: Dict[str, Any] = {"intent_router": intent_router_usage}
         if isinstance(route_detail, ToolRoute):
-            if route_detail.name == "user_profile":
+            if route_detail.name == "rag_private_kb":
                 err_usage_kw["tool_rag"] = tool_usage
             elif route_detail.name == "github_search":
                 err_usage_kw["tool_github_search"] = tool_usage

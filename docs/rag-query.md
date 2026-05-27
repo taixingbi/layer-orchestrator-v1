@@ -7,7 +7,7 @@ POST {RAG_HTTP_BASE_URL}/v1/rag/query
 Content-Type: application/json
 ```
 
-The orchestrator calls this endpoint from `app/tools/user_profile.py` (via `app/clients/rag_http.py`). Correlation ids (`request_id`, `session_id`, `trace_id`) and user relay fields are sent on **HTTP headers** when present. The orchestrator also forwards **`conversation_id`** in the JSON body (when set) and as `X-Conversation-Id` / `X-Is-New-Conversation` headers so the RAG service can log and trace by thread.
+The orchestrator calls this endpoint from `app/tools/rag_private_kb.py` (via `app/clients/rag_http.py`). Correlation ids (`request_id`, `session_id`, `trace_id`) and user relay fields are sent on **HTTP headers** when present. The orchestrator also forwards **`conversation_id`** in the JSON body (when set) and as `X-Conversation-Id` / `X-Is-New-Conversation` headers so the RAG service can log and trace by thread.
 
 The HTTP client **retries** transient errors (see table below). Successful responses include `rag_http_attempts` in tool metadata when surfaced by the pipeline.
 

@@ -8,7 +8,7 @@ Request/headers/limits: [schema-request-response.md](schema-request-response.md)
 
 | Orchestrator `meta.route.tool` / `meta.tool.name` | `meta.tool.type` | `meta.tool.key` (= `latency_ms` / `usage`) |
 |---------------------------------------------------|------------------|---------------------------------------------|
-| `user_profile` | `rag` | `tool_rag` |
+| `rag_private_kb` | `rag` | `tool_rag` |
 | `github_search` | `github` | `tool_github_search` |
 | `web_search` | `web` | `tool_tavily_search` |
 
@@ -24,7 +24,7 @@ The **`route`** event always uses this shape (legacy flat `route` + nested `rout
   "route": "tool | direct_reply | clarify | reject",
   "route_detail": {
     "type": "tool | internal_intent",
-    "name": "user_profile | github_search | web_search | help | …",
+    "name": "rag_private_kb | github_search | web_search | help | …",
     "confidence": 0.99,
     "reason": "optional string"
   },
@@ -63,14 +63,14 @@ Placeholders show all possible keys; a given response only includes the tool pha
     },
     "route": {
       "type": "tool | internal_intent",
-      "tool": "user_profile | github_search | web_search (type tool only)",
+      "tool": "rag_private_kb | github_search | web_search (type tool only)",
       "intent": "help | clarify | reject | identity | greeting | capabilities (type internal_intent only)",
       "confidence": 0.99,
       "source": "deterministic_rule | llm_router | smalltalk_seed | smalltalk_pattern | injection_guard | override_rule",
       "reason": "optional string"
     },
     "tool": {
-      "name": "user_profile | github_search | web_search",
+      "name": "rag_private_kb | github_search | web_search",
       "type": "rag | github | web",
       "version": "v1",
       "key": "tool_rag | tool_github_search | tool_tavily_search"
@@ -155,7 +155,7 @@ On failure, add top-level `"error": "string"` and set `status.ok` to `false`, `s
 | Route | Section |
 |-------|---------|
 | GitHub `github_search` | [GitHub (`github_search`)](#github-github_search) |
-| RAG `user_profile` | [RAG (`user_profile`)](#rag-user_profile) |
+| RAG `rag_private_kb` | [RAG (`rag_private_kb`)](#rag-rag_private_kb) |
 
 ---
 
@@ -332,7 +332,7 @@ curl -N -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
 
 ---
 
-## RAG (`user_profile`)
+## RAG (`rag_private_kb`)
 
 **Question:** *"taixing visa status in us"*
 
@@ -368,13 +368,13 @@ curl -N -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
     },
     "route": {
       "type": "tool",
-      "tool": "user_profile",
+      "tool": "rag_private_kb",
       "confidence": 1.0,
       "reason": "Needs Taixing Bi-specific facts",
       "source": "llm_router"
     },
     "tool": {
-      "name": "user_profile",
+      "name": "rag_private_kb",
       "type": "rag",
       "version": "v1",
       "key": "tool_rag"
@@ -399,7 +399,7 @@ curl -N -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
       "route": "tool",
       "route_detail": {
         "type": "tool",
-        "name": "user_profile",
+        "name": "rag_private_kb",
         "confidence": 1.0,
         "reason": "Needs Taixing Bi-specific facts"
       },
@@ -478,7 +478,7 @@ curl -N -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
 **Notes**
 
 - Extra keys inside `usage.tool_rag` (e.g. `"type": "usage"`) are preserved when upstream sends them.
-- Legacy flat **`route.route`** is `tool` for `user_profile` (eval gold may still say `rag`).
+- Legacy flat **`route.route`** is `tool` for `rag_private_kb` (eval gold may still say `rag`).
 
 ---
 

@@ -17,7 +17,7 @@ For HTTP field names and eval payloads, see [schema-request-response.md](schema-
 | Field | Role |
 |-------|------|
 | `rewritten_question` | Standalone query string; for **`rag`**, expected to be search-friendly and third person about the candidate where applicable. |
-| `route` | `rag` → HTTP RAG / MCP `user_profile`; `direct_reply` / `clarify` / `reject` → final answer without tools; `tool` → GitHub MCP or Tavily (see [architecture.md](architecture.md)). |
+| `route` | `rag` → HTTP RAG / MCP `rag_private_kb`; `direct_reply` / `clarify` / `reject` → final answer without tools; `tool` → GitHub MCP or Tavily (see [architecture.md](architecture.md)). |
 | `can_answer_directly` | Whether the model believes a direct string answer is appropriate (aligned with `direct_reply` / `clarify` usage). |
 | `direct_answer` | User-visible answer body when the route supplies one; may be `null` on `rag`. |
 | `reason` | Short model or server annotation (eval and logs). |

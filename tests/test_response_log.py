@@ -22,7 +22,7 @@ def _sample_states():
             "started_at": "2026-05-23T10:00:02+00:00",
             "ended_at": "2026-05-23T10:00:04+00:00",
             "metadata": {
-                "tool": "user_profile",
+                "tool": "rag_private_kb",
                 "rag_latency_ms": {"embed": 1.0, "total": 10.0},
             },
         },
@@ -35,7 +35,7 @@ def test_build_final_response_log_matches_accumulator_finalize():
         intent_router={"prompt_tokens": 5, "completion_tokens": 1, "total_tokens": 6},
         tool_rag={"total": {"prompt_tokens": 90, "completion_tokens": 9, "total_tokens": 99}},
     )
-    route_detail = {"type": "tool", "name": "user_profile", "confidence": 0.98, "reason": "kb"}
+    route_detail = {"type": "tool", "name": "rag_private_kb", "confidence": 0.98, "reason": "kb"}
 
     logged = build_final_response_log(
         request_id="req-1",
@@ -55,7 +55,7 @@ def test_build_final_response_log_matches_accumulator_finalize():
         route_initial_detail=route_detail,
         route_final="tool",
         route_final_detail=route_detail,
-        answer_source="tool:user_profile",
+        answer_source="tool:rag_private_kb",
     )
 
     acc = AnswerResponseAccumulator(
@@ -82,9 +82,9 @@ def test_build_final_response_log_matches_accumulator_finalize():
 
     assert logged["response"] == expected
     assert logged["routing"]["route_final"] == "tool"
-    assert logged["routing"]["answer_source"] == "tool:user_profile"
+    assert logged["routing"]["answer_source"] == "tool:rag_private_kb"
     assert logged["routing"]["override_applied"] is False
-    assert logged["response"]["meta"]["route"]["tool"] == "user_profile"
+    assert logged["response"]["meta"]["route"]["tool"] == "rag_private_kb"
     assert logged["response"]["answer"]["text"] == "answer body"
     assert logged["response"]["usage"][USAGE_KEY_RAG]["total"]["total_tokens"] == 99
     assert logged["response"]["latency_ms"][LATENCY_KEY_RAG]["total"] == 10.0
@@ -97,17 +97,17 @@ def test_build_final_response_log_failed_envelope():
         trace_id="req-2",
         conversation_id="conv-2",
         is_new_conversation=True,
-        route_detail={"type": "tool", "name": "user_profile", "confidence": 1.0},
+        route_detail={"type": "tool", "name": "rag_private_kb", "confidence": 1.0},
         route_source="llm_router",
         rewrite_text="q",
         answer_text="",
         usage={"total": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}},
         phase_states=[],
         route_initial="tool",
-        route_initial_detail={"type": "tool", "name": "user_profile"},
+        route_initial_detail={"type": "tool", "name": "rag_private_kb"},
         route_final="tool",
-        route_final_detail={"type": "tool", "name": "user_profile"},
-        answer_source="tool:user_profile",
+        route_final_detail={"type": "tool", "name": "rag_private_kb"},
+        answer_source="tool:rag_private_kb",
         ok=False,
         error="Error: ValueError: boom",
         state="failed",

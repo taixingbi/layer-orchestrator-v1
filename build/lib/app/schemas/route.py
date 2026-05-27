@@ -15,7 +15,7 @@ InternalIntentName = Literal[
     "clarify",
     "reject",
 ]
-ToolName = Literal["user_profile", "github_search", "web_search"]
+ToolName = Literal["rag_private_kb", "github_search", "web_search"]
 
 class InternalIntentRoute(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -64,24 +64,24 @@ def legacy_route_from_detail(detail: Any) -> str:
     return "tool"
 
 
-def is_user_profile_tool(route: str, route_detail: Any = None) -> bool:
-    """True when the decision targets user_profile (legacy flat route was 'rag')."""
+def is_rag_private_kb_tool(route: str, route_detail: Any = None) -> bool:
+    """True when the decision targets rag_private_kb (legacy flat route was 'rag')."""
     r = (route or "").strip().lower()
     if r == "rag":
         return True
     if r != "tool":
         return False
     parsed = parse_route_detail(route_detail)
-    return isinstance(parsed, ToolRoute) and parsed.name == "user_profile"
+    return isinstance(parsed, ToolRoute) and parsed.name == "rag_private_kb"
 
 
 def routes_equivalent(expected: str, actual: str, route_detail: Any = None) -> bool:
-    """Eval compat: legacy expected_route 'rag' matches flat 'tool' + user_profile."""
+    """Eval compat: legacy expected_route 'rag' matches flat 'tool' + rag_private_kb."""
     exp = (expected or "").strip().lower()
     act = (actual or "").strip().lower()
     if exp == act:
         return True
-    if exp == "rag" and act == "tool" and is_user_profile_tool("tool", route_detail):
+    if exp == "rag" and act == "tool" and is_rag_private_kb_tool("tool", route_detail):
         return True
     return False
 
@@ -95,7 +95,7 @@ def route_detail_from_legacy(
     """Best-effort nested route_detail from legacy flat route (for eval compat)."""
     r = (route or "rag").strip().lower()
     if r == "rag":
-        return ToolRoute(name="user_profile", confidence=confidence, reason=reason)
+        return ToolRoute(name="rag_private_kb", confidence=confidence, reason=reason)
     if r == "tool":
         return ToolRoute(name="github_search", confidence=confidence, reason=reason)
     if r == "clarify":

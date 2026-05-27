@@ -43,7 +43,7 @@ SSE emissions (after routing completes):
 
 ```json
 { "type": "rewrite", "text": "<rewritten question>" }
-{ "type": "route", "route": "rag", "route_detail": { "type": "tool", "name": "user_profile" } }
+{ "type": "route", "route": "rag", "route_detail": { "type": "tool", "name": "rag_private_kb" } }
 ```
 
 `route` is the **legacy flat** string (`rag`, `direct_reply`, `clarify`, `reject`, `tool`). Nested `route_detail` names the concrete handler.
@@ -57,7 +57,7 @@ After routing, `app/core/pipeline.py` dispatches **directly** (no LangGraph on t
 | `route_detail` | Handler | Legacy `route` |
 |----------------|---------|----------------|
 | `internal_intent` (`identity`, `greeting`, `help`, `capabilities`, `clarify`, `reject`) | Static or router `direct_answer` | `direct_reply`, `clarify`, or `reject` |
-| `tool:user_profile` | MCP `rag_query` (stream) or HTTP RAG when `USE_MCP_RAG=false` | `rag` |
+| `tool:rag_private_kb` | MCP `rag_query` (stream) or HTTP RAG when `USE_MCP_RAG=false` | `rag` |
 | `tool:github_search` | MCP `ask_repo` | `tool` |
 | `tool:web_search` | Tavily search | `tool` |
 
@@ -144,8 +144,8 @@ sequenceDiagram
     API-->>Client: SSE {type:"route"}
   end
 
-  alt route_detail is user_profile
-    API->>Tools: run_user_profile
+  alt route_detail is rag_private_kb
+    API->>Tools: run_rag_private_kb
     Tools->>RAG: POST /v1/rag/query (or MCP rag_query)
     RAG-->>Tools: answer + citations
   else route_detail is github_search or web_search

@@ -77,7 +77,7 @@ settings = Settings()
 
 
 def mcp_rag_enabled() -> bool:
-    """True when user_profile should call MCP rag_query with stream (USE_MCP_RAG=false to force HTTP)."""
+    """True when rag_private_kb should call MCP rag_query with stream (USE_MCP_RAG=false to force HTTP)."""
     if not settings.use_mcp_rag:
         return False
     return bool((settings.mcp_rag_base_url or "").strip())

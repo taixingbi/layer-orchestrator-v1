@@ -21,7 +21,7 @@ def _sample_states():
             "started_at": "2026-05-23T10:00:02+00:00",
             "ended_at": "2026-05-23T10:00:04+00:00",
             "metadata": {
-                "tool": "user_profile",
+                "tool": "rag_private_kb",
                 "rag_latency_ms": {"embed": 1.0, "total": 10.0},
             },
         },
@@ -43,7 +43,7 @@ def test_stream_done_matches_non_stream_envelope():
     acc.apply(
         {
             "type": "route",
-            "route_detail": {"type": "tool", "name": "user_profile", "confidence": 0.98},
+            "route_detail": {"type": "tool", "name": "rag_private_kb", "confidence": 0.98},
             "route_source": "llm_router",
         }
     )
@@ -64,7 +64,7 @@ def test_stream_done_matches_non_stream_envelope():
     assert done["type"] == "done"
     assert done["status"]["ok"] is True
     assert done["status"]["code"] == "ok"
-    assert done["meta"]["route"]["tool"] == "user_profile"
+    assert done["meta"]["route"]["tool"] == "rag_private_kb"
     assert done["meta"]["route"]["source"] == "llm_router"
     assert done["meta"]["rewrite"] == "rewritten q"
     assert done["answer"]["text"] == "answer body"
@@ -100,10 +100,10 @@ def test_stream_error_envelope():
         conversation_id="conv-1",
         is_new_conversation=True,
     )
-    acc.apply({"type": "route", "route_detail": {"type": "tool", "name": "user_profile"}})
+    acc.apply({"type": "route", "route_detail": {"type": "tool", "name": "rag_private_kb"}})
     err = acc.enrich_terminal_event({"type": "error", "text": "Error: ValueError: boom"})
     assert err["type"] == "error"
     assert err["status"]["ok"] is False
     assert err["status"]["code"] == "error"
     assert err["error"] == "Error: ValueError: boom"
-    assert err["meta"]["route"]["tool"] == "user_profile"
+    assert err["meta"]["route"]["tool"] == "rag_private_kb"

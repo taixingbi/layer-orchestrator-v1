@@ -113,10 +113,10 @@ def _tool_name_for_expected(row: GoldRow) -> str:
     if row.expected_tool:
         return row.expected_tool
     if row.expected_route == "rag":
-        return "user_profile"
+        return "rag_private_kb"
     if row.expected_route == "tool":
         return "github_search"
-    return "user_profile"
+    return "rag_private_kb"
 
 
 def _route_detail_dict(row: GoldRow) -> Dict[str, Any]:
@@ -278,7 +278,7 @@ def _rejected_from_result(row: GoldRow, result: Dict[str, str]) -> Optional[Dict
         question=row.question,
         expected_route=actual if actual != "tool" else "rag",
         source_file=row.source_file,
-        expected_tool="user_profile" if actual == "tool" else None,
+        expected_tool="rag_private_kb" if actual == "tool" else None,
         history=row.history,
     )
     completion = build_router_completion(fake, label="eval_actual")

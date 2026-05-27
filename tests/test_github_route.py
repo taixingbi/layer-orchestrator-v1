@@ -24,10 +24,10 @@ def test_match_github_search_negative_visa():
 def test_override_forces_github_search():
     decision = RouterDecision(
         route="rag",
-        route_detail=ToolRoute(name="user_profile", confidence=0.9).model_dump(),
+        route_detail=ToolRoute(name="rag_private_kb", confidence=0.9).model_dump(),
     )
     detail = parse_route_detail(decision.route_detail)
-    assert detail.name == "user_profile"
+    assert detail.name == "rag_private_kb"
     out = maybe_override_for_github_search(decision, "in HuntAI, how to design gateway?")
     assert out.route == "tool"
     assert out.route_detail["name"] == "github_search"

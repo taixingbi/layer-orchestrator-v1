@@ -13,7 +13,7 @@ app/
   graph/        # legacy LangGraph (unused by default pipeline)
   observability/  # logging, context, metrics, usage, feedback
   intents/      # deterministic internal intents
-  tools/        # user_profile, github_search, web_search
+  tools/        # rag_private_kb, github_search, web_search
   schemas/      # request/response/route models
   prompts/      # router prompts + small-talk seed
 ```
@@ -53,7 +53,7 @@ app/
 - `app/intents/`  
   Deterministic internal intents (`identity`, `greeting`, `help`, `capabilities`).
 - `app/tools/`  
-  `user_profile` (MCP `rag_query` or HTTP RAG), `github_search` (MCP `ask_repo`), `web_search` (Tavily).
+  `rag_private_kb` (MCP `rag_query` or HTTP RAG), `github_search` (MCP `ask_repo`), `web_search` (Tavily).
 - `app/clients/rag_http.py`  
   HTTP client for `POST {RAG_HTTP_BASE_URL}/v1/rag/query`.
 - `app/clients/ready.py`  
@@ -75,18 +75,18 @@ Clients may send user context in headers (`X-User-Id`, `X-User-Roles`, `X-User-G
 4. Branch via **direct tool dispatch** in `app/core/pipeline.py`:
    - **`internal_intent`** (`identity`, `greeting`, `help`, `capabilities`): static answer from `app/intents/`.
    - **`direct_reply` / `clarify` / `reject`**: legacy routes mapped to internal intents; emit `answer` from `direct_answer`.
-   - **`tool:user_profile`**: MCP `rag_query` or HTTP RAG; legacy flat `route` is `rag`.
+   - **`tool:rag_private_kb`**: MCP `rag_query` or HTTP RAG; legacy flat `route` is `rag`.
    - **`tool:github_search`**: MCP `ask_repo`; flat `route` is `tool`.
    - **`tool:web_search`**: Tavily search; flat `route` is `tool`.
 5. Emit completion or error event; successful streams end with `{type:"done"}` (includes aggregated `latency_ms` and `usage`).
 
 Detailed SSE sequence: **[architecture.md](architecture.md)**.
 
-## HTTP RAG path (`tool:user_profile`)
+## HTTP RAG path (`tool:rag_private_kb`)
 
-When the router selects `user_profile`, the pipeline calls RAG directly:
+When the router selects `rag_private_kb`, the pipeline calls RAG directly:
 
-- **Default:** `app/tools/user_profile.py` → MCP `rag_query` with `stream: true` when `MCP_RAG_BASE_URL` is set (`USE_MCP_RAG=true`, default).
+- **Default:** `app/tools/rag_private_kb.py` → MCP `rag_query` with `stream: true` when `MCP_RAG_BASE_URL` is set (`USE_MCP_RAG=true`, default).
 - **HTTP fallback:** `USE_MCP_RAG=false` → `query_rag_http_with_meta` in `app/clients/rag_http.py` (single JSON response, no token streaming).
 
 With MCP on `/v1/orchestrator/answer`, the orchestrator forwards **`answer_delta`** SSE events (`text` only) as tokens arrive, then **`done`** with citations and usage.

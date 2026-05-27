@@ -55,14 +55,14 @@ Each line matches what the router LLM sees in production:
 }
 ```
 
-- **chosen** — built from gold `expected_route` (`rag` → `tool` + `user_profile`, etc.)
+- **chosen** — built from gold `expected_route` (`rag` → `tool` + `rag_private_kb`, etc.)
 - **rejected** — eval mismatch from result CSV, live `/v1/orchestrator/eval/router`, or synthetic opposite route
 
 ## Gold CSV mapping
 
 | `expected_route` | Chosen `route` | Chosen `route_detail.name` |
 |------------------|----------------|----------------------------|
-| `rag` | `tool` | `user_profile` |
+| `rag` | `tool` | `rag_private_kb` |
 | `tool` | `tool` | `expected_tool` column or `github_search` |
 | `direct_reply` | `direct_reply` | `greeting` / `identity` / `capabilities` / `help` (heuristic) |
 | `clarify` | `clarify` | `clarify` |
