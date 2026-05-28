@@ -1,6 +1,6 @@
 # Gold test (router eval)
 
-Batch-evaluates the intent router: for each row in **`gold-test/data/*.csv`**, calls **`POST /v1/orchestrator/eval/router`**, writes per-suite results under **`gold-test/result/`**, then builds **`result/router-eval-report-<ROUTER_PROMPT_VERSION>.md`** (for example **`result/router-eval-report-router-v1.00.md`** with the default prompt version).
+Batch-evaluates the intent router: for each row in **`gold-test/data/**/*.csv`**, calls **`POST /v1/orchestrator/eval/router`**, writes per-suite results under **`gold-test/result/`** (flat basename, e.g. `router_greeting.csv`), then builds **`result/router-eval-report-<ROUTER_PROMPT_VERSION>.md`**.
 
 ## Requirements
 
@@ -11,9 +11,11 @@ Batch-evaluates the intent router: for each row in **`gold-test/data/*.csv`**, c
 
 | Path | Role |
 |------|------|
-| **`data/*.csv`** | Gold inputs: header **`question,expected_route`**. The route is always the field after the **last** comma (questions may contain commas). |
+| **`data/tools/*.csv`** | Tool-route gold (`rag_private_kb`, `web_search`, …). |
+| **`data/internal-intent/*.csv`** | Internal-intent gold (`greeting`, `identity`, `help`, …). |
+| **Header** | **`question,expected_route`** — route is the field after the **last** comma. |
 | **`run-router-eval.sh`** | Runner; **`DATA_DIR`** / **`RESULT_DIR`** default next to this script (works from any cwd). |
-| **`result/<name>.csv`** | One output per input basename, e.g. `data/router-gold-profile.csv` → `result/router-gold-profile.csv` (six columns: **`question`**, **`expected_route`**, **`actual_route`**, **`route_match`**, **`rewritten_question`**, **`actual_answer`**). |
+| **`result/<name>.csv`** | One output per input basename, e.g. `data/tools/router_rag_private_kb.csv` → `result/router_rag_private_kb.csv` (six columns: **`question`**, **`expected_route`**, **`actual_route`**, **`route_match`**, **`rewritten_question`**, **`actual_answer`**). |
 | **`result/router-eval-report-<version>.md`** | Summary: counts, match rate, **`ROUTER_PROMPT_VERSION`**, **Bad items** (`route_match` = false). Filename includes the prompt id (e.g. **`router-eval-report-router-v1.00.md`**). |
 
 ## Run
@@ -25,10 +27,23 @@ bash gold-test/run-router-eval.sh
 Use another prompt file under **`app/prompts/<version>.txt`**:
 
 ```bash
-ROUTER_PROMPT_VERSION=router-test-v1.04 bash gold-test/run-router-eval.sh
+CONCURRENCY=20 ROUTER_PROMPT_VERSION=router-v2.00 bash gold-test/run-router-eval.sh
 ```
 
-On **stdout**, the script prints only a **`File` / `Match rate`** table (per result CSV plus an **`(all suites)`** row). **`router_prompt_version=…`** is printed on **stderr**. The full Markdown report is always written to **`REPORT_PATH`** (default **`result/router-eval-report-<ROUTER_PROMPT_VERSION>.md`**).
+**Progress** (stderr) — one line per gold file, then the match-rate table on stdout:
+
+```text
+eval router-test-v1.04 · 8 files · http://192.168.86.179:30184
+[1/8] router_capabilities 1/1
+[2/8] router_greeting 3/3
+[3/8] router_help 11/11
+…
+File                                             Match rate
+router_greeting.csv                              66.7%
+(all suites)                                     84.7%
+```
+
+Full Markdown report: **`result/router-eval-report-<ROUTER_PROMPT_VERSION>.md`**.
 
 ## Environment
 
@@ -56,10 +71,18 @@ Eval responses now include `decision.route_detail` (nested) alongside legacy `de
 
 ## Suites
 
-- **`data/router-gold-seed-faq.csv`** — Greetings and lightweight assistant / meta questions (`direct_reply`). With **empty history**, the server may answer these from [`app/prompts/smalltalk_examples.json`](../app/prompts/smalltalk_examples.json) before the LLM (exact match on `user_examples`, then a short list of **regex patterns** that still use the same JSON answers).
-- **`data/router-gold-profile.csv`** — Candidate / profile–style questions (+ one **`direct_reply`** control).
-- **`data/router-gold-mixed.csv`** — Profile, policy, immigration, and generic follow-ups.
-- **`data/router-gold-hack.csv`** — Prompt-injection / jailbreak strings; server **`injection_guard`** should return **`reject`** without the router LLM. See [intent-router.md](../docs/intent-router.md).
+Filenames follow **`router_<suite>.csv`** (primary route or suite focus):
+
+| File | Focus |
+|------|--------|
+| **`data/internal-intent/router_greeting.csv`** | `greeting` — hi / how are you (smalltalk seed). |
+| **`data/internal-intent/router_identity.csv`** | `identity` — who are you / your name. |
+| **`data/internal-intent/router_capabilities.csv`** | `capabilities` — what can you do. |
+| **`data/internal-intent/router_help.csv`** | `help` — meta / off-topic assistant questions. |
+| **`data/internal-intent/router_reject.csv`** | Injection guard → **`reject`**. See [intent-router.md](../docs/intent-router.md). |
+| **`data/tools/router_rag_private_kb.csv`** | Candidate / profile (`rag_private_kb`). |
+| **`data/tools/router_github.csv`** | HuntAI / layer repo architecture (`github_search`). |
+| **`data/tools/router_web_search.csv`** | Public web / docs (`web_search`). |
 
 ## Small-talk seed (not RAG)
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Batch router eval: read data/*.csv → result/<same-name>.csv (paths relative to this script).
+# Batch router eval: read data/**/*.csv → result/<basename>.csv (paths relative to this script).
 set -euo pipefail
 
 GOLD_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,19 +22,21 @@ fi
 
 mkdir -p "$RESULT_DIR"
 
-shopt -s nullglob
-inputs=("$DATA_DIR"/*.csv)
-shopt -u nullglob
+shopt -s nullglob globstar
+inputs=("$DATA_DIR"/*.csv "$DATA_DIR"/*/*.csv)
+shopt -u nullglob globstar
 
 if ((${#inputs[@]} == 0)); then
-  echo "No CSV files found in $DATA_DIR" >&2
+  echo "No CSV files found under $DATA_DIR (expected data/*.csv or data/*/*.csv)" >&2
   exit 1
 fi
 
-echo "router_prompt_version=${ROUTER_PROMPT_VERSION}" >&2
+echo "eval ${ROUTER_PROMPT_VERSION} · ${#inputs[@]} files · ${ORCHESTRATOR_URL}" >&2
 
 process_one_csv() {
   local in_path="$1"
+  local file_idx="$2"
+  local file_total="$3"
   local base out_path tmp_dir
   base="$(basename "$in_path" .csv)"
   out_path="$RESULT_DIR/${base}.csv"
@@ -43,7 +45,7 @@ process_one_csv() {
   local total
   total="$(awk '{ sub(/\r$/,""); if (NR>1 && index($0,",")>0) c++ } END { print c+0 }' "$in_path")"
   if ((total == 0)); then
-    echo "Skip empty or header-only: $in_path" >&2
+    echo "[$file_idx/$file_total] $base skip (empty)" >&2
     rm -rf "$tmp_dir"
     return 0
   fi
@@ -63,15 +65,16 @@ process_one_csv() {
     [[ -z "$question" || -z "$expected_route" ]] && continue
     row=$((row + 1))
     printf '%s\t%s\n' "$question" "$expected_route" >"$tmp_dir/meta$row"
+    local row_num="$row"
     (
-      http=$(curl -sS -o "$tmp_dir/body$row" -w "%{http_code}" -X POST "$URL" \
+      http=$(curl -sS -o "$tmp_dir/body$row_num" -w "%{http_code}" -X POST "$URL" \
         -H "Content-Type: application/json" \
-        -H "X-Request-Id: req-gold-${base}-$row" \
+        -H "X-Request-Id: req-gold-${base}-$row_num" \
         -H "X-Session-Id: ses-gold" \
-        -H "X-Trace-Id: trc-gold-${base}-$row" \
+        -H "X-Trace-Id: trc-gold-${base}-$row_num" \
         -d "$(jq -n --arg q "$question" --arg r "$expected_route" --arg pv "$ROUTER_PROMPT_VERSION" \
           '{question: $q, expected_route: $r, router_prompt_version: $pv}')")
-      printf '%s' "$http" >"$tmp_dir/http$row"
+      printf '%s' "$http" >"$tmp_dir/http$row_num"
     ) &
     running=$((running + 1))
     if ((running >= CONCURRENCY)); then
@@ -124,6 +127,8 @@ process_one_csv() {
       fi
     done
   } >"$out_path"
+
+  echo "[$file_idx/$file_total] $base $row/$row" >&2
 
   rm -rf "$tmp_dir"
 }
@@ -249,8 +254,11 @@ print(f"{'(all suites)':<{col_w}} {rate(tot['true'], tot['false'])}", flush=True
 PY
 }
 
+file_idx=0
+file_total=${#inputs[@]}
 for in_path in "${inputs[@]}"; do
-  process_one_csv "$in_path"
+  file_idx=$((file_idx + 1))
+  process_one_csv "$in_path" "$file_idx" "$file_total"
 done
 
 generate_report

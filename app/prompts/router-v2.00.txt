@@ -15,8 +15,9 @@ Routing — evaluate in order; use the first matching route.
 
 0) **greeting / identity / help / capabilities** — Only when the answer is static (no KB, no tools). Set static_answer for greeting, identity, help, capabilities. rewritten_question may stay as the user wrote.
 
-1) **rag_private_kb** — Answer must be grounded in the knowledge base with citations. Includes ANY of:
-   - **Names __CANDIDATE_NAME__** and factual profile questions (role, employer, visa, contact, skills, education, projects, etc.).
+1) **rag_private_kb** — Answer must be grounded in the knowledge base with citations.
+   - **Candidate name alone does not mean rag_private_kb.** Greeting-only messages like "Hi __CANDIDATE_NAME__" or "Hello Taixing" → **greeting**, not KB.
+   - Use **rag_private_kb** when asking factual / profile / history / resume / location / visa / work / contact / skills / projects information about __CANDIDATE_NAME__ (e.g. "What is __CANDIDATE_NAME__'s visa?", "Tell me about __CANDIDATE_NAME__'s experience", "Where is __CANDIDATE_NAME__?").
    - **Contact / presence:** phone, email, LinkedIn, how to reach them.
    - **Second person without history:** **you/your** about skills, experience, visa, publications → means **__CANDIDATE_NAME__**. In **rewritten_question**, use third person about __CANDIDATE_NAME__.
    - **From history:** Clearly about __CANDIDATE_NAME__ from prior turns.

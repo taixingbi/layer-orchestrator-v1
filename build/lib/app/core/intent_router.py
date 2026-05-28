@@ -331,6 +331,42 @@ _GENERAL_TOPIC_DIRECT_ANSWER = (
 )
 
 
+def _greeting_name_pattern() -> str:
+    """Optional candidate name group for greeting-only utterance detection."""
+    alts: List[str] = []
+    full = (CANDIDATE_NAME or "").strip().lower()
+    if full:
+        alts.append(re.escape(full))
+    parts = (CANDIDATE_NAME or "").split()
+    if parts:
+        first = parts[0].lower()
+        if len(first) >= 2:
+            alts.append(re.escape(first))
+    # preserve order, dedupe
+    seen: set[str] = set()
+    unique: List[str] = []
+    for a in alts:
+        if a not in seen:
+            seen.add(a)
+            unique.append(a)
+    return "|".join(unique) if unique else r"taixing(?:\s+bi)?"
+
+
+def _is_greeting_smalltalk_utterance(q: str) -> bool:
+    """True for short greetings that may include the candidate name but are not KB asks."""
+    text = (q or "").strip().lower()
+    if not text:
+        return False
+    name_alt = _greeting_name_pattern()
+    return bool(
+        re.match(
+            rf"^(hi|hello|hey|你好|嗨)\s*({name_alt})?\s*[?!.。！]*$",
+            text,
+            re.IGNORECASE,
+        )
+    )
+
+
 def _latest_question_names_candidate(q: str) -> bool:
     """True if the latest user text likely refers to the named candidate."""
     ql = (q or "").strip().lower()
@@ -360,6 +396,8 @@ def _direct_reply_should_use_rag(latest_question: str, history: List[Tuple[str, 
     q = (latest_question or "").strip()
     if not q:
         return False
+    if _is_greeting_smalltalk_utterance(q):
+        return False
     if _latest_question_names_candidate(q):
         return True
     if not _GENERAL_IMMIGRATION_OR_WORK_AUTH_RE.search(q):
@@ -377,6 +415,10 @@ def maybe_override_internal_for_kb_grounded(
     history: Optional[List[Tuple[str, str]]] = None,
 ) -> RouterDecision:
     """If the router chose an internal route but the ask needs KB citations, switch to rag_private_kb."""
+    if decision.source == "smalltalk_seed":
+        return decision
+    if decision.reason and decision.reason.startswith("[server: smalltalk:"):
+        return decision
     if is_rag_private_kb_route(decision.route) or decision.route in ("clarify", "reject"):
         return decision
     if is_tool_route(decision.route):

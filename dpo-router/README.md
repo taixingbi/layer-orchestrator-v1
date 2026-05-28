@@ -8,7 +8,7 @@ Same layout level as [`gold-test/`](../gold-test/README.md): gold labels in, pre
 
 | Path | Role |
 |------|------|
-| `scripts/build_from_gold.py` | Read `gold-test/data/*.csv` → `output/train.jsonl`, `output/val.jsonl` |
+| `scripts/build_from_gold.py` | Read `gold-test/data/**/*.csv` → `output/train.jsonl`, `output/val.jsonl` |
 | `run-build-dpo.sh` | Wrapper with env defaults |
 | `output/` | Generated JSONL (gitignored) |
 
@@ -48,7 +48,7 @@ Each line matches what the router LLM sees in production:
   "meta": {
     "question": "...",
     "expected_route": "rag",
-    "source_file": "router-gold-profile.csv",
+    "source_file": "router_rag_private_kb.csv",
     "rejected_source": "result_csv | live_eval | synthetic",
     "router_prompt_version": "router-v2.00"
   }
@@ -74,8 +74,8 @@ Optional CSV columns (future): `expected_tool`, `history_json` (array of `{role,
 
 By default **skips**:
 
-- `router-gold-seed-faq.csv` — small-talk seed (no router LLM)
-- `router-gold-hack.csv` — injection guard (no router LLM)
+- `internal-intent/router_*.csv` (greeting, identity, help, capabilities) — small-talk seed (no router LLM)
+- `router_reject.csv` — injection guard (no router LLM)
 
 Include with:
 

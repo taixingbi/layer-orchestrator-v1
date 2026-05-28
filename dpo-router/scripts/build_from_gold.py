@@ -32,8 +32,11 @@ from app.schemas.route import (  # noqa: E402
 
 DEFAULT_SKIP_BASENAMES = frozenset(
     {
-        "router-gold-seed-faq",
-        "router-gold-hack",
+        "router_greeting",
+        "router_identity",
+        "router_help",
+        "router_capabilities",
+        "router_reject",
     }
 )
 
@@ -333,10 +336,13 @@ def _iter_gold_rows(
 ) -> Iterable[GoldRow]:
     skip = set(DEFAULT_SKIP_BASENAMES)
     if include_seed_faq:
-        skip.discard("router-gold-seed-faq")
+        skip.discard("router_greeting")
+        skip.discard("router_identity")
+        skip.discard("router_help")
+        skip.discard("router_capabilities")
     if include_hack:
-        skip.discard("router-gold-hack")
-    for path in sorted(gold_data_dir.glob("*.csv")):
+        skip.discard("router_reject")
+    for path in sorted(gold_data_dir.glob("**/*.csv")):
         if path.stem in skip:
             continue
         yield from _parse_gold_csv(path)
