@@ -2,3 +2,4 @@ question,expected_route
 Hi?,greeting
 Hi Taixing?,greeting
 How are you?,greeting
+Tell me a funny story?,greeting
