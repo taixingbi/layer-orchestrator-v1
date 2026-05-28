@@ -1,0 +1,19 @@
+question,expected_route
+Hi?,greeting
+Hi Taixing?,greeting
+How are you?,greeting
+Tell me a funny story?,greeting
+Hello?,greeting
+Hey!,greeting
+Hi there!,greeting
+Good morning,greeting
+Good evening!,greeting
+How are you,greeting
+Hello Taixing Bi?,greeting
+Hey Taixing?,greeting
+Howdy?,greeting
+Hi!,greeting
+Hello there?,greeting
+Good afternoon!,greeting
+Good day?,greeting
+How are you doing?,greeting

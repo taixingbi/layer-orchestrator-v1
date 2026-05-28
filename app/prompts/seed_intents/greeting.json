@@ -21,7 +21,7 @@
   {
     "intent": "greeting_hello_hey",
     "route": "greeting",
-    "user_examples": ["Hello?", "Hello!", "Hello", "Hey?", "Hey!", "Hey"],
+    "user_examples": ["Hello?", "Hello!", "Hello", "Hey?", "Hey!", "Hey", "Howdy?"],
     "answer": "Hello! How can I help you today with questions about __CANDIDATE_NAME__ or your internal knowledge base?"
   },
   {

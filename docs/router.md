@@ -100,11 +100,11 @@ Suite CSVs under `gold-test/data/` use **`router_<route>.csv`** in subfolders:
 
 | Path | Primary focus |
 |------|----------------|
-| `data/internal-intent/router_greeting.csv` | `greeting` |
-| `data/internal-intent/router_identity.csv` | `identity` |
-| `data/internal-intent/router_capabilities.csv` | `capabilities` |
-| `data/internal-intent/router_help.csv` | `help` |
-| `data/internal-intent/router_reject.csv` | `reject` |
+| `data/internal/router_greeting.csv` | `greeting` |
+| `data/internal/router_identity.csv` | `identity` |
+| `data/internal/router_capabilities.csv` | `capabilities` |
+| `data/internal/router_help.csv` | `help` |
+| `data/internal/router_reject.csv` | `reject` |
 | `data/tools/router_rag_private_kb.csv` | `rag_private_kb` |
 | `data/tools/router_github.csv` | `github_search` |
 | `data/tools/router_web_search.csv` | `web_search` |

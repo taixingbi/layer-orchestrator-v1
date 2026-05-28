@@ -12,7 +12,7 @@ Batch-evaluates the intent router: for each row in **`gold-test/data/**/*.csv`**
 | Path | Role |
 |------|------|
 | **`data/tools/*.csv`** | Tool-route gold (`rag_private_kb`, `web_search`, …). |
-| **`data/internal-intent/*.csv`** | Internal-intent gold (`greeting`, `identity`, `help`, …). |
+| **`data/internal/*.csv`** | Internal-intent gold (`greeting`, `identity`, `help`, …). |
 | **Header** | **`question,expected_route`** — route is the field after the **last** comma. |
 | **`run-router-eval.sh`** | Runner; **`DATA_DIR`** / **`RESULT_DIR`** default next to this script (works from any cwd). |
 | **`result/<name>.csv`** | One output per input basename, e.g. `data/tools/router_rag_private_kb.csv` → `result/router_rag_private_kb.csv` (six columns: **`question`**, **`expected_route`**, **`actual_route`**, **`route_match`**, **`rewritten_question`**, **`actual_answer`**). |
@@ -75,11 +75,11 @@ Filenames follow **`router_<suite>.csv`** (primary route or suite focus):
 
 | File | Focus |
 |------|--------|
-| **`data/internal-intent/router_greeting.csv`** | `greeting` — hi / how are you (smalltalk seed). |
-| **`data/internal-intent/router_identity.csv`** | `identity` — who are you / your name. |
-| **`data/internal-intent/router_capabilities.csv`** | `capabilities` — what can you do. |
-| **`data/internal-intent/router_help.csv`** | `help` — meta / off-topic assistant questions. |
-| **`data/internal-intent/router_reject.csv`** | Injection guard → **`reject`**. See [intent-router.md](../docs/intent-router.md). |
+| **`data/internal/router_greeting.csv`** | `greeting` — hi / how are you (smalltalk seed). |
+| **`data/internal/router_identity.csv`** | `identity` — who are you / your name. |
+| **`data/internal/router_capabilities.csv`** | `capabilities` — what can you do. |
+| **`data/internal/router_help.csv`** | `help` — meta / off-topic assistant questions. |
+| **`data/internal/router_reject.csv`** | Injection guard → **`reject`**. See [intent-router.md](../docs/intent-router.md). |
 | **`data/tools/router_rag_private_kb.csv`** | Candidate / profile (`rag_private_kb`). |
 | **`data/tools/router_github.csv`** | HuntAI / layer repo architecture (`github_search`). |
 | **`data/tools/router_web_search.csv`** | Public web / docs (`web_search`). |

@@ -74,7 +74,7 @@ Optional CSV columns (future): `expected_tool`, `history_json` (array of `{role,
 
 By default **skips**:
 
-- `internal-intent/router_*.csv` (greeting, identity, help, capabilities) — small-talk seed (no router LLM)
+- `internal/router_*.csv` (greeting, identity, help, capabilities) — small-talk seed (no router LLM)
 - `router_reject.csv` — injection guard (no router LLM)
 
 Include with:

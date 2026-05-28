@@ -2,7 +2,7 @@
   {
     "intent": "bot_name",
     "route": "identity",
-    "user_examples": ["What is your name?", "What's your name?", "What is your name"],
+    "user_examples": ["What is your name?", "What's your name?", "What is your name", "What's your full name?"],
     "answer": "I'm HuntAI, your personal AI assistant for Taixing Bi."
   },
   {

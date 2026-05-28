@@ -20,7 +20,7 @@
   {
     "intent": "feelings",
     "route": "help",
-    "user_examples": ["Do you have feelings?", "Can you feel emotions?"],
+    "user_examples": ["Do you have feelings?", "Can you feel emotions?", "Do you have emotions?"],
     "answer": "I don't have feelings or emotions. I can still try to be clear and helpful in my responses."
   }
 ]

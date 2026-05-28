@@ -2,7 +2,7 @@
   {
     "intent": "capabilities",
     "route": "capabilities",
-    "user_examples": ["What can you do?", "What do you do?", "What can you help with?"],
+    "user_examples": ["What can you do?", "What do you do?", "What can you help with?", "How can you help me?"],
     "answer": "I can route questions about __CANDIDATE_NAME__ and your materials to search-backed answers, answer general topics when appropriate, and help clarify what you need."
   },
   {
