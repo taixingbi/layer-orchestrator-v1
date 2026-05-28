@@ -7,6 +7,7 @@ Description-Content-Type: text/markdown
 Requires-Dist: fastapi
 Requires-Dist: uvicorn[standard]
 Requires-Dist: python-dotenv
+Requires-Dist: langchain-core
 Requires-Dist: langchain-community
 Requires-Dist: langchain-openai
 Requires-Dist: langsmith
@@ -84,7 +85,7 @@ Copy or create `.env` at the **project root** (loaded by `app/config.py`). Typic
 | `TAVILY_API_KEY` | Required for `web_search` tool route |
 | `TAVILY_SEARCH_DEPTH` | Tavily search depth (default: `advanced`) |
 | `TAVILY_MAX_RESULTS` | Max Tavily results (default: `5`) |
-| `ROUTER_PROMPT_VERSION` | Intent router prompt file id under `app/prompts/` (default: `router-v3.00`) |
+| `ROUTER_PROMPT_VERSION` | Intent router prompt file id under `app/prompts/` (default: `router-v2.00`) |
 | `MAX_REQUEST_BODY_MB` | Max request body size for `/v1/orchestrator/answer` (default: `1`) |
 | `MAX_HISTORY_MESSAGES` | Max `history` items accepted per answer request (recommended `30-50`, default: `50`) |
 | `MAX_QUESTION_CHARS` | Max `question` length in characters (default: `8000`, about 2k tokens) |
@@ -206,12 +207,15 @@ curl -N -s -X POST http://127.0.0.1:8000/v1/feedback \
 
 Pushes to `main` build the [Dockerfile](Dockerfile) and push to Docker Hub via [`.github/workflows/docker-push.yml`](.github/workflows/docker-push.yml). You can also run the workflow manually (**workflow_dispatch**) from the Actions tab.
 
+On **`main` push** (after a successful build), the same workflow updates [huntai-k3s](https://github.com/taixingbi/huntai-k3s) `manifests/orchestrator/overlays/dev/kustomization.yaml` with the **12-char commit SHA** as `images[].newTag`. Argo CD Application `orchestrator-dev` syncs that Git change and rolls out the new image. See [deploy-gitops-argocd.md](https://github.com/taixingbi/huntai-k3s/blob/main/docs/deploy-gitops-argocd.md) in huntai-k3s.
+
 Add these repository secrets under **Settings → Secrets and variables → Actions**:
 
 | Secret | Description |
 |--------|-------------|
 | `DOCKERHUB_USERNAME` | Docker Hub username or organization |
 | `DOCKERHUB_TOKEN` | Docker Hub access token (recommended; not your account password) |
+| `HUNTAI_K3S_PAT` | PAT with **contents: write** on `taixingbi/huntai-k3s` (GitOps image pin on `main` push) |
 
 Version flow: `git tag/workflow input -> CI VERSION -> Docker build-arg APP_VERSION -> /health + logs`.
 

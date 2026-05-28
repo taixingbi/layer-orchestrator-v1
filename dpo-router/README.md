@@ -30,7 +30,7 @@ bash dpo-router/run-build-dpo.sh
 Live eval for rejected (no result CSV needed):
 
 ```bash
-ORCHESTRATOR_URL=http://127.0.0.1:8000 FETCH_LIVE=1 bash dpo-router/run-build-dpo.sh
+ORCHESTRATOR_URL=http://192.168.86.179:30184 FETCH_LIVE=1 PYTHON=./venv/bin/python bash dpo-router/run-build-dpo.sh
 ```
 
 ## JSONL record shape
