@@ -1,0 +1,14 @@
+[
+  {
+    "intent": "capabilities",
+    "route": "capabilities",
+    "user_examples": ["What can you do?", "What do you do?", "What can you help with?"],
+    "answer": "I can route questions about __CANDIDATE_NAME__ and your materials to search-backed answers, answer general topics when appropriate, and help clarify what you need."
+  },
+  {
+    "intent": "what_to_ask",
+    "route": "capabilities",
+    "user_examples": ["What should I ask you?", "What can I ask?", "What questions can I ask?"],
+    "answer": "Ask about __CANDIDATE_NAME__'s profile or documents, general immigration concepts when not candidate-specific, or how to use this assistant for your workflow."
+  }
+]

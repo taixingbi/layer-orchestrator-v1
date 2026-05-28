@@ -51,7 +51,7 @@ def _render_stored_router_prompt(raw: str) -> str:
     return raw.replace("__CANDIDATE_NAME__", name)
 
 
-_SMALLTALK_SEED_PATH = _ROUTER_PROMPTS_DIR / "smalltalk_examples.json"
+_SEED_INTENTS_DIR = _ROUTER_PROMPTS_DIR / "seed_intents"
 _smalltalk_seed_cache: Optional[List[Any]] = None
 
 
@@ -60,20 +60,29 @@ def _normalize_smalltalk_key(text: str) -> str:
 
 
 def _load_smalltalk_seed() -> List[Any]:
-    """Parse smalltalk_examples.json once; empty list if missing or invalid."""
+    """Parse seed_intents/*.json once; empty list if missing or invalid."""
     global _smalltalk_seed_cache
     if _smalltalk_seed_cache is not None:
         return _smalltalk_seed_cache
-    if not _SMALLTALK_SEED_PATH.is_file():
+    if not _SEED_INTENTS_DIR.is_dir():
         _router_log.warning(
             "smalltalk_seed_missing",
-            extra={"event": "smalltalk_seed_missing", "path": str(_SMALLTALK_SEED_PATH)},
+            extra={"event": "smalltalk_seed_missing", "path": str(_SEED_INTENTS_DIR)},
         )
         _smalltalk_seed_cache = []
         return _smalltalk_seed_cache
     try:
-        raw = json.loads(_SMALLTALK_SEED_PATH.read_text(encoding="utf-8"))
-        _smalltalk_seed_cache = raw if isinstance(raw, list) else []
+        rows: List[Any] = []
+        for seed_file in sorted(_SEED_INTENTS_DIR.glob("*.json")):
+            raw = json.loads(seed_file.read_text(encoding="utf-8"))
+            if isinstance(raw, list):
+                rows.extend(raw)
+            else:
+                _router_log.warning(
+                    "smalltalk_seed_invalid_file",
+                    extra={"event": "smalltalk_seed_invalid_file", "path": str(seed_file)},
+                )
+        _smalltalk_seed_cache = rows
     except (json.JSONDecodeError, OSError) as e:
         _router_log.warning(
             "smalltalk_seed_load_failed",
@@ -83,8 +92,23 @@ def _load_smalltalk_seed() -> List[Any]:
     return _smalltalk_seed_cache
 
 
-def _match_smalltalk_seed(latest: str) -> Optional[Tuple[str, str]]:
-    """If normalized latest equals a seed user_example, return (intent, rendered_answer)."""
+def _smalltalk_route_from_row(row: Dict[str, Any], intent: str) -> Optional[CanonicalRoute]:
+    """Resolve canonical internal route from seed row, with legacy fallback mapping."""
+    raw = str(row.get("route") or "").strip()
+    if raw:
+        normalized = normalize_legacy_route_to_canonical(raw)
+        if normalized in CANONICAL_ROUTES and is_internal_route(normalized):
+            return normalized  # type: ignore[return-value]
+        _router_log.warning(
+            "smalltalk_seed_invalid_route",
+            extra={"event": "smalltalk_seed_invalid_route", "intent": intent, "route": raw},
+        )
+    fallback = _SMALLTALK_INTENT_TO_CANONICAL.get(intent, "greeting")
+    return fallback  # type: ignore[return-value]
+
+
+def _match_smalltalk_seed(latest: str) -> Optional[Tuple[str, CanonicalRoute, str]]:
+    """If normalized latest equals a seed user_example, return (intent, route, rendered_answer)."""
     nq = _normalize_smalltalk_key(latest)
     if not nq:
         return None
@@ -98,12 +122,15 @@ def _match_smalltalk_seed(latest: str) -> Optional[Tuple[str, str]]:
             continue
         for ex in examples:
             if isinstance(ex, str) and _normalize_smalltalk_key(ex) == nq:
-                return intent, _render_stored_router_prompt(answer)
+                route = _smalltalk_route_from_row(row, intent)
+                if not route:
+                    continue
+                return intent, route, _render_stored_router_prompt(answer)
     return None
 
 
-def _answer_for_smalltalk_intent(intent: str) -> Optional[str]:
-    """Return rendered answer for the first JSON row with this intent, or None."""
+def _answer_and_route_for_smalltalk_intent(intent: str) -> Optional[Tuple[str, CanonicalRoute]]:
+    """Return (rendered_answer, route) for the first JSON row with this intent, or None."""
     key = (intent or "").strip()
     if not key:
         return None
@@ -113,8 +140,9 @@ def _answer_for_smalltalk_intent(intent: str) -> Optional[str]:
         if str(row.get("intent") or "").strip() != key:
             continue
         answer = str(row.get("answer") or "").strip()
-        if answer:
-            return _render_stored_router_prompt(answer)
+        route = _smalltalk_route_from_row(row, key)
+        if answer and route:
+            return _render_stored_router_prompt(answer), route
     return None
 
 
@@ -155,29 +183,30 @@ _SMALLTALK_PATTERN_RULES: List[Tuple[re.Pattern[str], str]] = [
 ]
 
 
-def _match_smalltalk_patterns(latest: str) -> Optional[Tuple[str, str]]:
-    """If normalized question matches a short-utterance pattern, return (intent, rendered_answer)."""
+def _match_smalltalk_patterns(latest: str) -> Optional[Tuple[str, CanonicalRoute, str]]:
+    """If normalized question matches a short-utterance pattern, return (intent, route, rendered_answer)."""
     nq = _normalize_smalltalk_for_patterns(latest)
     if not nq or len(nq) > _SMALLTALK_PATTERN_MAX_LEN:
         return None
     for rx, intent in _SMALLTALK_PATTERN_RULES:
         if rx.fullmatch(nq):
-            answer = _answer_for_smalltalk_intent(intent)
-            if answer:
-                return intent, answer
+            hit = _answer_and_route_for_smalltalk_intent(intent)
+            if hit:
+                answer, route = hit
+                return intent, route, answer
     return None
 
 
-def _match_smalltalk_any(latest: str) -> Optional[Tuple[str, str, str]]:
-    """Exact seed first, then pattern layer. Returns (intent, answer, prompt_source) or None."""
+def _match_smalltalk_any(latest: str) -> Optional[Tuple[str, CanonicalRoute, str, str]]:
+    """Exact seed first, then pattern layer. Returns (intent, route, answer, prompt_source) or None."""
     hit = _match_smalltalk_seed(latest)
     if hit:
-        intent, answer = hit
-        return intent, answer, "smalltalk_seed"
+        intent, route, answer = hit
+        return intent, route, answer, "smalltalk_seed"
     hit = _match_smalltalk_patterns(latest)
     if hit:
-        intent, answer = hit
-        return intent, answer, "smalltalk_pattern"
+        intent, route, answer = hit
+        return intent, route, answer, "smalltalk_pattern"
     return None
 
 
@@ -721,7 +750,7 @@ async def run_intent_rewrite_router(
     if not hist:
         sm = _match_smalltalk_any(q)
         if sm:
-            intent, answer, prompt_source = sm
+            intent, route, answer, prompt_source = sm
             if runtime_meta is not None:
                 runtime_meta.clear()
                 runtime_meta.update(
@@ -744,10 +773,9 @@ async def run_intent_rewrite_router(
                     "gateway_meta": {"intent": intent, "question_preview": q[:80], **gw_thread},
                 },
             )
-            canonical = _SMALLTALK_INTENT_TO_CANONICAL.get(intent, "greeting")
             return RouterDecision(
                 rewritten_question=q,
-                route=canonical,  # type: ignore[arg-type]
+                route=route,
                 static_answer=answer,
                 reason=f"[server: smalltalk:{intent}]",
                 source="smalltalk_seed",

@@ -27,7 +27,7 @@ bash gold-test/run-router-eval.sh
 Use another prompt file under **`app/prompts/<version>.txt`**:
 
 ```bash
-CONCURRENCY=20 ROUTER_PROMPT_VERSION=router-v2.00 bash gold-test/run-router-eval.sh
+CONCURRENCY=20 ROUTER_PROMPT_VERSION=router-v1.04 bash gold-test/run-router-eval.sh
 ```
 
 **Progress** (stderr) — one line per gold file, then the match-rate table on stdout:
@@ -86,7 +86,7 @@ Filenames follow **`router_<suite>.csv`** (primary route or suite focus):
 
 ## Small-talk seed (not RAG)
 
-- **File:** [`app/prompts/smalltalk_examples.json`](../app/prompts/smalltalk_examples.json) — JSON array of `{ "intent", "user_examples", "answer" }`.
+- **File:** [`app/prompts/seed_intents/*.json`](../app/prompts/seed_intents/*.json) — JSON array of `{ "intent", "user_examples", "answer" }`.
 - **When:** Intent router runs with **empty** conversation history; the latest question is trimmed, lowercased, and internal whitespace collapsed, then compared **exactly** to each string in `user_examples` (same normalization).
 - **Effect:** Returns **`direct_reply`** with the seed **`answer`** (no router LLM). Literal **`__CANDIDATE_NAME__`** in `answer` strings is replaced with the configured candidate name at runtime.
 

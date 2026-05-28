@@ -43,7 +43,7 @@ On hit, **`runtime_meta.prompt_source`** is **`injection_guard`**, `prompt_file`
 If `normalize_history_turns(history)` yields **no** turns:
 
 1. **`_match_smalltalk_any`** runs **before** any LLM call.
-2. **Layer A — exact:** normalized equality against each `user_examples` string in [`app/prompts/smalltalk_examples.json`](../app/prompts/smalltalk_examples.json).
+2. **Layer A — exact:** normalized equality against each `user_examples` string in [`app/prompts/seed_intents/*.json`](../app/prompts/seed_intents/*.json).
 3. **Layer B — patterns:** short utterance (length cap), trailing punctuation stripped, **`fullmatch`** on ordered regexes in code; each rule maps to an **`intent`**; **`answer`** is read from the JSON row with that intent.
 
 On hit:
@@ -89,7 +89,7 @@ Same as parse failure: **`fallback_router_decision`** (`rag`) plus the two post-
 | Asset | Format | Role |
 |-------|--------|------|
 | `app/prompts/router-*.txt` | Plain text | LLM **routing policy** and examples; version id from `ROUTER_PROMPT_VERSION` / request. |
-| `app/prompts/smalltalk_examples.json` | JSON array | Catalog of intents, `user_examples`, and `answers` for the **empty-history** server path. |
+| `app/prompts/seed_intents/*.json` | JSON array | Catalog of intents, `user_examples`, and `answers` for the **empty-history** server path. |
 | `_SMALLTALK_PATTERN_RULES` in code | Regex → intent | Second layer for short paraphrases; answers still loaded from JSON by `intent`. |
 | `_prompt_injection_hard_block` in code | Regex / fullmatch | Latest-only jailbreak / exfil phrases → **`reject`** or one safe **`direct_reply`**. |
 

@@ -60,7 +60,7 @@ Example:
 | `source` | Meaning |
 |----------|---------|
 | `guard` | Injection guard (pre-LLM) |
-| `smalltalk_seed` | Exact match on `smalltalk_examples.json` |
+| `smalltalk_seed` | Exact match on `seed_intents/*.json` examples |
 | `llm_router` | Versioned router prompt LLM |
 | `post_rule` | Server override (GitHub keyword, KB-grounded, low confidence, etc.) |
 | `fallback` | Empty input, parse error, or invoke error |

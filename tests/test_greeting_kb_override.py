@@ -56,3 +56,9 @@ def test_run_intent_router_hi_taixing_is_greeting():
     assert decision.route == "greeting"
     out = normalize_post_router(decision, latest_question="Hi Taixing?", history=[])
     assert out.route == "greeting"
+
+
+def test_run_intent_router_reality_is_help_from_seed_route():
+    decision = asyncio.run(run_intent_rewrite_router("Are you real?", []))
+    assert decision.source == "smalltalk_seed"
+    assert decision.route == "help"

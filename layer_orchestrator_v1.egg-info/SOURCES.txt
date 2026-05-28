@@ -42,7 +42,7 @@ app/prompts/router-test-v1.01.txt
 app/prompts/router-test-v1.02.txt
 app/prompts/router-test-v1.03.txt
 app/prompts/router-v2.00.txt
-app/prompts/smalltalk_examples.json
+app/prompts/seed_intents/*.json
 app/schemas/__init__.py
 app/schemas/answer_envelope.py
 app/schemas/request.py

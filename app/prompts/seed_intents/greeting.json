@@ -1,0 +1,57 @@
+[
+  {
+    "intent": "greeting_named",
+    "route": "greeting",
+    "user_examples": [
+      "Hi Taixing?",
+      "Hi Taixing Bi?",
+      "Hello Taixing?",
+      "Hey Taixing?",
+      "Hello Taixing Bi?",
+      "Hey Taixing Bi?"
+    ],
+    "answer": "Hello! When you are ready, ask about __CANDIDATE_NAME__'s profile, role, work authorization, or your organization's materials."
+  },
+  {
+    "intent": "greeting_hi",
+    "route": "greeting",
+    "user_examples": ["Hi?", "Hii?", "Hi!", "Hi", "Hii", "Hi!!"],
+    "answer": "Hello! How can I help you today with questions about __CANDIDATE_NAME__ or your internal knowledge base?"
+  },
+  {
+    "intent": "greeting_hello_hey",
+    "route": "greeting",
+    "user_examples": ["Hello?", "Hello!", "Hello", "Hey?", "Hey!", "Hey"],
+    "answer": "Hello! How can I help you today with questions about __CANDIDATE_NAME__ or your internal knowledge base?"
+  },
+  {
+    "intent": "greeting_there",
+    "route": "greeting",
+    "user_examples": ["Hi there?", "Hi there!", "Hi there", "Hello there?", "Hello there!", "Hello there"],
+    "answer": "Hello! How can I help you today with questions about __CANDIDATE_NAME__ or your internal knowledge base?"
+  },
+  {
+    "intent": "greeting_time_of_day",
+    "route": "greeting",
+    "user_examples": [
+      "Good morning",
+      "Good morning?",
+      "Good morning!",
+      "Good afternoon",
+      "Good afternoon?",
+      "Good afternoon!",
+      "Good evening",
+      "Good evening?",
+      "Good evening!",
+      "Good day",
+      "Good day?"
+    ],
+    "answer": "Hello! How can I help you today with questions about __CANDIDATE_NAME__ or your internal knowledge base?"
+  },
+  {
+    "intent": "greeting_status",
+    "route": "greeting",
+    "user_examples": ["How are you?", "How are you"],
+    "answer": "I'm doing well and ready to help. How can I help you today?"
+  }
+]

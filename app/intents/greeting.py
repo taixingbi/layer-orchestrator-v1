@@ -8,7 +8,7 @@ from typing import Optional, Tuple
 from ..core.rewrite import CANDIDATE_NAME
 
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
-_SEED_PATH = _PROMPTS_DIR / "smalltalk_examples.json"
+_SEED_DIR = _PROMPTS_DIR / "seed_intents"
 
 _GREETING_INTENTS = frozenset(
     {
@@ -34,8 +34,13 @@ def _normalize(q: str) -> str:
 
 def _load_seed() -> list:
     try:
-        with open(_SEED_PATH, encoding="utf-8") as f:
-            return json.load(f)
+        rows = []
+        for p in sorted(_SEED_DIR.glob("*.json")):
+            with open(p, encoding="utf-8") as f:
+                raw = json.load(f)
+            if isinstance(raw, list):
+                rows.extend(raw)
+        return rows
     except (OSError, json.JSONDecodeError):
         return []
 
