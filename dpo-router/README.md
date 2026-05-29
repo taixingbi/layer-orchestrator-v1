@@ -10,7 +10,7 @@ Same layout level as [`gold-test/`](../gold-test/README.md): gold labels in, pre
 |------|------|
 | `scripts/build_from_gold.py` | Read `gold-test/data/**/*.csv` → `output/train.jsonl`, `output/val.jsonl` |
 | `run-build-dpo.sh` | Wrapper with env defaults |
-| `output/` | Generated JSONL (gitignored) |
+| `output/` | Generated JSONL (`train.jsonl`, `val.jsonl`, `build-stats.json`) — committed for `layer-router-dpo-v1` train |
 
 **Training** lives in sibling app [`layer-router-dpo-v1`](../../layer-router-dpo-v1/README.md) (QLoRA DPO on LAN GPU).
 

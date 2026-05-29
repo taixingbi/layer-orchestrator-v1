@@ -1,0 +1,16 @@
+{
+  "rows_total": 32,
+  "pairs_written": 28,
+  "skipped_ineligible": 4,
+  "skipped_match": 0,
+  "rejected_source": {
+    "result_csv": 0,
+    "live_eval": 0,
+    "synthetic": 28
+  },
+  "by_expected_route": {
+    "github_search": 4,
+    "rag_private_kb": 27,
+    "web_search": 1
+  }
+}
