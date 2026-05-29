@@ -43,7 +43,18 @@ process_one_csv() {
   tmp_dir="$(mktemp -d)"
 
   local total
-  total="$(awk '{ sub(/\r$/,""); if (NR>1 && index($0,",")>0) c++ } END { print c+0 }' "$in_path")"
+  total="$(python3 - "$in_path" <<'PY'
+import csv, sys
+path = sys.argv[1]
+with open(path, newline="", encoding="utf-8") as f:
+    n = sum(
+        1
+        for row in csv.DictReader(f)
+        if (row.get("question") or "").strip() and (row.get("expected_route") or "").strip()
+    )
+print(n)
+PY
+)"
   if ((total == 0)); then
     echo "[$file_idx/$file_total] $base skip (empty)" >&2
     rm -rf "$tmp_dir"
@@ -53,15 +64,7 @@ process_one_csv() {
   local row running
   row=0
   running=0
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line%$'\r'}"
-    [[ -z "${line//[$'\t\r\n ']/}" ]] && continue
-    [[ "$line" == "question,expected_route" ]] && continue
-    [[ "$line" != *,* ]] && continue
-    local expected_route suffix question
-    expected_route="${line##*,}"
-    suffix=",$expected_route"
-    question="${line%"$suffix"}"
+  while IFS=$'\t' read -r question expected_route || [[ -n "$question" ]]; do
     [[ -z "$question" || -z "$expected_route" ]] && continue
     row=$((row + 1))
     printf '%s\t%s\n' "$question" "$expected_route" >"$tmp_dir/meta$row"
@@ -83,7 +86,17 @@ process_one_csv() {
       done
       running=$(jobs -rp | wc -l | tr -d ' ')
     fi
-  done <"$in_path"
+  done < <(python3 - "$in_path" <<'PY'
+import csv, sys
+path = sys.argv[1]
+with open(path, newline="", encoding="utf-8") as f:
+    for row in csv.DictReader(f):
+        q = (row.get("question") or "").strip()
+        er = (row.get("expected_route") or "").strip()
+        if q and er:
+            print(f"{q}\t{er}")
+PY
+)
 
   wait
 

@@ -12,6 +12,8 @@ Same layout level as [`gold-test/`](../gold-test/README.md): gold labels in, pre
 | `run-build-dpo.sh` | Wrapper with env defaults |
 | `output/` | Generated JSONL (gitignored) |
 
+**Training** lives in sibling app [`layer-router-dpo-v1`](../../layer-router-dpo-v1/README.md) (QLoRA DPO on LAN GPU).
+
 ## Quick start
 
 From repo root (uses gold CSVs; synthetic **rejected** if no eval results):
@@ -96,13 +98,20 @@ INCLUDE_SEED_FAQ=1 INCLUDE_HACK=1 bash dpo-router/run-build-dpo.sh
 | `INCLUDE_SEED_FAQ` | `0` | Include seed-FAQ gold file |
 | `INCLUDE_HACK` | `0` | Include hack gold file |
 
-## Training (outside this repo)
+## Training (LAN GPU, 16GB QLoRA)
 
-Use [TRL `DPOTrainer`](https://huggingface.co/docs/trl/dpo_trainer) or your gateway fine-tune pipeline:
+Dataset is built here; training runs in **[layer-router-dpo-v1](../../layer-router-dpo-v1/README.md)**.
 
-1. Base model = same family as `LLM_MODEL` / router gateway model.
-2. Train on `output/train.jsonl` (validate on `output/val.jsonl`).
-3. Deploy fine-tuned weights; set router model on gateway / `router_model` on eval.
+```bash
+# 1) Build dataset (layer-orchestrator-v1)
+PYTHON=./venv/bin/python bash dpo-router/run-build-dpo.sh
+
+# 2) Train (layer-router-dpo-v1 on GPU node 173/176)
+cd ../layer-router-dpo-v1
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+bash run-train.sh
+```
 
 Post-train, re-run gold eval:
 
@@ -112,6 +121,7 @@ ROUTER_PROMPT_VERSION=router-v2.00 bash gold-test/run-router-eval.sh
 
 ## See also
 
+- [layer-router-dpo-v1](../../layer-router-dpo-v1/README.md) — QLoRA DPO training on LAN GPU
 - [intent-router.md](../docs/intent-router.md) — router execution order
 - [schema-request-response.md](../docs/schema/schema-request-response.md) — `POST /v1/orchestrator/eval/router`
 - [gold-test/readme.md](../gold-test/readme.md) — gold CSV format

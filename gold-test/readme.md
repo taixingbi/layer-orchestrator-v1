@@ -13,7 +13,7 @@ Batch-evaluates the intent router: for each row in **`gold-test/data/**/*.csv`**
 |------|------|
 | **`data/tools/*.csv`** | Tool-route gold (`rag_private_kb`, `web_search`, …). |
 | **`data/internal/*.csv`** | Internal-intent gold (`greeting`, `identity`, `help`, …). |
-| **Header** | **`question,expected_route`** — route is the field after the **last** comma. |
+| **Header** | **`question,expected_route`**. Every `question` is double-quoted; `expected_route` is unquoted. |
 | **`run-router-eval.sh`** | Runner; **`DATA_DIR`** / **`RESULT_DIR`** default next to this script (works from any cwd). |
 | **`result/<name>.csv`** | One output per input basename, e.g. `data/tools/router_rag_private_kb.csv` → `result/router_rag_private_kb.csv` (six columns: **`question`**, **`expected_route`**, **`actual_route`**, **`route_match`**, **`rewritten_question`**, **`actual_answer`**). |
 | **`result/router-eval-report-<version>.md`** | Summary: counts, match rate, **`ROUTER_PROMPT_VERSION`**, **Bad items** (`route_match` = false). Filename includes the prompt id (e.g. **`router-eval-report-router-v1.00.md`**). |
@@ -103,4 +103,4 @@ Generated **`result/*.csv`** and the report are listed in **`.gitignore`**; re-r
 ## See also
 
 - API shape: **`docs/schema-request-response.md`** (`POST /v1/orchestrator/eval/router`)
-- **Router DPO JSONL:** [`dpo-router/README.md`](../dpo-router/README.md) — preference pairs from these gold CSVs (+ eval results)
+- **Router DPO JSONL:** [`dpo-router/README.md`](../dpo-router/README.md) — preference pairs from these gold CSVs (+ eval results); **train** in [`layer-router-dpo-v1`](../../layer-router-dpo-v1/README.md)

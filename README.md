@@ -28,7 +28,7 @@ FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …
 - [Architecture flow](docs/architecture.md) — SSE sequence, tool dispatch, and sequence diagram.
 - [Smoke / cluster examples](docs/smoke-test.md) — health, orchestrator `curl`, limits, and eval snippets.
 - [Gold router eval](gold-test/readme.md) — batch CSV tests for `/v1/orchestrator/eval/router` (optional CI / local harness).
-- [Router DPO dataset](dpo-router/README.md) — build `train.jsonl` / `val.jsonl` for intent-router fine-tuning from gold CSVs.
+- [Router DPO dataset](dpo-router/README.md) — build `train.jsonl` / `val.jsonl` from gold CSVs; train in [layer-router-dpo-v1](../layer-router-dpo-v1/README.md).
 
 ## Setup
 
