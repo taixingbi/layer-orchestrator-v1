@@ -32,7 +32,7 @@ bash aval/dpo-router/run-build-dpo.sh
 Live eval for rejected (no result CSV needed):
 
 ```bash
-ORCHESTRATOR_URL=http://192.168.86.179:30184 FETCH_LIVE=1 PYTHON=./venv/bin/python bash aval/dpo-router/run-build-dpo.sh
+ORCHESTRATOR_URL=http://192.168.86.179:30184 FETCH_LIVE=1 bash aval/dpo-router/run-build-dpo.sh
 ```
 
 ## JSONL record shape
@@ -104,7 +104,7 @@ Dataset is built here; training runs in **[layer-router-dpo-v1](../../../layer-r
 
 ```bash
 # 1) Build dataset (layer-orchestrator-v1)
-PYTHON=./venv/bin/python bash aval/dpo-router/run-build-dpo.sh
+bash aval/dpo-router/run-build-dpo.sh
 
 # 2) Train (layer-router-dpo-v1 on GPU node 173/176)
 cd ../layer-router-dpo-v1

@@ -24,7 +24,9 @@ if [[ "${INCLUDE_HACK:-0}" == "1" ]]; then
 fi
 
 PYTHON="${PYTHON:-}"
-if [[ -z "$PYTHON" && -x "$REPO_ROOT/.venv/bin/python3" ]]; then
+if [[ -z "$PYTHON" && -x "$REPO_ROOT/venv/bin/python3" ]]; then
+  PYTHON="$REPO_ROOT/venv/bin/python3"
+elif [[ -z "$PYTHON" && -x "$REPO_ROOT/.venv/bin/python3" ]]; then
   PYTHON="$REPO_ROOT/.venv/bin/python3"
 fi
 PYTHON="${PYTHON:-python3}"

@@ -15,7 +15,7 @@ Shared gold logic lives in [`dpo-router/scripts/router_gold.py`](../dpo-router/s
 ## Quick start
 
 ```bash
-PYTHON=./venv/bin/python bash aval/sft-router/run-build-sft.sh
+bash aval/sft-router/run-build-sft.sh
 ```
 
 ## JSONL record shape

@@ -20,7 +20,7 @@ bash aval/gold-test/run-router-eval.sh
 bash aval/dpo-router/run-build-dpo.sh
 
 # 3) Build SFT dataset
-PYTHON=./venv/bin/python bash aval/sft-router/run-build-sft.sh
+bash aval/sft-router/run-build-sft.sh
 ```
 
 Train DPO in sibling app [`layer-router-dpo-v1`](../../layer-router-dpo-v1/README.md) (fetches `aval/dpo-router/output/*.jsonl` from GitHub or monorepo path).
