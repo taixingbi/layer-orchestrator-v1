@@ -3,9 +3,10 @@
 set -euo pipefail
 
 DPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$DPO_ROOT/.." && pwd)"
-GOLD_DATA="${GOLD_DATA:-$REPO_ROOT/gold-test/data}"
-GOLD_RESULT="${GOLD_RESULT:-$REPO_ROOT/gold-test/result}"
+AVAL_ROOT="$(cd "$DPO_ROOT/.." && pwd)"
+REPO_ROOT="$(cd "$AVAL_ROOT/.." && pwd)"
+GOLD_DATA="${GOLD_DATA:-$AVAL_ROOT/gold-test/data}"
+GOLD_RESULT="${GOLD_RESULT:-$AVAL_ROOT/gold-test/result}"
 OUTPUT_DIR="${OUTPUT_DIR:-$DPO_ROOT/output}"
 ROUTER_PROMPT_VERSION="${ROUTER_PROMPT_VERSION:-router-v2.00}"
 ORCHESTRATOR_URL="${ORCHESTRATOR_URL:-}"

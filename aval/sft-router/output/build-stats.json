@@ -1,0 +1,13 @@
+{
+  "rows_total": 32,
+  "examples_written": 28,
+  "skipped_ineligible": 4,
+  "by_expected_route": {
+    "github_search": 4,
+    "rag_private_kb": 27,
+    "web_search": 1
+  },
+  "completion_source": {
+    "gold": 28
+  }
+}

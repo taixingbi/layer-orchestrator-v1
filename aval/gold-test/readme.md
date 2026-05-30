@@ -1,6 +1,6 @@
 # Gold test (router eval)
 
-Batch-evaluates the intent router: for each row in **`gold-test/data/**/*.csv`**, calls **`POST /v1/orchestrator/eval/router`**, writes per-suite results under **`gold-test/result/`** (flat basename, e.g. `router_greeting.csv`), then builds **`result/router-eval-report-<ROUTER_PROMPT_VERSION>.md`**.
+Batch-evaluates the intent router: for each row in **`aval/gold-test/data/**/*.csv`**, calls **`POST /v1/orchestrator/eval/router`**, writes per-suite results under **`aval/gold-test/result/`** (flat basename, e.g. `router_greeting.csv`), then builds **`result/router-eval-report-<ROUTER_PROMPT_VERSION>.md`**.
 
 ## Requirements
 
@@ -21,13 +21,13 @@ Batch-evaluates the intent router: for each row in **`gold-test/data/**/*.csv`**
 ## Run
 
 ```bash
-bash gold-test/run-router-eval.sh
+bash aval/gold-test/run-router-eval.sh
 ```
 
 Use another prompt file under **`app/prompts/<version>.txt`**:
 
 ```bash
-CONCURRENCY=20 ROUTER_PROMPT_VERSION=router-v1.04 bash gold-test/run-router-eval.sh
+CONCURRENCY=20 ROUTER_PROMPT_VERSION=router-v1.04 bash aval/gold-test/run-router-eval.sh
 ```
 
 **Progress** (stderr) — one line per gold file, then the match-rate table on stdout:
@@ -49,12 +49,12 @@ Full Markdown report: **`result/router-eval-report-<ROUTER_PROMPT_VERSION>.md`**
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `DATA_DIR` | `<gold-test>/data` | Input `*.csv` directory |
-| `RESULT_DIR` | `<gold-test>/result` | Output directory |
+| `DATA_DIR` | `<aval/gold-test>/data` | Input `*.csv` directory |
+| `RESULT_DIR` | `<aval/gold-test>/result` | Output directory |
 | `ORCHESTRATOR_URL` | `http://192.168.86.179:30184` | Orchestrator base URL (no path) |
 | `CONCURRENCY` | `4` | Parallel HTTP requests per file |
 | `ROUTER_PROMPT_VERSION` | `router-v1.00` | JSON **`router_prompt_version`** on each eval request |
-| `REPORT_PATH` | `<gold-test>/result/router-eval-report-<ROUTER_PROMPT_VERSION>.md` | Markdown report path (embeds prompt version unless overridden) |
+| `REPORT_PATH` | `<aval/gold-test>/result/router-eval-report-<ROUTER_PROMPT_VERSION>.md` | Markdown report path (embeds prompt version unless overridden) |
 
 Eval responses now include `decision.route_detail` (nested) alongside legacy `decision.route`. Optional CSV columns for future suites: `expected_route_detail_type`, `expected_tool_name`.
 
@@ -79,7 +79,7 @@ Filenames follow **`router_<suite>.csv`** (primary route or suite focus):
 | **`data/internal/router_identity.csv`** | `identity` — who are you / your name. |
 | **`data/internal/router_capabilities.csv`** | `capabilities` — what can you do. |
 | **`data/internal/router_help.csv`** | `help` — meta / off-topic assistant questions. |
-| **`data/internal/router_reject.csv`** | Injection guard → **`reject`**. See [intent-router.md](../docs/intent-router.md). |
+| **`data/internal/router_reject.csv`** | Injection guard → **`reject`**. See [intent-router.md](../../docs/intent-router.md). |
 | **`data/tools/router_rag_private_kb.csv`** | Candidate / profile (`rag_private_kb`). |
 | **`data/tools/router_github.csv`** | HuntAI / layer repo architecture (`github_search`). |
 | **`data/tools/router_web_search.csv`** | Public web / docs (`web_search`). |
@@ -102,5 +102,7 @@ Generated **`result/*.csv`** and the report are listed in **`.gitignore`**; re-r
 
 ## See also
 
+- [aval/README.md](../README.md) — eval & dataset bundle overview
 - API shape: **`docs/schema-request-response.md`** (`POST /v1/orchestrator/eval/router`)
-- **Router DPO JSONL:** [`dpo-router/README.md`](../dpo-router/README.md) — preference pairs from these gold CSVs (+ eval results); **train** in [`layer-router-dpo-v1`](../../layer-router-dpo-v1/README.md)
+- **Router DPO JSONL:** [`dpo-router/README.md`](../dpo-router/README.md) — preference pairs from these gold CSVs (+ eval results); **train** in [`layer-router-dpo-v1`](../../../layer-router-dpo-v1/README.md)
+- **Router SFT JSONL:** [`sft-router/README.md`](../sft-router/README.md) — supervised chat examples (gold completions only)

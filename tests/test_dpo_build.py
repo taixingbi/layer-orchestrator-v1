@@ -1,19 +1,29 @@
 """Router DPO dataset builder tests."""
 
+import importlib.util
 import json
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DPO_SCRIPTS = REPO_ROOT / "dpo-router" / "scripts"
+DPO_SCRIPTS = REPO_ROOT / "aval" / "dpo-router" / "scripts"
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 if str(DPO_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(DPO_SCRIPTS))
 
-import build_from_gold as dpo  # noqa: E402
 
-GOLD_DATA = REPO_ROOT / "gold-test" / "data"
+def _load_dpo_build():
+    path = DPO_SCRIPTS / "build_from_gold.py"
+    spec = importlib.util.spec_from_file_location("dpo_build_from_gold", path)
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    return mod
+
+
+dpo = _load_dpo_build()
+GOLD_DATA = REPO_ROOT / "aval" / "gold-test" / "data"
 
 
 def test_build_router_completion_rag():
