@@ -4,6 +4,7 @@ import logging
 import time
 
 from .config import settings
+from .core.correlation import new_session_id, trace_id_log_fields
 from .observability.logging import new_request_id, setup_logging, shutdown_logging
 from .observability.metrics import observe_http
 from .observability.context import (
@@ -23,6 +24,13 @@ from .api.routes import router, v1_router
 from .core.normalize import max_request_body_bytes
 
 _http_log = logging.getLogger("layer_orchestrator.http")
+
+
+def _strip_opt(h):
+    if h is None:
+        return None
+    s = h.strip()
+    return s if s else None
 
 
 def _latency_ms(t0: float) -> float:
@@ -80,19 +88,15 @@ async def _http_request_logging_middleware(request: Request, call_next):
             except ValueError:
                 pass
 
-    request_id = request.headers.get("x-request-id") or new_request_id()
-    session_id = request.headers.get("x-session-id")
-    trace_id = request.headers.get("x-trace-id") or request_id
+    request_id = _strip_opt(request.headers.get("x-request-id")) or new_request_id()
+    session_id = _strip_opt(request.headers.get("x-session-id")) or new_session_id()
+    trace_hdr = _strip_opt(request.headers.get("x-trace-id"))
+    trace_id = trace_hdr or request_id
     request.state.request_id = request_id
     request.state.session_id = session_id
     request.state.trace_id = trace_id
+    request.state.trace_id_from_header = bool(trace_hdr)
     hdr = request.headers
-
-    def _strip_opt(h):
-        if h is None:
-            return None
-        s = h.strip()
-        return s if s else None
 
     request.state.user_id = _strip_opt(hdr.get("x-user-id"))
     request.state.user_roles = _strip_opt(hdr.get("x-user-roles"))
@@ -108,7 +112,17 @@ async def _http_request_logging_middleware(request: Request, call_next):
     )
     try:
         async with bind_pipeline_phase("http"):
-            _http_log.info("http_request_start", extra={"trace_id": trace_id})
+            _http_log.info(
+                "http_request_start",
+                extra={
+                    "session_id": session_id,
+                    **trace_id_log_fields(
+                        request_id=request_id,
+                        trace_id=trace_id,
+                        trace_id_from_header=bool(getattr(request.state, "trace_id_from_header", False)),
+                    ),
+                },
+            )
             t0 = time.perf_counter()
             try:
                 response = await call_next(request)

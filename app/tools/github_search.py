@@ -18,6 +18,7 @@ async def run_github_search(
     trace_id: str = "",
     rag_user: Optional[Dict[str, str]] = None,
     conversation_id: str = "",
+    is_new_conversation: bool = False,
     on_delta: Optional[Callable[[str], None]] = None,
 ) -> ToolResult:
     base = settings.mcp_github_base_url
@@ -40,5 +41,6 @@ async def run_github_search(
         trace_id=trace_id,
         rag_user=rag_user,
         conversation_id=conversation_id,
+        is_new_conversation=is_new_conversation,
         on_delta=on_delta,
     )

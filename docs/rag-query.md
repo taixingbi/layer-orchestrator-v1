@@ -53,11 +53,14 @@ When **`conversation_id`** is present, the client also sends **`X-Conversation-I
 ```bash
 curl -sS -X POST http://192.168.86.179:30183/v1/rag/query \
   -H "Content-Type: application/json" \
+  -H "X-Request-Id: req-abc123" \
+  -H "X-Session-Id: ses-xyz789" \
+  -H "X-Trace-Id: trc-001" \
+  -H "X-Conversation-Id: conv-thread-1" \
   -d '{
     "question": "Can Taixing work for any US company with an H4 EAD, or are there restrictions?",
     "collection_base": "taixing_knowledge",
-    "request_id": "req-abc123",
-    "session_id": "ses-xyz789",
+    "conversation_id": "conv-thread-1",
     "k": 5,
     "k_max": 40,
     "include_retrieval_hits": true

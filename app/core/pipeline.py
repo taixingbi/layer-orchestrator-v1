@@ -24,6 +24,7 @@ from ..tools.user_profile import run_user_profile
 from ..tools.web_search import run_web_search
 from ..observability.usage import build_usage_payload
 from ..schemas.answer_envelope import route_source_after_normalize, status_code_for_exception
+from .correlation import trace_id_log_fields
 from .sse_events import SSE_EVENT_CORRELATION
 from .router import (
     decision_to_route_detail,
@@ -87,6 +88,7 @@ async def _yield_request_complete_done(
     session_id: Optional[str],
     *,
     trace_id: Optional[str] = None,
+    trace_id_from_header: bool = False,
     conversation_id: Optional[str] = None,
     is_new_conversation: bool = False,
     usage: Optional[Dict[str, Any]] = None,
@@ -108,7 +110,11 @@ async def _yield_request_complete_done(
         "event": "request_completed",
         "request_id": request_id,
         "session_id": session_id or "-",
-        "trace_id": (trace_id or request_id or "-"),
+        **trace_id_log_fields(
+            request_id=request_id,
+            trace_id=trace_id,
+            trace_id_from_header=trace_id_from_header,
+        ),
         "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
     }
     if cid:
@@ -122,7 +128,11 @@ async def _yield_request_complete_done(
                     "event": "final_response_emitted",
                     "request_id": request_id,
                     "session_id": session_id or "-",
-                    "trace_id": (trace_id or request_id or "-"),
+                    **trace_id_log_fields(
+                        request_id=request_id,
+                        trace_id=trace_id,
+                        trace_id_from_header=trace_id_from_header,
+                    ),
                     "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
                     "gateway_meta": final_response_meta,
                 },
@@ -207,6 +217,7 @@ async def _run_tool(
             trace_id=trace_id or "",
             rag_user=rag_user,
             conversation_id=conversation_id,
+            is_new_conversation=is_new_conversation,
             on_delta=emit_delta,
         )
     elif name == "web_search":
@@ -228,6 +239,7 @@ async def stream_answer_query(
     session_id: Optional[str] = None,
     request_id: Optional[str] = None,
     trace_id: Optional[str] = None,
+    trace_id_from_header: bool = False,
     rag_user: Optional[Dict[str, str]] = None,
     history: Optional[List[Tuple[str, str]]] = None,
     conversation_id: Optional[str] = None,
@@ -359,6 +371,7 @@ async def stream_answer_query(
                 request_id,
                 session_id,
                 trace_id=trace_id,
+                trace_id_from_header=trace_id_from_header,
                 conversation_id=conv or None,
                 is_new_conversation=is_new_conversation,
                 usage=request_usage,
@@ -479,6 +492,7 @@ async def stream_answer_query(
                 request_id,
                 session_id,
                 trace_id=trace_id,
+                trace_id_from_header=trace_id_from_header,
                 conversation_id=conv or None,
                 is_new_conversation=is_new_conversation,
                 usage=request_usage,
@@ -568,7 +582,11 @@ async def stream_answer_query(
                             "event": "final_response_emitted",
                             "request_id": request_id,
                             "session_id": session_id or "-",
-                            "trace_id": (trace_id or request_id or "-"),
+                            **trace_id_log_fields(
+                                request_id=request_id,
+                                trace_id=trace_id,
+                                trace_id_from_header=trace_id_from_header,
+                            ),
                             "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
                             "gateway_meta": final_meta,
                         },
@@ -578,6 +596,11 @@ async def stream_answer_query(
                     "event": "stream_answer_error",
                     "request_id": request_id,
                     "session_id": session_id or "-",
+                    **trace_id_log_fields(
+                        request_id=request_id,
+                        trace_id=trace_id,
+                        trace_id_from_header=trace_id_from_header,
+                    ),
                     "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
                     "structured_error": {"type": type(e).__name__, "message": str(e)},
                     "error_type": type(e).__name__,
@@ -635,6 +658,7 @@ async def answer_query_sync(
     request_id: Optional[str] = None,
     session_id: Optional[str] = None,
     trace_id: Optional[str] = None,
+    trace_id_from_header: bool = False,
     rag_user: Optional[Dict[str, str]] = None,
     history: Optional[List[Tuple[str, str]]] = None,
     conversation_id: Optional[str] = None,
@@ -646,6 +670,7 @@ async def answer_query_sync(
         request_id=request_id,
         session_id=session_id,
         trace_id=trace_id,
+        trace_id_from_header=trace_id_from_header,
         rag_user=rag_user,
         history=list(history) if history is not None else None,
         conversation_id=conversation_id,

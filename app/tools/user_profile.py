@@ -42,6 +42,7 @@ async def run_user_profile(
             trace_id=trace_id,
             rag_user=rag_user,
             conversation_id=conversation_id,
+            is_new_conversation=is_new_conversation,
             stream=True,
             on_delta=on_delta,
         )

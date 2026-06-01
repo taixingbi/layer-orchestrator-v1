@@ -17,6 +17,7 @@ from ..core.normalize import (
     header_rag_user,
     max_request_body_bytes,
     reject_body_correlation_fields,
+    trace_id_from_header,
     request_timeout_s,
     resolve_effective_conversation_id,
     stream_idle_timeout_s,
@@ -123,6 +124,7 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
             raise HTTPException(status_code=400, detail="invalid JSON body")
         reject_body_correlation_fields(raw_body)
         session_id, request_id, trace_id = header_ids(request)
+        trace_from_hdr = trace_id_from_header(request)
         rag_user = header_rag_user(request)
         hist = history_from_answer_body(body)
         req_timeout = request_timeout_s()
@@ -134,6 +136,7 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
                 session_id=session_id,
                 request_id=request_id,
                 trace_id=trace_id,
+                trace_id_from_header=trace_from_hdr,
                 rag_user=rag_user,
                 history=hist,
                 conversation_id=conversation_id,
@@ -152,6 +155,7 @@ async def orchestrator_answer(body: AnswerBody, request: Request):
                     session_id=session_id,
                     request_id=request_id,
                     trace_id=trace_id,
+                    trace_id_from_header=trace_from_hdr,
                     rag_user=rag_user,
                     history=hist,
                     conversation_id=conversation_id,

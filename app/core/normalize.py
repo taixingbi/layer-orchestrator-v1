@@ -149,3 +149,8 @@ def header_ids(request) -> tuple[Optional[str], Optional[str], Optional[str]]:
         getattr(request.state, "request_id", None),
         getattr(request.state, "trace_id", None),
     )
+
+
+def trace_id_from_header(request) -> bool:
+    """True when the client sent a non-empty ``X-Trace-Id`` (vs middleware default)."""
+    return bool(getattr(request.state, "trace_id_from_header", False))

@@ -10,6 +10,8 @@ URL="${ORCHESTRATOR_URL%/}/v1/orchestrator/eval/router"
 CONCURRENCY="${CONCURRENCY:-4}"
 ROUTER_PROMPT_VERSION="${ROUTER_PROMPT_VERSION:-router-v2.00}"
 ROUTER_MODEL="${ROUTER_MODEL:-}"
+# Optional: fixed conversation_id on every row (overridden by CSV column conversation_id)
+ROUTER_EVAL_CONVERSATION_ID="${ROUTER_EVAL_CONVERSATION_ID:-}"
 _report_suffix="${ROUTER_PROMPT_VERSION}"
 if [[ -n "${ROUTER_MODEL}" ]]; then
   _model_slug="$(printf '%s' "$ROUTER_MODEL" | tr '/:' '__')"
@@ -74,19 +76,26 @@ PY
   local row running
   row=0
   running=0
-  while IFS=$'\t' read -r question expected_route || [[ -n "$question" ]]; do
+  local file_conv_id="${ROUTER_EVAL_CONVERSATION_ID:-conv-gold-${base}}"
+  while IFS=$'\x1f' read -r question expected_route conv_id history_json || [[ -n "$question" ]]; do
     [[ -z "$question" || -z "$expected_route" ]] && continue
     row=$((row + 1))
-    printf '%s\t%s\n' "$question" "$expected_route" >"$tmp_dir/meta$row"
+    printf '%s\x1f%s\x1f%s\x1f%s\n' "$question" "$expected_route" "${conv_id:-$file_conv_id}" "${history_json:-[]}" >"$tmp_dir/meta$row"
     local row_num="$row"
     (
       http=$(curl -sS -o "$tmp_dir/body$row_num" -w "%{http_code}" -X POST "$URL" \
         -H "Content-Type: application/json" \
         -H "X-Request-Id: req-gold-${base}-$row_num" \
-        -H "X-Session-Id: ses-gold" \
+        -H "X-Session-Id: ses-gold-${base}" \
         -H "X-Trace-Id: trc-gold-${base}-$row_num" \
-        -d "$(jq -n --arg q "$question" --arg r "$expected_route" --arg pv "$ROUTER_PROMPT_VERSION" --arg rm "${ROUTER_MODEL}" \
-          '{question: $q, expected_route: $r, router_prompt_version: $pv}
+        -d "$(jq -n \
+          --arg q "$question" \
+          --arg r "$expected_route" \
+          --arg pv "$ROUTER_PROMPT_VERSION" \
+          --arg rm "${ROUTER_MODEL}" \
+          --arg cid "${conv_id:-$file_conv_id}" \
+          --argjson hist "${history_json:-[]}" \
+          '{question: $q, expected_route: $r, router_prompt_version: $pv, conversation_id: $cid, history: $hist}
            + (if ($rm | length) > 0 then {router_model: $rm} else {} end)')")
       printf '%s' "$http" >"$tmp_dir/http$row_num"
     ) &
@@ -98,14 +107,27 @@ PY
       running=$(jobs -rp | wc -l | tr -d ' ')
     fi
   done < <(python3 - "$in_path" <<'PY'
-import csv, sys
+import csv, json, sys
 path = sys.argv[1]
+sep = "\x1f"
 with open(path, newline="", encoding="utf-8") as f:
     for row in csv.DictReader(f):
         q = (row.get("question") or "").strip()
         er = (row.get("expected_route") or "").strip()
-        if q and er:
-            print(f"{q}\t{er}")
+        if not (q and er):
+            continue
+        cid = (row.get("conversation_id") or "").strip()
+        hist_raw = (row.get("history") or "").strip()
+        if hist_raw:
+            try:
+                hist = json.loads(hist_raw)
+                if not isinstance(hist, list):
+                    hist = []
+            except json.JSONDecodeError:
+                hist = []
+        else:
+            hist = []
+        print(sep.join([q, er, cid, json.dumps(hist, separators=(",", ":"))]))
 PY
 )
 
@@ -115,7 +137,7 @@ PY
     echo "question,expected_route,actual_route,route_match,rewritten_question,actual_answer"
     local i q er bodyf
     for ((i = 1; i <= row; i++)); do
-      IFS=$'\t' read -r q er <"$tmp_dir/meta$i" || true
+      IFS=$'\x1f' read -r q er _cid _hist <"$tmp_dir/meta$i" || true
       bodyf="$tmp_dir/body$i"
       if [[ -s "$bodyf" ]] && jq -e . >/dev/null 2>&1 <"$bodyf"; then
         jq -r --arg q "$q" --arg er "$er" '

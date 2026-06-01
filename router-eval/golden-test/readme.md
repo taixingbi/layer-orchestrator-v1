@@ -13,7 +13,8 @@ Batch-evaluates the intent router: for each row in **`router-eval/golden-test/da
 |------|------|
 | **`data/tools/*.csv`** | Tool-route gold (`rag_private_kb`, `web_search`, …). |
 | **`data/internal/*.csv`** | Internal-intent gold (`greeting`, `identity`, `help`, …). |
-| **Header** | **`question,expected_route`**. Every `question` is double-quoted; `expected_route` is unquoted. |
+| **Header** | **`question,expected_route`** (required). Optional: **`conversation_id`**, **`history`** (JSON array of `{role, content}` for multi-turn rewrite tests). |
+| **Threading** | Default `conversation_id` per file: `conv-gold-<basename>`; override with CSV column or `ROUTER_EVAL_CONVERSATION_ID`. `X-Session-Id: ses-gold-<basename>` per file. |
 | **`run-router-eval.sh`** | Runner; **`DATA_DIR`** / **`RESULT_DIR`** default next to this script (works from any cwd). |
 | **`result/<name>.csv`** | One output per input basename, e.g. `data/tools/router_rag_private_kb.csv` → `result/router_rag_private_kb.csv` (six columns: **`question`**, **`expected_route`**, **`actual_route`**, **`route_match`**, **`rewritten_question`**, **`actual_answer`**). |
 | **`result/router-eval-report-<version>.md`** | Summary: counts, match rate, **`ROUTER_PROMPT_VERSION`**, **Bad items** (`route_match` = false). Filename includes the prompt id (e.g. **`router-eval-report-router-v1.00.md`**). |

@@ -17,4 +17,4 @@ This app calls **two HTTP gateways**. Both receive the same **conversation** hea
 
 So: **one rule for all gateways** — thread id and new-thread flag ride on **`X-Conversation-Id`** / **`X-Is-New-Conversation`**; RAG additionally mirrors **`conversation_id`** in the payload for services that prefer body fields.
 
-**More detail:** [schema-request-response.md](schema-request-response.md) · [gateway-inference.md](gateway-inference.md) · [rag-query.md](rag-query.md)
+**More detail:** [correlation-ids.md](correlation-ids.md) · [schema-request-response.md](schema/schema-request-response.md) · [gateway-inference.md](gateway-inference.md) · [rag-query.md](rag-query.md)

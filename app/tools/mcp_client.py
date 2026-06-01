@@ -40,6 +40,7 @@ def _mcp_headers(
     trace_id: str,
     rag_user: Optional[Dict[str, str]] = None,
     conversation_id: str = "",
+    is_new_conversation: bool = False,
 ) -> Dict[str, str]:
     headers = {
         "Content-Type": "application/json",
@@ -48,8 +49,10 @@ def _mcp_headers(
         "X-Session-Id": session_id or "",
         "X-Trace-Id": trace_id or request_id or "",
     }
-    if conversation_id:
-        headers["X-Conversation-Id"] = conversation_id
+    cid = (conversation_id or "").strip()
+    if cid:
+        headers["X-Conversation-Id"] = cid
+        headers["X-Is-New-Conversation"] = "true" if is_new_conversation else "false"
     if rag_user:
         for key, hdr in (
             ("user_id", "X-User-Id"),
@@ -410,6 +413,7 @@ async def call_mcp_tool(
     trace_id: str = "",
     rag_user: Optional[Dict[str, str]] = None,
     conversation_id: str = "",
+    is_new_conversation: bool = False,
     stream: bool = True,
     on_delta: Optional[Callable[[str], None]] = None,
 ) -> ToolResult:
@@ -431,6 +435,7 @@ async def call_mcp_tool(
         trace_id=trace_id,
         rag_user=rag_user,
         conversation_id=conversation_id,
+        is_new_conversation=is_new_conversation,
     )
     client = _shared_client()
     _mcp_log.info(
