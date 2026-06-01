@@ -7,8 +7,8 @@ from typing import Any, Dict, Optional
 
 
 def new_session_id() -> str:
-    """Stable-format session id when the client omits ``X-Session-Id``."""
-    return f"ses_{uuid.uuid4().hex[:24]}"
+    """Gateway-aligned session id when the client omits ``X-Session-Id`` (``sess_<hex>``)."""
+    return f"sess_{uuid.uuid4().hex[:12]}"
 
 
 def trace_id_log_fields(

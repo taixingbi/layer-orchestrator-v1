@@ -6,7 +6,7 @@ from app.tools.mcp_client import _mcp_headers
 
 def test_new_session_id_prefix():
     sid = new_session_id()
-    assert sid.startswith("ses_")
+    assert sid.startswith("sess_")
 
 
 def test_trace_id_log_fields_defaulted():

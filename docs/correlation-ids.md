@@ -5,7 +5,7 @@
 | ID | Where | If omitted |
 |----|--------|------------|
 | `request_id` | Header `X-Request-Id` | Server generates UUID |
-| `session_id` | Header `X-Session-Id` | Server generates `ses_<hex>` (one id per HTTP request) |
+| `session_id` | Header `X-Session-Id` | Server generates `sess_<hex>` (aligned with gateway-api; one id per HTTP request unless client reuses header) |
 | `trace_id` | Header `X-Trace-Id` | Defaults to `request_id`; logs include `trace_id_source`: `header` or `request_id` |
 | `conversation_id` | JSON body only | Server assigns `conv_<hex>`, `is_new_conversation: true` |
 
@@ -15,7 +15,7 @@
 
 - Send the **same** `X-Session-Id` on every turn in a chat session.
 - Send the **same** `conversation_id` in the body (or omit only on the first turn and reuse the id returned by the server).
-- **layer-gateway-api-v1** mints `sess_<hex>` when `X-Session-Id` is missing and forwards it to the orchestrator.
+- **layer-gateway-api-v1** mints `sess_<hex>` when `X-Session-Id` is missing, stores it in the **`huntai_session_id`** cookie, and forwards it to the orchestrator on later requests.
 - **layer-rag-query-v1** mints a new `session_id` per request when the header is missing; the orchestrator now always sends a session id on outbound RAG/MCP calls.
 
 ## SSE (orchestrator stream)

@@ -114,7 +114,7 @@ def bind_request_context(
     sid_raw = (session_id or "").strip() or "-"
     return _RequestContextTokens(
         rid=_request_id.set(rid),
-        sid=_session_id.set("-" if rid == "-" else sid_raw),
+        sid=_session_id.set(sid_raw),
         method=_http_method.set(method or "-"),
         path=_http_path.set(path or "-"),
         status=_http_status.set(status or "-"),

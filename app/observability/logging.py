@@ -60,7 +60,7 @@ class _RequestContextFilter(logging.Filter):
         rid = get_request_id()
         sid = get_session_id()
         record.request_id = "-" if rid == "-" else rid
-        record.session_id = "-" if rid == "-" else sid
+        record.session_id = sid if sid != "-" else "-"
         record.method = get_http_method()
         record.path = get_http_path()
         ctx_status = get_http_status()
