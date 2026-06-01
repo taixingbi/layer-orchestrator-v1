@@ -1,0 +1,5 @@
+question,expected_route,actual_route,route_match,rewritten_question,actual_answer
+"In HuntAI, how do you design the gateway?","github_search","github_search","true","How do you design the gateway in HuntAI platform?",""
+"Why split orchestrator and gateway in layer-orchestrator-v1?","github_search","github_search","true","Why split orchestrator and gateway in layer-orchestrator-v1?",""
+"How is HuntAI orchestrator designed?","github_search","github_search","true","How is HuntAI orchestrator designed?",""
+"Where is the router logic in layer-orchestrator-v1?","github_search","github_search","true","Where is the router logic in layer-orchestrator-v1?",""

@@ -1,0 +1,8 @@
+question,expected_route,actual_route,route_match,rewritten_question,actual_answer
+"What can you do?","capabilities","capabilities","true","What can you do?",""
+"What should I ask you?","capabilities","capabilities","true","What should I ask you?",""
+"How can you help me?","capabilities","capabilities","true","How can you help me?",""
+"What do you do?","capabilities","capabilities","true","What do you do?",""
+"What can you help with?","capabilities","capabilities","true","What can you help with?",""
+"What can I ask?","capabilities","capabilities","true","What can I ask?",""
+"What questions can I ask?","capabilities","capabilities","true","What questions can I ask?",""
