@@ -9,9 +9,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-AVAL_ROOT = Path(__file__).resolve().parents[2]
-REPO_ROOT = AVAL_ROOT.parent
-DPO_SCRIPTS = AVAL_ROOT / "dpo-router" / "scripts"
+ROUTER_EVAL_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = ROUTER_EVAL_ROOT.parent
+DPO_SCRIPTS = ROUTER_EVAL_ROOT / "dpo-router" / "scripts"
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 if str(DPO_SCRIPTS) not in sys.path:
@@ -106,7 +106,7 @@ def build_sft_dataset(
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     sft_root = Path(__file__).resolve().parents[1]
-    default_gold = AVAL_ROOT / "gold-test" / "data"
+    default_gold = ROUTER_EVAL_ROOT / "gold-test" / "data"
     default_out = sft_root / "output"
 
     parser = argparse.ArgumentParser(description="Build router SFT JSONL from gold-test CSVs.")

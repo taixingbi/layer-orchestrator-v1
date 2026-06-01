@@ -27,9 +27,9 @@ FastAPI service: **HTTP chat completions** via `LLM_GATEWAY_BASE_URL` (`POST …
 - [Design](docs/design.md) — architecture, request flows, reliability loop, and trade-offs.
 - [Architecture flow](docs/architecture.md) — SSE sequence, tool dispatch, and sequence diagram.
 - [Smoke / cluster examples](docs/smoke-test.md) — health, orchestrator `curl`, limits, and eval snippets.
-- [Gold router eval](aval/gold-test/readme.md) — batch CSV tests for `/v1/orchestrator/eval/router` (optional CI / local harness).
-- [Router DPO dataset](aval/dpo-router/README.md) — build DPO `train.jsonl` / `val.jsonl` from gold CSVs; train in [layer-router-dpo-v1](../layer-router-dpo-v1/README.md).
-- [Router SFT dataset](aval/sft-router/README.md) — build SFT chat JSONL (gold completions only) from the same gold CSVs.
+- [Gold router eval](router-eval/golden-test/readme.md) — batch CSV tests for `/v1/orchestrator/eval/router` (optional CI / local harness).
+- [Router DPO dataset](router-eval/dpo-router/README.md) — build DPO `train.jsonl` / `val.jsonl` from gold CSVs; train in [layer-router-train-v1](../layer-router-train-v1/README.md).
+- [Router SFT dataset](router-eval/sft-router/README.md) — build SFT chat JSONL (gold completions only) from the same gold CSVs.
 
 ## Setup
 
@@ -51,7 +51,8 @@ Copy or create `.env` at the **project root** (loaded by `app/config.py`). Typic
 | `APP_NAME` | Application name (default: `layer-orchestrator-v1`) |
 | `APP_VERSION` | App version string (in CI images this is injected from workflow tag/input; local fallback resolves to package metadata or `dev`) |
 | `LLM_GATEWAY_BASE_URL` | **Required.** Inference service origin; `/v1` is appended if missing (e.g. `http://host:30180`) |
-| `LLM_MODEL` | Chat model id sent in the completion request (default: `Qwen/Qwen2.5-7B-Instruct`) |
+| `LLM_MODEL` | Default chat model for readiness and legacy answer judge (`get_llm()` without model); also fallback for router (default: `Qwen/Qwen2.5-7B-Instruct`). `INFERENCE_MODEL` used if `LLM_MODEL` unset. |
+| `ROUTER_MODEL` | Default intent-router model when the request omits `router_model` (falls back to `LLM_MODEL` if unset). Use vLLM LoRA ids after training. |
 | `LLM_API_KEY` | Optional; set if the gateway validates `Authorization` (otherwise a placeholder is sent) |
 | `RAG_HTTP_BASE_URL` | RAG service base URL; app calls `POST {base}/v1/rag/query` |
 | `RAG_COLLECTION_BASE` | `collection_base` for RAG (default: `taixing_knowledge`) |

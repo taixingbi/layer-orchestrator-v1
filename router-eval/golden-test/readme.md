@@ -1,6 +1,6 @@
-# Gold test (router eval)
+# Golden test (router eval)
 
-Batch-evaluates the intent router: for each row in **`aval/gold-test/data/**/*.csv`**, calls **`POST /v1/orchestrator/eval/router`**, writes per-suite results under **`aval/gold-test/result/`** (flat basename, e.g. `router_greeting.csv`), then builds **`result/router-eval-report-<ROUTER_PROMPT_VERSION>.md`**.
+Batch-evaluates the intent router: for each row in **`router-eval/golden-test/data/**/*.csv`**, calls **`POST /v1/orchestrator/eval/router`**, writes per-suite results under **`router-eval/golden-test/result/`** (flat basename, e.g. `router_greeting.csv`), then builds **`result/router-eval-report-<ROUTER_PROMPT_VERSION>.md`**.
 
 ## Requirements
 
@@ -21,13 +21,27 @@ Batch-evaluates the intent router: for each row in **`aval/gold-test/data/**/*.c
 ## Run
 
 ```bash
-bash aval/gold-test/run-router-eval.sh
+bash router-eval/golden-test/run-router-eval.sh
 ```
 
 Use another prompt file under **`app/prompts/<version>.txt`**:
 
 ```bash
-CONCURRENCY=20 ROUTER_PROMPT_VERSION=router-v1.04 bash aval/gold-test/run-router-eval.sh
+CONCURRENCY=20 ROUTER_PROMPT_VERSION=router-v1.04 bash router-eval/golden-test/run-router-eval.sh
+```
+
+Score a trained LoRA on the full golden set (separate result dir per adapter):
+
+```bash
+ROUTER_MODEL=router-qwen2.5-7b-sft-v1.00 \
+RESULT_DIR=router-eval/golden-test/result/sft-v1.00 \
+ROUTER_PROMPT_VERSION=router-v2.00 \
+  bash router-eval/golden-test/run-router-eval.sh
+
+ROUTER_MODEL=router-qwen2.5-7b-dpo-v1.00 \
+RESULT_DIR=router-eval/golden-test/result/dpo-v1.00 \
+ROUTER_PROMPT_VERSION=router-v2.00 \
+  bash router-eval/golden-test/run-router-eval.sh
 ```
 
 **Progress** (stderr) — one line per gold file, then the match-rate table on stdout:
@@ -49,12 +63,13 @@ Full Markdown report: **`result/router-eval-report-<ROUTER_PROMPT_VERSION>.md`**
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `DATA_DIR` | `<aval/gold-test>/data` | Input `*.csv` directory |
-| `RESULT_DIR` | `<aval/gold-test>/result` | Output directory |
+| `DATA_DIR` | `<router-eval/golden-test>/data` | Input `*.csv` directory |
+| `RESULT_DIR` | `<router-eval/golden-test>/result` | Output directory |
 | `ORCHESTRATOR_URL` | `http://192.168.86.179:30184` | Orchestrator base URL (no path) |
 | `CONCURRENCY` | `4` | Parallel HTTP requests per file |
-| `ROUTER_PROMPT_VERSION` | `router-v1.00` | JSON **`router_prompt_version`** on each eval request |
-| `REPORT_PATH` | `<aval/gold-test>/result/router-eval-report-<ROUTER_PROMPT_VERSION>.md` | Markdown report path (embeds prompt version unless overridden) |
+| `ROUTER_PROMPT_VERSION` | `router-v2.00` | JSON **`router_prompt_version`** on each eval request |
+| `ROUTER_MODEL` | _(unset)_ | Optional vLLM model / LoRA id (e.g. `router-qwen2.5-7b-sft-v1.00`); sent as **`router_model`** on each eval request. Orchestrator default when unset: **`ROUTER_MODEL`** env, then **`LLM_MODEL`**. |
+| `REPORT_PATH` | `…/router-eval-report-<prompt>[-<model>].md` | Markdown report path; default adds a model suffix when **`ROUTER_MODEL`** is set |
 
 Eval responses now include `decision.route_detail` (nested) alongside legacy `decision.route`. Optional CSV columns for future suites: `expected_route_detail_type`, `expected_tool_name`.
 
@@ -102,7 +117,7 @@ Generated **`result/*.csv`** and the report are listed in **`.gitignore`**; re-r
 
 ## See also
 
-- [aval/README.md](../README.md) — eval & dataset bundle overview
+- [router-eval/README.md](../README.md) — eval & dataset bundle overview
 - API shape: **`docs/schema-request-response.md`** (`POST /v1/orchestrator/eval/router`)
-- **Router DPO JSONL:** [`dpo-router/README.md`](../dpo-router/README.md) — preference pairs from these gold CSVs (+ eval results); **train** in [`layer-router-dpo-v1`](../../../layer-router-dpo-v1/README.md)
+- **Router DPO JSONL:** [`dpo-router/README.md`](../dpo-router/README.md) — preference pairs from these gold CSVs (+ eval results); **train** in [`layer-router-train-v1`](../../../layer-router-train-v1/README.md)
 - **Router SFT JSONL:** [`sft-router/README.md`](../sft-router/README.md) — supervised chat examples (gold completions only)

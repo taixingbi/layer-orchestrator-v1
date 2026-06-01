@@ -12,8 +12,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-AVAL_ROOT = Path(__file__).resolve().parents[2]
-REPO_ROOT = AVAL_ROOT.parent
+ROUTER_EVAL_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = ROUTER_EVAL_ROOT.parent
 SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -286,8 +286,8 @@ def build_dpo_dataset(
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     dpo_root = Path(__file__).resolve().parents[1]
-    default_gold = AVAL_ROOT / "gold-test" / "data"
-    default_result = AVAL_ROOT / "gold-test" / "result"
+    default_gold = ROUTER_EVAL_ROOT / "gold-test" / "data"
+    default_result = ROUTER_EVAL_ROOT / "gold-test" / "result"
     default_out = dpo_root / "output"
 
     parser = argparse.ArgumentParser(description="Build router DPO JSONL from gold-test CSVs.")

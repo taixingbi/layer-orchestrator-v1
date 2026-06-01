@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from ..config import has_langsmith_credentials, settings
+from ..config import has_langsmith_credentials, resolve_router_model, settings
 from ..core.normalize import (
     header_ids,
     header_rag_user,
@@ -204,7 +204,7 @@ async def orchestrator_eval_router(request: Request):
     async with bind_conversation_logging_context(conversation_id, is_new_conversation):
         hist = history_from_eval_body(body)
         resolved_temp = 0.0 if body.router_temperature is None else float(body.router_temperature)
-        resolved_model = (body.router_model or "").strip() or settings.llm_model
+        resolved_model = resolve_router_model(body.router_model)
         run_meta: Dict[str, Any] = {}
         decision = await run_intent_rewrite_router(
             body.question,

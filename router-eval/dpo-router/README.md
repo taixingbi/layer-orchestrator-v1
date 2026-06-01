@@ -10,29 +10,29 @@ Shared gold logic: [`dpo-router/scripts/router_gold.py`](scripts/router_gold.py)
 |------|------|
 | `scripts/build_from_gold.py` | Read `gold-test/data/**/*.csv` → `output/train.jsonl`, `output/val.jsonl` |
 | `run-build-dpo.sh` | Wrapper with env defaults |
-| `output/` | Generated JSONL (`train.jsonl`, `val.jsonl`, `build-stats.json`) — committed for `layer-router-dpo-v1` train |
+| `output/` | Generated JSONL (`train.jsonl`, `val.jsonl`, `build-stats.json`) — committed for `layer-router-train-v1` train |
 
-**Training** lives in sibling app [`layer-router-dpo-v1`](../../../layer-router-dpo-v1/README.md) (QLoRA DPO on LAN GPU).
+**Training** lives in sibling app [`layer-router-train-v1`](../../../layer-router-train-v1/README.md) (QLoRA DPO on LAN GPU).
 
 ## Quick start
 
 From repo root (uses gold CSVs; synthetic **rejected** if no eval results):
 
 ```bash
-bash aval/dpo-router/run-build-dpo.sh
+bash router-eval/dpo-router/run-build-dpo.sh
 ```
 
-After running [`gold-test/run-router-eval.sh`](../gold-test/run-router-eval.sh), rebuild so **rejected** comes from real mismatches in `aval/gold-test/result/*.csv`:
+After running [`gold-test/run-router-eval.sh`](../gold-test/run-router-eval.sh), rebuild so **rejected** comes from real mismatches in `router-eval/gold-test/result/*.csv`:
 
 ```bash
-ROUTER_PROMPT_VERSION=router-v2.00 bash aval/gold-test/run-router-eval.sh
-bash aval/dpo-router/run-build-dpo.sh
+ROUTER_PROMPT_VERSION=router-v2.00 bash router-eval/gold-test/run-router-eval.sh
+bash router-eval/dpo-router/run-build-dpo.sh
 ```
 
 Live eval for rejected (no result CSV needed):
 
 ```bash
-ORCHESTRATOR_URL=http://192.168.86.179:30184 FETCH_LIVE=1 bash aval/dpo-router/run-build-dpo.sh
+ORCHESTRATOR_URL=http://192.168.86.179:30184 FETCH_LIVE=1 bash router-eval/dpo-router/run-build-dpo.sh
 ```
 
 ## JSONL record shape
@@ -82,7 +82,7 @@ By default **skips**:
 Include with:
 
 ```bash
-INCLUDE_SEED_FAQ=1 INCLUDE_HACK=1 bash aval/dpo-router/run-build-dpo.sh
+INCLUDE_SEED_FAQ=1 INCLUDE_HACK=1 bash router-eval/dpo-router/run-build-dpo.sh
 ```
 
 ## Environment
@@ -91,7 +91,7 @@ INCLUDE_SEED_FAQ=1 INCLUDE_HACK=1 bash aval/dpo-router/run-build-dpo.sh
 |----------|---------|---------|
 | `GOLD_DATA` | `../gold-test/data` | Input CSV directory |
 | `GOLD_RESULT` | `../gold-test/result` | Eval result CSVs (optional) |
-| `OUTPUT_DIR` | `aval/dpo-router/output` | Output JSONL directory |
+| `OUTPUT_DIR` | `router-eval/dpo-router/output` | Output JSONL directory |
 | `ROUTER_PROMPT_VERSION` | `router-v2.00` | Prompt file under `app/prompts/` |
 | `FETCH_LIVE` | `0` | Set `1` to call eval API for rejected |
 | `ORCHESTRATOR_URL` | — | Required when `FETCH_LIVE=1` |
@@ -100,14 +100,14 @@ INCLUDE_SEED_FAQ=1 INCLUDE_HACK=1 bash aval/dpo-router/run-build-dpo.sh
 
 ## Training (LAN GPU, 16GB QLoRA)
 
-Dataset is built here; training runs in **[layer-router-dpo-v1](../../../layer-router-dpo-v1/README.md)**.
+Dataset is built here; training runs in **[layer-router-train-v1](../../../layer-router-train-v1/README.md)**.
 
 ```bash
 # 1) Build dataset (layer-orchestrator-v1)
-bash aval/dpo-router/run-build-dpo.sh
+bash router-eval/dpo-router/run-build-dpo.sh
 
-# 2) Train (layer-router-dpo-v1 on GPU node 173/176)
-cd ../layer-router-dpo-v1
+# 2) Train (layer-router-train-v1 on GPU node 173/176)
+cd ../layer-router-train-v1
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 bash run-train-qwen25-1.5b.sh   # or run-train-qwen25-7b.sh
@@ -116,14 +116,14 @@ bash run-train-qwen25-1.5b.sh   # or run-train-qwen25-7b.sh
 Post-train, re-run gold eval:
 
 ```bash
-ROUTER_PROMPT_VERSION=router-v2.00 bash aval/gold-test/run-router-eval.sh
+ROUTER_PROMPT_VERSION=router-v2.00 bash router-eval/gold-test/run-router-eval.sh
 ```
 
 ## See also
 
-- [aval/README.md](../README.md) — eval & dataset bundle overview
+- [router-eval/README.md](../README.md) — eval & dataset bundle overview
 - [sft-router/README.md](../sft-router/README.md) — SFT chat JSONL (gold completions only)
-- [layer-router-dpo-v1](../../../layer-router-dpo-v1/README.md) — QLoRA DPO training on LAN GPU
+- [layer-router-train-v1](../../../layer-router-train-v1/README.md) — QLoRA DPO training on LAN GPU
 - [intent-router.md](../../docs/intent-router.md) — router execution order
 - [schema-request-response.md](../../docs/schema/schema-request-response.md) — `POST /v1/orchestrator/eval/router`
 - [gold-test/readme.md](../gold-test/readme.md) — gold CSV format

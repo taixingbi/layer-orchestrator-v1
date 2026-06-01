@@ -2,7 +2,7 @@
 
 The orchestrator router picks a **canonical `route`** per user turn. That string is the single source of truth for the LLM router, gold tests, and DPO. Nested `route_detail` is derived only for SSE and client envelopes.
 
-**Code:** [`app/schemas/route.py`](../app/schemas/route.py) · **Decision model:** [`app/core/intent_router.py`](../app/core/intent_router.py) (`RouterDecision`) · **Flow:** [intent-router.md](intent-router.md) · **Gold CSVs:** [gold-test/readme.md](../aval/gold-test/readme.md)
+**Code:** [`app/schemas/route.py`](../app/schemas/route.py) · **Decision model:** [`app/core/intent_router.py`](../app/core/intent_router.py) (`RouterDecision`) · **Flow:** [intent-router.md](intent-router.md) · **Gold CSVs:** [golden-test/readme.md](../router-eval/golden-test/readme.md)
 
 ## `CanonicalRoute` (10 values)
 
@@ -96,7 +96,7 @@ Gold eval may still send legacy `expected_route`; [`normalize_gold_expected_rout
 
 ## Gold test files
 
-Suite CSVs under `aval/gold-test/data/` use **`router_<route>.csv`** in subfolders:
+Suite CSVs under `router-eval/golden-test/data/` use **`router_<route>.csv`** in subfolders:
 
 | Path | Primary focus |
 |------|----------------|
@@ -119,7 +119,7 @@ Older test prompts (e.g. `router-test-v1.04`) still use legacy route names; the 
 
 - [intent-router.md](intent-router.md) — execution order, guards, post-rules
 - [smalltalk-seed.md](smalltalk-seed.md) — FAQ / greeting seed JSON
-- [aval/README.md](../aval/README.md) — eval & dataset bundle overview
-- [gold-test/readme.md](../aval/gold-test/readme.md) — batch eval harness
-- [dpo-router/README.md](../aval/dpo-router/README.md) — DPO preference data from gold
-- [sft-router/README.md](../aval/sft-router/README.md) — SFT chat data from gold
+- [router-eval/README.md](../router-eval/README.md) — eval & dataset bundle overview
+- [golden-test/readme.md](../router-eval/golden-test/readme.md) — batch eval harness
+- [dpo-router/README.md](../router-eval/dpo-router/README.md) — DPO preference data from gold
+- [sft-router/README.md](../router-eval/sft-router/README.md) — SFT chat data from gold

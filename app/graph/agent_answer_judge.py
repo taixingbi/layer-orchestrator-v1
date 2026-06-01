@@ -52,6 +52,7 @@ async def evaluate_answer(
         },
     )
     cid = (conversation_id or "").strip() or None
+    # Uses LLM_MODEL via get_llm() default (not ROUTER_MODEL).
     llm = get_llm()
     tags = get_langsmith_tags(request_id=request_id, session_id=session_id, conversation_id=cid)
     invoke_kw = gateway_llm_invoke_kwargs(

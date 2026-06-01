@@ -9,7 +9,13 @@ ORCHESTRATOR_URL="${ORCHESTRATOR_URL:-http://192.168.86.179:30184}"
 URL="${ORCHESTRATOR_URL%/}/v1/orchestrator/eval/router"
 CONCURRENCY="${CONCURRENCY:-4}"
 ROUTER_PROMPT_VERSION="${ROUTER_PROMPT_VERSION:-router-v2.00}"
-REPORT_PATH="${REPORT_PATH:-$RESULT_DIR/router-eval-report-${ROUTER_PROMPT_VERSION}.md}"
+ROUTER_MODEL="${ROUTER_MODEL:-}"
+_report_suffix="${ROUTER_PROMPT_VERSION}"
+if [[ -n "${ROUTER_MODEL}" ]]; then
+  _model_slug="$(printf '%s' "$ROUTER_MODEL" | tr '/:' '__')"
+  _report_suffix="${_report_suffix}-${_model_slug}"
+fi
+REPORT_PATH="${REPORT_PATH:-$RESULT_DIR/router-eval-report-${_report_suffix}.md}"
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "jq is required" >&2
@@ -31,7 +37,11 @@ if ((${#inputs[@]} == 0)); then
   exit 1
 fi
 
-echo "eval ${ROUTER_PROMPT_VERSION} · ${#inputs[@]} files · ${ORCHESTRATOR_URL}" >&2
+if [[ -n "${ROUTER_MODEL}" ]]; then
+  echo "eval ${ROUTER_PROMPT_VERSION} · model ${ROUTER_MODEL} · ${#inputs[@]} files · ${ORCHESTRATOR_URL}" >&2
+else
+  echo "eval ${ROUTER_PROMPT_VERSION} · ${#inputs[@]} files · ${ORCHESTRATOR_URL}" >&2
+fi
 
 process_one_csv() {
   local in_path="$1"
@@ -75,8 +85,9 @@ PY
         -H "X-Request-Id: req-gold-${base}-$row_num" \
         -H "X-Session-Id: ses-gold" \
         -H "X-Trace-Id: trc-gold-${base}-$row_num" \
-        -d "$(jq -n --arg q "$question" --arg r "$expected_route" --arg pv "$ROUTER_PROMPT_VERSION" \
-          '{question: $q, expected_route: $r, router_prompt_version: $pv}')")
+        -d "$(jq -n --arg q "$question" --arg r "$expected_route" --arg pv "$ROUTER_PROMPT_VERSION" --arg rm "${ROUTER_MODEL}" \
+          '{question: $q, expected_route: $r, router_prompt_version: $pv}
+           + (if ($rm | length) > 0 then {router_model: $rm} else {} end)')")
       printf '%s' "$http" >"$tmp_dir/http$row_num"
     ) &
     running=$((running + 1))

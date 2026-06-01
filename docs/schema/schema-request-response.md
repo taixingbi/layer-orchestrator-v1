@@ -200,7 +200,7 @@ Same correlation headers as `/v1/orchestrator/answer`:
   "question": "string (required)",
   "expected_route": "rag | direct_reply | clarify | reject | tool (optional)",
   "conversation_id": "string (optional)",
-  "router_model": "string (optional; default: LLM_MODEL)",
+  "router_model": "string (optional; default: ROUTER_MODEL env, then LLM_MODEL)",
   "router_temperature": 0,
   "router_prompt_version": "string (optional; versioned prompt file id)",
   "router_prompt_override": "string (optional; replaces file-based prompt for this request)",

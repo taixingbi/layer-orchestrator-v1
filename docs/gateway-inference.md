@@ -7,14 +7,24 @@ The orchestrator calls your LLM over **HTTP** using the common **`POST {base}/v1
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `LLM_GATEWAY_BASE_URL` | **Yes** | Origin of the inference service, with or without a `/v1` suffix (the app normalizes to `…/v1`). Example: `http://192.168.86.179:30180` |
-| `LLM_MODEL` | No | Model id in the JSON body (default: `Qwen/Qwen2.5-7B-Instruct`) |
+| `LLM_MODEL` | No | Default model for readiness and `agent_answer_judge` (`get_llm()` with no model arg). Fallback for router when `ROUTER_MODEL` unset (default: `Qwen/Qwen2.5-7B-Instruct`). `INFERENCE_MODEL` used if `LLM_MODEL` unset. |
+| `ROUTER_MODEL` | No | Default intent-router model (`app/core/intent_router.py`) when the request omits `router_model`; falls back to `LLM_MODEL`. |
 | `LLM_API_KEY` | No | If your gateway checks `Authorization`, set a real secret. Otherwise omit it; the client sends a placeholder the server can ignore. |
+
+### `get_llm()` call sites
+
+| Code | Default model |
+|------|----------------|
+| `app/core/intent_router.py` | `ROUTER_MODEL` → `LLM_MODEL`; per-request `router_model` overrides |
+| `app/graph/agent_answer_judge.py` | `LLM_MODEL` only (legacy graph path) |
+| `app/clients/ready.py` | `LLM_MODEL` (readiness probe) |
 
 ### Example `.env` snippet
 
 ```env
 LLM_GATEWAY_BASE_URL=http://192.168.86.179:30180
 LLM_MODEL=Qwen/Qwen2.5-7B-Instruct
+# ROUTER_MODEL=router-qwen2.5-7b-sft-v1.00
 ```
 
 ## Request headers (orchestrator → gateway)
@@ -49,7 +59,9 @@ curl -N http://192.168.86.179:30180/v1/chat/completions \
   }'
 ```
 
-If this works, use the same host and model in `LLM_GATEWAY_BASE_URL` and `LLM_MODEL`. The **intent router** uses **non-streaming** chat completions. The legacy LangGraph code under `app/graph/` used tool calling; the **default pipeline** does not invoke that graph.
+If this works, use the same host in `LLM_GATEWAY_BASE_URL`. Set `LLM_MODEL` for the base model and optionally `ROUTER_MODEL` for a trained LoRA. The **intent router** uses **non-streaming** chat completions. The legacy LangGraph code under `app/graph/` used tool calling; the **default pipeline** does not invoke that graph.
+
+Golden batch eval can pass `ROUTER_MODEL` to `router-eval/golden-test/run-router-eval.sh` (see [golden-test/readme.md](../router-eval/golden-test/readme.md)).
 
 ## Tool calling (legacy graph only)
 

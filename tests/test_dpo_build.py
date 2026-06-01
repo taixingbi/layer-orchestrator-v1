@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DPO_SCRIPTS = REPO_ROOT / "aval" / "dpo-router" / "scripts"
+DPO_SCRIPTS = REPO_ROOT / "router-eval" / "dpo-router" / "scripts"
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 if str(DPO_SCRIPTS) not in sys.path:
@@ -23,7 +23,7 @@ def _load_dpo_build():
 
 
 dpo = _load_dpo_build()
-GOLD_DATA = REPO_ROOT / "aval" / "gold-test" / "data"
+GOLD_DATA = REPO_ROOT / "router-eval" / "golden-test" / "data"
 
 
 def test_build_router_completion_rag():

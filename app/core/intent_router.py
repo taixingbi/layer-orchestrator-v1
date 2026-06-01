@@ -17,7 +17,13 @@ from .rewrite import (
     normalize_history_turns,
     rewrite_to_third_person,
 )
-from ..config import gateway_llm_invoke_kwargs, get_langsmith_tags, get_llm, settings
+from ..config import (
+    gateway_llm_invoke_kwargs,
+    get_langsmith_tags,
+    get_llm,
+    resolve_router_model,
+    settings,
+)
 from ..observability.usage import usage_from_langchain_message
 from ..schemas.route import (
     CANONICAL_ROUTES,
@@ -789,7 +795,8 @@ async def run_intent_rewrite_router(
 
     t0 = time.perf_counter()
     temp = 0.0 if router_temperature is None else float(router_temperature)
-    llm = get_llm(temp, model=router_model)
+    resolved_model = resolve_router_model(router_model)
+    llm = get_llm(temp, model=resolved_model)
     system_content, res_meta = _resolve_router_system_content(
         body_override=router_system_prompt,
         requested_version=router_prompt_version,
@@ -805,7 +812,6 @@ async def run_intent_rewrite_router(
             conversation_id=cid,
         )
     )
-    resolved_model = (router_model or "").strip() or settings.llm_model
     tags.append(f"intent_router_model:{resolved_model}")
     if res_meta["prompt_source"] == "body_override":
         tags.append("router_prompt_source:body_override")

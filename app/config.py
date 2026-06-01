@@ -62,7 +62,13 @@ class Settings:
 
     # LLM: HTTP chat completions at {LLM_GATEWAY_BASE_URL}/v1/chat/completions
     llm_gateway_base_url: Optional[str] = os.getenv("LLM_GATEWAY_BASE_URL")
-    llm_model: str = os.getenv("LLM_MODEL") or "Qwen/Qwen2.5-7B-Instruct"
+    _llm_model_default: str = (
+        (os.getenv("LLM_MODEL") or os.getenv("INFERENCE_MODEL") or "Qwen/Qwen2.5-7B-Instruct").strip()
+        or "Qwen/Qwen2.5-7B-Instruct"
+    )
+    llm_model: str = _llm_model_default
+    # Intent router default (get_llm in intent_router); per-request router_model overrides
+    router_model: str = (os.getenv("ROUTER_MODEL") or "").strip() or _llm_model_default
     # Intent router prompt text: app/prompts/{id}.txt (see ROUTER_PROMPT_VERSION)
     default_router_prompt_version: str = (os.getenv("ROUTER_PROMPT_VERSION") or "router-v2.00").strip() or "router-v2.00"
     router_confidence_clarify_threshold: float = float(
@@ -121,6 +127,14 @@ def gateway_extra_headers(
         if is_new_conversation is not None:
             h["X-Is-New-Conversation"] = "true" if is_new_conversation else "false"
     return h
+
+
+def resolve_router_model(override: Optional[str] = None) -> str:
+    """Effective router model: request override, then ROUTER_MODEL env, then LLM_MODEL."""
+    o = (override or "").strip()
+    if o:
+        return o
+    return settings.router_model
 
 
 def gateway_llm_invoke_kwargs(

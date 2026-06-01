@@ -6,8 +6,8 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SFT_SCRIPTS = REPO_ROOT / "aval" / "sft-router" / "scripts"
-DPO_SCRIPTS = REPO_ROOT / "aval" / "dpo-router" / "scripts"
+SFT_SCRIPTS = REPO_ROOT / "router-eval" / "sft-router" / "scripts"
+DPO_SCRIPTS = REPO_ROOT / "router-eval" / "dpo-router" / "scripts"
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 if str(DPO_SCRIPTS) not in sys.path:
@@ -34,7 +34,7 @@ def _load_router_gold():
 
 sft = _load_sft_build()
 rg = _load_router_gold()
-GOLD_DATA = REPO_ROOT / "aval" / "gold-test" / "data"
+GOLD_DATA = REPO_ROOT / "router-eval" / "golden-test" / "data"
 
 
 def test_build_router_completion_rag_sft():

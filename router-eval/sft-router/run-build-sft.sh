@@ -3,9 +3,9 @@
 set -euo pipefail
 
 SFT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AVAL_ROOT="$(cd "$SFT_ROOT/.." && pwd)"
-REPO_ROOT="$(cd "$AVAL_ROOT/.." && pwd)"
-GOLD_DATA="${GOLD_DATA:-$AVAL_ROOT/gold-test/data}"
+ROUTER_EVAL_ROOT="$(cd "$SFT_ROOT/.." && pwd)"
+REPO_ROOT="$(cd "$ROUTER_EVAL_ROOT/.." && pwd)"
+GOLD_DATA="${GOLD_DATA:-$ROUTER_EVAL_ROOT/gold-test/data}"
 OUTPUT_DIR="${OUTPUT_DIR:-$SFT_ROOT/output}"
 ROUTER_PROMPT_VERSION="${ROUTER_PROMPT_VERSION:-router-v2.00}"
 
