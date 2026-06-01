@@ -170,7 +170,7 @@ Response: **SSE**, each line `data: <json>\n\n`.
 
 | `type` | Description |
 |--------|-------------|
-| `request_id` | Early correlation ids |
+| `correlation` | First frame: `request_id`, `session_id`, `trace_id`, `conversation_id`, `is_new_conversation` (legacy alias: `type: "request_id"`) |
 | `rewrite` | `{ "type": "rewrite", "text": "..." }` |
 | `route` | `{ "type": "route", "route": "<legacy flat>", "route_detail": { ... }, "route_source": "...", "text": "<rewrite>" }` — see [schema-response-pattern.md](schema-response-pattern.md) |
 | `answer_delta` | `{ "type": "answer_delta", "text": "..." }` only (text chunks; concatenated on the client or in terminal `done`) |

@@ -69,7 +69,7 @@ Field-by-field request and response schema: **[schema-request-response.md](schem
 
 Clients may send user context in headers (`X-User-Id`, `X-User-Roles`, `X-User-Groups`, `X-User-Teams`); the orchestrator relays them on outbound RAG `POST /v1/rag/query`. Those fields and correlation ids (`session_id`, `request_id`, `trace_id`) are **rejected** if sent in the JSON body; **`conversation_id`** is the exception and may be sent in the body for threading.
 
-1. Initialize request ids and emit SSE `{ "type":"request_id", "request_id", "session_id", "conversation_id", "is_new_conversation" }` (`conversation_id` is the effective id; server assigns `conv_<uuidhex>` when the body omits or blanks it).
+1. Initialize correlation and emit SSE `{ "type":"correlation", "request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation" }` (`conversation_id` is the effective id; server assigns `conv_<uuidhex>` when the body omits or blanks it). Legacy clients may still send or receive `type: "request_id"` with the same fields (deprecated).
 2. **Intent / rewrite router** (one LLM when no server short-circuit): `resolve_route` may match deterministic internal intents first; otherwise `run_intent_rewrite_router` returns JSON with standalone `rewritten_question` and `route` / `route_detail`.
 3. Emit SSE `{type:"rewrite", "text": ...}` and `{type:"route", "route": ..., "route_detail": ...}` (lowercase legacy route values).
 4. Branch via **direct tool dispatch** in `app/core/pipeline.py`:

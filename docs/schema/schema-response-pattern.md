@@ -14,7 +14,7 @@ Request/headers/limits: [schema-request-response.md](schema-request-response.md)
 
 ### Stream vs `done`
 
-During streaming, the server emits: `request_id` → `rewrite` → **`route`** → **`answer_delta`** (`text` only) → **`done`** (full envelope with citations / usage).
+During streaming, the server emits: `correlation` → `rewrite` → **`route`** → **`answer_delta`** (`text` only) → **`done`** (full envelope with citations / usage). Legacy streams may use `type: "request_id"` for the first frame (same fields).
 
 The **`route`** event always uses this shape (legacy flat `route` + nested `route_detail`):
 
@@ -211,7 +211,7 @@ curl -N -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
   },
   "stream": [
     {
-      "type": "request_id",
+      "type": "correlation",
       "session_id": "ses-123",
       "request_id": "req-123",
       "trace_id": "req-123",
@@ -383,7 +383,7 @@ curl -N -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
   },
   "stream": [
     {
-      "type": "request_id",
+      "type": "correlation",
       "session_id": "ses-123",
       "request_id": "req-123",
       "trace_id": "req-123",
@@ -528,7 +528,7 @@ curl -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
   },
   "stream": [
     {
-      "type": "request_id",
+      "type": "correlation",
       "session_id": "ses-123",
       "request_id": "req-123",
       "trace_id": "req-123",
@@ -605,7 +605,7 @@ curl -sS -X POST http://192.168.86.179:30184/v1/orchestrator/answer \
 ```json
 {
   "request": {
-    "type": "request_id",
+    "type": "correlation",
     "session_id": "ses-123",
     "request_id": "req-123",
     "trace_id": "req-123",

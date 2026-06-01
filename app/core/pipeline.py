@@ -24,6 +24,7 @@ from ..tools.user_profile import run_user_profile
 from ..tools.web_search import run_web_search
 from ..observability.usage import build_usage_payload
 from ..schemas.answer_envelope import route_source_after_normalize, status_code_for_exception
+from .sse_events import SSE_EVENT_CORRELATION
 from .router import (
     decision_to_route_detail,
     normalize_post_router,
@@ -269,7 +270,7 @@ async def stream_answer_query(
                 },
             )
         yield {
-            "type": "request_id",
+            "type": SSE_EVENT_CORRELATION,
             **_stream_correlation_fields(
                 session_id=session_id,
                 request_id=request_id,

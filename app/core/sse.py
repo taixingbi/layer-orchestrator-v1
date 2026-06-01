@@ -12,6 +12,7 @@ from ..observability.metrics import inc_timeout, observe_pipeline_event
 from ..observability.context import bind_conversation_logging_context
 from ..schemas.response import empty_answer_accumulator
 from .pipeline import stream_answer_query
+from .sse_events import CORRELATION_SSE_EVENT_TYPES, CORRELATION_SSE_FIELD_KEYS
 from .state import (
     _TERMINAL_STATE_STATUSES,
     merge_phase_states,
@@ -167,8 +168,8 @@ class AnswerResponseAccumulator:
 
     def apply(self, event: dict) -> None:
         t = event.get("type")
-        if t == "request_id":
-            for key in ("request_id", "session_id", "trace_id", "conversation_id", "is_new_conversation"):
+        if t in CORRELATION_SSE_EVENT_TYPES:
+            for key in CORRELATION_SSE_FIELD_KEYS:
                 if event.get(key) is not None:
                     self.body[key] = event.get(key)
         elif t == "rewrite":

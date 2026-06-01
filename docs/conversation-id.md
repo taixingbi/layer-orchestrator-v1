@@ -4,7 +4,7 @@
 
 **If you skip it or send only blanks:** The server assigns `conv_` + 32 hex chars and sets **`is_new_conversation`: true** in API responses. If you send a non-blank id, **`is_new_conversation`** is **false**.
 
-**Where you see it:** JSON response (or first SSE `request_id` event). **Structured logs** include top-level **`conversation_id`** (effective id for `/v1/orchestrator/answer` and `/v1/orchestrator/eval/router` on `http_request_complete`; otherwise from request context when bound).
+**Where you see it:** JSON response (or first SSE `correlation` event; legacy `type: "request_id"`). **Structured logs** include top-level **`conversation_id`** (effective id for `/v1/orchestrator/answer` and `/v1/orchestrator/eval/router` on `http_request_complete`; otherwise from request context when bound).
 
 ## Gateways (outbound design)
 

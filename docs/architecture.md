@@ -14,7 +14,7 @@ It emits **Server-Sent Events (SSE)** when `stream=true` so clients can observe 
 
 ```json
 {
-  "type": "request_id",
+  "type": "correlation",
   "request_id": "<uuid>",
   "session_id": "<string | null>",
   "trace_id": "<string>",
@@ -132,7 +132,7 @@ sequenceDiagram
   participant LangSmith
 
   Client->>API: POST /v1/orchestrator/answer {"stream": true}
-  API-->>Client: SSE {type:"request_id"}
+  API-->>Client: SSE {type:"correlation"}
 
   alt server short-circuit (intent / small-talk / injection)
     API-->>Client: SSE {type:"rewrite"}

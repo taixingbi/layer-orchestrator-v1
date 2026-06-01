@@ -24,7 +24,7 @@ FEEDBACK_TYPES = frozenset([
 class FeedbackBody(BaseModel):
     """Feedback on an agent response."""
 
-    request_id: Optional[str] = Field(None, description="request_id from headers / first SSE event (optional)")
+    request_id: Optional[str] = Field(None, description="request_id from headers / first SSE correlation event (optional)")
     trace_id: Optional[str] = Field(None, description="X-Trace-Id / JSON trace_id; preferred id for feedback when LangSmith run matches trace")
     agent_graph_run_id: Optional[str] = Field(
         None,
