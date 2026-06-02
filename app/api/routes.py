@@ -315,14 +315,8 @@ async def submit_feedback(body: FeedbackBody, request: Request):
 
 @router.get("/health")
 def health() -> dict:
-    return {
-        "status": "ok",
-        "app_version": settings.app_version,
-        "app_name": settings.app_name,
-        "langchain_project": settings.langchain_project,
-        "langsmith_tracing": settings.langsmith_tracing,
-        "langchain_endpoint": settings.langchain_endpoint,
-    }
+    """Liveness: process up (no dependency checks). Use GET /version for build metadata."""
+    return {"status": "ok"}
 
 
 @router.get("/version")
