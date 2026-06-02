@@ -327,7 +327,9 @@ def health() -> dict:
 
 @router.get("/version")
 def version() -> dict:
-    return {"version_id": settings.app_version}
+    from app.build_info import version_payload
+
+    return version_payload()
 
 
 @router.get("/ready")
