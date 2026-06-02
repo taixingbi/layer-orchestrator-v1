@@ -119,15 +119,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet; then
-            echo "No manifest change; skip commit"
-            exit 0
-          fi
-          git add manifests/orchestrator/overlays/dev/kustomization.yaml
           SHORT_DIGEST="${{ needs.push.outputs.digest }}"
           SHORT_DIGEST="${SHORT_DIGEST#sha256:}"
           SHORT_DIGEST="${SHORT_DIGEST:0:12}"
-          git commit -m "chore(orchestrator-dev): pin image ${{ needs.push.outputs.version }} @ ${SHORT_DIGEST}"
-          git push origin HEAD:main
+          export COMMIT_MSG="chore(orchestrator-dev): pin image ${{ needs.push.outputs.version }} @ ${SHORT_DIGEST}"
+          bash scripts/gitops-commit-push.sh manifests/orchestrator/overlays/dev/kustomization.yaml
