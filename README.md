@@ -104,11 +104,11 @@ docker build -t layer-orchestrator-v1 .
 docker run -p 8000:8000 --env-file .env layer-orchestrator-v1
 ```
 
-Run the image published from CI (replace `YOUR_DOCKERHUB_USER` with your Docker Hub username or org):
+Run the image published from CI:
 
 ```bash
-docker pull YOUR_DOCKERHUB_USER/layer-orchestrator-v1:latest
-docker run -p 8000:8000 --env-file .env YOUR_DOCKERHUB_USER/layer-orchestrator-v1:latest
+docker pull ghcr.io/taixingbi/layer-orchestrator-v1:latest
+docker run -p 8000:8000 --env-file .env ghcr.io/taixingbi/layer-orchestrator-v1:latest
 ```
 
 ## Health
@@ -185,25 +185,23 @@ curl -N -s -X POST http://127.0.0.1:8000/v1/feedback \
 
 `feedback_type` (optional): `not_relevant`, `biased`, `not_factual`, `incomplete_instructions`, `unsafe`, `style_tone`, `other`
 
-## Docker Hub
+## GHCR
 
-Pushes to `main` build the [Dockerfile](Dockerfile) and push to Docker Hub via [`.github/workflows/docker-push.yml`](.github/workflows/docker-push.yml). You can also run the workflow manually (**workflow_dispatch**) from the Actions tab.
+Pushes to `main` build the [Dockerfile](Dockerfile) and push to **GHCR** via [`.github/workflows/docker-push.yml`](.github/workflows/docker-push.yml) (`ghcr.io/taixingbi/layer-orchestrator-v1`). You can also run the workflow manually (**workflow_dispatch**) from the Actions tab.
 
-On **`main` push** (after a successful build), the same workflow updates [huntai-k3s](https://github.com/taixingbi/huntai-k3s) `manifests/orchestrator/overlays/dev/kustomization.yaml` with the **12-char commit SHA** as `images[].newTag`. Argo CD Application `orchestrator-dev` syncs that Git change and rolls out the new image. See [deploy-gitops-argocd.md](https://github.com/taixingbi/huntai-k3s/blob/main/docs/deploy-gitops-argocd.md) in huntai-k3s.
+On **`main` push** (after a successful build), the same workflow updates [huntai-k3s](https://github.com/taixingbi/huntai-k3s) `manifests/orchestrator/overlays/dev/kustomization.yaml` with **12-char SHA** `newTag` and image **digest**. Argo CD Application `orchestrator-dev` syncs that Git change and rolls out the new image. See [deploy-gitops-argocd.md](https://github.com/taixingbi/huntai-k3s/blob/main/docs/deploy-gitops-argocd.md) and [deploy-ghcr-rollout.md](https://github.com/taixingbi/huntai-k3s/blob/main/docs/deploy-ghcr-rollout.md) in huntai-k3s.
 
-Add these repository secrets under **Settings → Secrets and variables → Actions**:
+Repository secret (Actions):
 
 | Secret | Description |
 |--------|-------------|
-| `DOCKERHUB_USERNAME` | Docker Hub username or organization |
-| `DOCKERHUB_TOKEN` | Docker Hub access token (recommended; not your account password) |
 | `HUNTAI_K3S_PAT` | PAT with **contents: write** on `taixingbi/huntai-k3s` (GitOps image pin on `main` push) |
 
 Version flow: `git tag/workflow input -> CI VERSION -> Docker build-arg APP_VERSION -> /health + logs`.
 
 `pyproject.toml` keeps package metadata version for packaging; deployment/runtime version is CI-driven.
 
-Images: `YOUR_DOCKERHUB_USER/layer-orchestrator-v1:latest`, `YOUR_DOCKERHUB_USER/layer-orchestrator-v1:<ci-version>`, and `YOUR_DOCKERHUB_USER/layer-orchestrator-v1:<git-sha>`.
+Images: `ghcr.io/taixingbi/layer-orchestrator-v1:latest`, `ghcr.io/taixingbi/layer-orchestrator-v1:<ci-version>`, and `ghcr.io/taixingbi/layer-orchestrator-v1:<full-git-sha>`.
 
 Former Fly.io multi-environment URLs are no longer maintained. Run the container wherever you host services and use the same **Environment (.env)** variables as above. For a public HTTPS host, substitute your base URL for `http://127.0.0.1:8000` in the curl examples.
 
