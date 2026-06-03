@@ -121,7 +121,6 @@ jobs:
           set -euo pipefail
           bash scripts/pin-gitops-image.sh \
             manifests/orchestrator/overlays/dev/kustomization.yaml \
-            "" \
             "${IMAGE}" "${TAG}" "${DIGEST}"
 
       - name: Commit and push
