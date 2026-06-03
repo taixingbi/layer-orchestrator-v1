@@ -12,11 +12,14 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from .github_route import match_github_search
 from .rewrite import (
     CANDIDATE_NAME,
+    REWRITE_HISTORY_MAX_CHARS_PER_TURN,
     REWRITE_HISTORY_MAX_LINES,
     format_history_for_prompt,
     normalize_history_turns,
     rewrite_to_third_person,
 )
+
+ROUTER_MAX_OUTPUT_TOKENS = 512
 from ..config import (
     gateway_llm_invoke_kwargs,
     get_langsmith_tags,
@@ -788,7 +791,11 @@ async def run_intent_rewrite_router(
                 confidence=1.0,
             )
 
-    hist_block = format_history_for_prompt(hist, REWRITE_HISTORY_MAX_LINES)
+    hist_block = format_history_for_prompt(
+        hist,
+        REWRITE_HISTORY_MAX_LINES,
+        max_chars_per_turn=REWRITE_HISTORY_MAX_CHARS_PER_TURN,
+    )
     user_body = (
         f"History:\n{hist_block}\n\nLatest question:\n{q}" if hist_block else f"History:\n(none)\n\nLatest question:\n{q}"
     )
@@ -835,7 +842,7 @@ async def run_intent_rewrite_router(
                 "run_name": "intent_rewrite_router",
                 "tags": tags,
             },
-            max_tokens=2048,
+            max_tokens=ROUTER_MAX_OUTPUT_TOKENS,
             **invoke_kw,
         )
         raw = (msg.content or "").strip()

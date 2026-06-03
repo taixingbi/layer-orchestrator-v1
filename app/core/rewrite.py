@@ -6,7 +6,14 @@ from typing import List, Tuple
 CANDIDATE_NAME = "Taixing Bi"
 HISTORY_CAP = 20
 REWRITE_HISTORY_MAX_LINES = 6
+REWRITE_HISTORY_MAX_CHARS_PER_TURN = 500
 ANSWER_HISTORY_MAX_LINES = 4
+
+
+def _truncate_turn_content(content: str, max_chars: int | None) -> str:
+    if max_chars is None or max_chars <= 0 or len(content) <= max_chars:
+        return content
+    return content[: max_chars - 1].rstrip() + "…"
 
 
 def rewrite_to_third_person(question: str) -> str:
@@ -38,13 +45,19 @@ def normalize_history_turns(turns: List[Tuple[str, str]]) -> List[Tuple[str, str
     return out[-HISTORY_CAP:]
 
 
-def format_history_for_prompt(turns: List[Tuple[str, str]], max_turns: int) -> str:
+def format_history_for_prompt(
+    turns: List[Tuple[str, str]],
+    max_turns: int,
+    *,
+    max_chars_per_turn: int | None = None,
+) -> str:
     """Format turns as User:/Assistant: lines (last max_turns only)."""
     chunk = turns[-max_turns:] if max_turns > 0 else turns
     lines: List[str] = []
     for role, content in chunk:
         label = "User" if role == "user" else "Assistant"
-        lines.append(f"{label}: {content}")
+        text = _truncate_turn_content(content, max_chars_per_turn)
+        lines.append(f"{label}: {text}")
     return "\n".join(lines)
 
 

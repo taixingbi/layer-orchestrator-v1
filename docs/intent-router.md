@@ -61,7 +61,7 @@ Callers that pass `runtime_meta` (for example **`POST /v1/orchestrator/eval/rout
 1. **System prompt** from:
    - request **`router_system_prompt`** override (if non-empty), else
    - **`app/prompts/{router_prompt_version}.txt`**, with `__CANDIDATE_NAME__` replaced like other stored prompts.
-2. **User message**: capped **history** block + **latest question** (see `format_history_for_prompt` / `REWRITE_HISTORY_MAX_LINES`).
+2. **User message**: capped **history** block (last `REWRITE_HISTORY_MAX_LINES` turns, **500 chars/turn**) + **latest question** (`format_history_for_prompt`). Router LLM **`max_tokens=512`**.
 3. **Model** returns text; the server extracts a **JSON object** (markdown fences stripped), then validates **`RouterDecision`**.
 
 ### 5. Post-processing (**LLM path only**)
