@@ -1,4 +1,8 @@
-# Build and push container image to GHCR on every push to `main`.
+# Build and push container image to GHCR on push to `dev` or `main` (and version tags).
+#
+# GitOps (huntai-k3s):
+#   branch dev  → manifests/orchestrator/overlays/dev  (ai-dev)
+#   branch main → manifests/orchestrator/overlays/prod (ai-prod)
 #
 # Repository secrets:
 # HUNTAI_K3S_PAT — PAT with contents:write on taixingbi/huntai-k3s (GitOps image pin)
@@ -8,7 +12,7 @@ name: Push to GHCR
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     tags: ["v*"]
   workflow_dispatch:
     inputs:
@@ -92,17 +96,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  update-gitops:
+  update-gitops-dev:
     needs: push
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     concurrency:
-      group: gitops-orchestrator-${{ github.sha }}
+      group: gitops-orchestrator-dev-${{ github.sha }}
       cancel-in-progress: false
     env:
       IMAGE: ghcr.io/${{ github.repository }}
+      KUSTOMIZATION: manifests/orchestrator/overlays/dev/kustomization.yaml
     steps:
       - name: Checkout huntai-k3s
         uses: actions/checkout@v4
@@ -111,7 +116,7 @@ jobs:
           token: ${{ secrets.HUNTAI_K3S_PAT }}
           path: huntai-k3s
 
-      - name: Pin orchestrator image tag and digest
+      - name: Pin orchestrator image (dev)
         env:
           TAG: ${{ needs.push.outputs.version }}
           DIGEST: ${{ needs.push.outputs.digest }}
@@ -120,7 +125,7 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/pin-gitops-image.sh \
-            manifests/orchestrator/overlays/dev/kustomization.yaml \
+            "${KUSTOMIZATION}" \
             "${IMAGE}" "${TAG}" "${DIGEST}"
 
       - name: Commit and push
@@ -132,4 +137,47 @@ jobs:
           SHORT_DIGEST="${SHORT_DIGEST#sha256:}"
           SHORT_DIGEST="${SHORT_DIGEST:0:12}"
           export COMMIT_MSG="chore(orchestrator-dev): pin image ${{ needs.push.outputs.version }} @ ${SHORT_DIGEST}"
-          bash scripts/gitops-commit-push.sh manifests/orchestrator/overlays/dev/kustomization.yaml
+          bash scripts/gitops-commit-push.sh "${KUSTOMIZATION}"
+
+  update-gitops-prod:
+    needs: push
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: gitops-orchestrator-prod-${{ github.sha }}
+      cancel-in-progress: false
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
+      KUSTOMIZATION: manifests/orchestrator/overlays/prod/kustomization.yaml
+    steps:
+      - name: Checkout huntai-k3s
+        uses: actions/checkout@v4
+        with:
+          repository: taixingbi/huntai-k3s
+          token: ${{ secrets.HUNTAI_K3S_PAT }}
+          path: huntai-k3s
+
+      - name: Pin orchestrator image (prod)
+        env:
+          TAG: ${{ needs.push.outputs.version }}
+          DIGEST: ${{ needs.push.outputs.digest }}
+        working-directory: huntai-k3s
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/pin-gitops-image.sh \
+            "${KUSTOMIZATION}" \
+            "${IMAGE}" "${TAG}" "${DIGEST}"
+
+      - name: Commit and push
+        working-directory: huntai-k3s
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHORT_DIGEST="${{ needs.push.outputs.digest }}"
+          SHORT_DIGEST="${SHORT_DIGEST#sha256:}"
+          SHORT_DIGEST="${SHORT_DIGEST:0:12}"
+          export COMMIT_MSG="chore(orchestrator-prod): pin image ${{ needs.push.outputs.version }} @ ${SHORT_DIGEST}"
+          bash scripts/gitops-commit-push.sh "${KUSTOMIZATION}"
