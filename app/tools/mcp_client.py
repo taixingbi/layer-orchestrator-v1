@@ -159,6 +159,15 @@ def _normalize_mcp_tool_payload(data: Dict[str, Any]) -> Dict[str, Any]:
         cites = ans.get("citations")
         if cites is not None:
             out["citations"] = cites
+        blocks = ans.get("blocks")
+        if isinstance(blocks, list):
+            out["answer_blocks"] = blocks
+        notes = ans.get("notes")
+        if isinstance(notes, list):
+            out["answer_notes"] = notes
+        answer_format = ans.get("format")
+        if isinstance(answer_format, str) and answer_format.strip():
+            out["answer_format"] = answer_format.strip()
     elif isinstance(ans, str):
         out["answer"] = ans.strip()
     elif isinstance(data.get("text"), str):
@@ -286,8 +295,14 @@ def _payload_to_tool_result(data: Dict[str, Any]) -> ToolResult:
     else:
         meta = dict(meta)
         meta.setdefault("source", "mcp")
+    blocks = normalized.get("answer_blocks")
+    notes = normalized.get("answer_notes")
+    answer_format = normalized.get("answer_format")
     return ToolResult(
         answer=answer,
+        answer_blocks=list(blocks) if isinstance(blocks, list) else [],
+        answer_notes=list(notes) if isinstance(notes, list) else [],
+        answer_format=str(answer_format) if isinstance(answer_format, str) and answer_format else "text",
         citations=list(citations) if citations else [],
         follow_up_questions=list(follow_ups) if follow_ups else [],
         usage=usage,

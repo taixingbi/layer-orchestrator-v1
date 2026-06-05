@@ -20,7 +20,17 @@ GITHUB_DONE_V2 = {
         "github": {"scope": "all", "repos": ["taixingbi/layer-orchestrator-v1"]},
     },
     "answer": {
+        "format": "blocks",
         "text": "## Introduction to huntAi Project\n\nThe huntAi project involves several repositories.",
+        "blocks": [
+            {"type": "heading", "text": "Introduction to huntAi Project", "cite_ids": []},
+            {
+                "type": "paragraph",
+                "text": "The huntAi project involves several repositories.",
+                "cite_ids": [1, 4],
+            },
+        ],
+        "notes": ["Routing detail not documented"],
         "citations": [
             {"cite_id": 1, "source": "layer-mcp-github-v1 README"},
             {"cite_id": 4, "source": "layer-orchestrator-v1 README"},
@@ -46,6 +56,9 @@ GITHUB_DONE_V2 = {
 def test_normalize_github_mcp_v2_payload():
     norm = _normalize_mcp_tool_payload(GITHUB_DONE_V2)
     assert "Introduction to huntAi" in norm["answer"]
+    assert norm["answer_format"] == "blocks"
+    assert norm["answer_blocks"][0]["type"] == "heading"
+    assert norm["answer_notes"] == ["Routing detail not documented"]
     assert len(norm["citations"]) == 2
     assert norm["latency_ms"]["retrieve_rerank"] == 3095
     assert norm["latency_ms"]["total"] == 8577
@@ -132,6 +145,8 @@ async def test_parse_mcp_sse_github_v2_stream():
     result = await _parse_mcp_sse_lines(_lines(), on_delta=deltas.append)
     assert deltas == ["Repo ", "overview"]
     assert result.answer.startswith("## Introduction")
+    assert result.answer_format == "blocks"
+    assert result.answer_blocks[0]["type"] == "heading"
     assert result.latency_ms == GITHUB_DONE_V2["latency_ms"]["tool_github_search"]
     assert result.usage["total"]["total_tokens"] == 451
     assert len(result.citations) == 2

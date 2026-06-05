@@ -94,6 +94,9 @@ async def _yield_request_complete_done(
     usage: Optional[Dict[str, Any]] = None,
     citations: Optional[List[Any]] = None,
     follow_up_questions: Optional[List[Any]] = None,
+    answer_blocks: Optional[List[Any]] = None,
+    answer_notes: Optional[List[Any]] = None,
+    answer_format: Optional[str] = None,
     final_response_meta: Optional[Dict[str, Any]] = None,
 ) -> AsyncIterator[dict]:
     done_ts = utc_now_iso()
@@ -154,6 +157,12 @@ async def _yield_request_complete_done(
         done_event["citations"] = list(citations)
     if follow_up_questions is not None:
         done_event["follow_up_questions"] = list(follow_up_questions)
+    if answer_blocks:
+        done_event["answer_blocks"] = list(answer_blocks)
+    if answer_notes:
+        done_event["answer_notes"] = list(answer_notes)
+    if answer_format:
+        done_event["answer_format"] = answer_format
     yield done_event
 
 
@@ -230,6 +239,9 @@ async def _run_tool(
         result.follow_up_questions,
         result.usage,
         result.latency_ms,
+        result.answer_blocks,
+        result.answer_notes,
+        result.answer_format,
     )
 
 
@@ -420,7 +432,16 @@ async def stream_answer_query(
                     streamed_any = True
                     delta_queue.put_nowait(chunk)
 
-            async def _tool_task() -> Tuple[str, List[Any], List[Any], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+            async def _tool_task() -> Tuple[
+                str,
+                List[Any],
+                List[Any],
+                Optional[Dict[str, Any]],
+                Optional[Dict[str, Any]],
+                List[Any],
+                List[Any],
+                str,
+            ]:
                 sem = _get_downstream_semaphore()
                 try:
                     if sem is not None:
@@ -456,7 +477,16 @@ async def stream_answer_query(
                 if chunk is None:
                     break
                 yield _answer_delta_event(chunk)
-            answer_text, citations, follow_ups, t_usage, t_latency = await task
+            (
+                answer_text,
+                citations,
+                follow_ups,
+                t_usage,
+                t_latency,
+                answer_blocks,
+                answer_notes,
+                answer_format,
+            ) = await task
 
             tool_usage = t_usage
             usage_kw: Dict[str, Any] = {"intent_router": intent_router_usage}
@@ -498,6 +528,9 @@ async def stream_answer_query(
                 usage=request_usage,
                 citations=citations,
                 follow_up_questions=follow_ups,
+                answer_blocks=answer_blocks,
+                answer_notes=answer_notes,
+                answer_format=answer_format,
                 final_response_meta=build_final_response_log(
                     request_id=request_id,
                     session_id=session_id,
