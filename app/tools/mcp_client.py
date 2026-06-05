@@ -429,7 +429,7 @@ async def call_mcp_tool(
     rag_user: Optional[Dict[str, str]] = None,
     conversation_id: str = "",
     is_new_conversation: bool = False,
-    stream: bool = True,
+    stream: Optional[bool] = True,
     on_delta: Optional[Callable[[str], None]] = None,
 ) -> ToolResult:
     """POST /v1/mcp tools/call; stream SSE lines and invoke on_delta per answer_delta."""
@@ -438,11 +438,14 @@ async def call_mcp_tool(
         raise ValueError("MCP base URL is not set")
     url = f"{base}/v1/mcp"
     rpc_id = request_id or str(uuid.uuid4())
+    tool_args = dict(arguments)
+    if stream is not None:
+        tool_args["stream"] = stream
     payload = {
         "jsonrpc": "2.0",
         "id": rpc_id,
         "method": "tools/call",
-        "params": {"name": tool_name, "arguments": {**arguments, "stream": stream}},
+        "params": {"name": tool_name, "arguments": tool_args},
     }
     headers = _mcp_headers(
         request_id=request_id,
@@ -457,7 +460,11 @@ async def call_mcp_tool(
         "mcp_tool_call",
         extra={
             "event": "mcp_tool_call",
-            "gateway_meta": {"url": url, "tool": tool_name, "stream": stream},
+            "gateway_meta": {
+                "url": url,
+                "tool": tool_name,
+                "stream": stream if stream is not None else tool_args.get("stream", True),
+            },
         },
     )
     async with client.stream("POST", url, json=payload, headers=headers) as response:

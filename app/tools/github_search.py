@@ -12,7 +12,6 @@ from .mcp_client import call_mcp_tool
 async def run_github_search(
     question: str,
     *,
-    repo: Optional[str] = None,
     request_id: str = "",
     session_id: str = "",
     trace_id: str = "",
@@ -26,10 +25,7 @@ async def run_github_search(
         raise ValueError("MCP_GITHUB_BASE_URL is not set")
     args: Dict[str, object] = {
         "question": question,
-        "stream": True,
     }
-    if repo:
-        args["repo"] = repo
     if conversation_id:
         args["conversation_id"] = conversation_id
     return await call_mcp_tool(
@@ -43,4 +39,5 @@ async def run_github_search(
         conversation_id=conversation_id,
         is_new_conversation=is_new_conversation,
         on_delta=on_delta,
+        stream=None,
     )

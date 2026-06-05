@@ -220,7 +220,6 @@ async def _run_tool(
     elif name == "github_search":
         result = await run_github_search(
             question,
-            repo=detail.repo,
             request_id=request_id or "",
             session_id=session_id or "",
             trace_id=trace_id or "",

@@ -103,7 +103,7 @@ def route_meta_from_detail(
         if source:
             route["source"] = source
         tool: Dict[str, Any] = {"name": orch_name, "type": tool_type, "version": "v1", "key": phase_key}
-        if detail.repo:
+        if detail.repo and orch_name != "github_search":
             tool["repo"] = detail.repo
         return route, tool
     if isinstance(detail, InternalIntentRoute):
