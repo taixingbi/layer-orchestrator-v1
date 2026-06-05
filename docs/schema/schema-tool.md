@@ -1,6 +1,6 @@
 # Tool response schema (MCP / upstream)
 
-JSON shape returned by **MCP tool services** (`rag_query`, `ask_repo`) on the terminal **`done`** event (or equivalent JSON body). The orchestrator normalizes this into [`/v1/orchestrator/answer`](schema-request-response.md) — see [Mapping to orchestrator](#mapping-to-orchestrator) below.
+JSON shape returned by **MCP tool services** (`rag_query`, `github_search`) on the terminal **`done`** event (or equivalent JSON body). The orchestrator normalizes this into [`/v1/orchestrator/answer`](schema-request-response.md) — see [Mapping to orchestrator](#mapping-to-orchestrator) below.
 
 ---
 
@@ -197,7 +197,7 @@ Provider-specific keys under `meta` (e.g. `rag`, `github`) are optional extensio
 
 ---
 
-## Example: MCP GitHub (`github_search` / `ask_repo`)
+## Example: MCP GitHub (`github_search`)
 
 Aligned with [layer-mcp-github-v1 schema](https://github.com/taixingbi/layer-mcp-github-v1/blob/main/docs/schema.md). Buffered JSON-RPC `.result` / `.result.structuredContent` and SSE **`done`** share this shape.
 

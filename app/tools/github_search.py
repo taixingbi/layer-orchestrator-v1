@@ -1,4 +1,4 @@
-"""GitHub repo search via MCP ask_repo."""
+"""GitHub repo search via MCP github_search."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ async def run_github_search(
         args["conversation_id"] = conversation_id
     return await call_mcp_tool(
         base_url=base,
-        tool_name="ask_repo",
+        tool_name="github_search",
         arguments=args,
         request_id=request_id,
         session_id=session_id,
