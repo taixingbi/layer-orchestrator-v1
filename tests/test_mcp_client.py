@@ -82,11 +82,11 @@ def test_accumulate_github_sse_v2_delta_and_done():
     sse = f"""event: meta
 data: {json.dumps({"meta": GITHUB_DONE_V2["meta"]})}
 
-event: delta
-data: {{"answer": {{"text": "##"}}}}
+event: answer_delta
+data: {"text": "##"}
 
-event: delta
-data: {{"answer": {{"text": " Intro"}}}}
+event: answer_delta
+data: {"text": " Intro"}
 
 event: done
 data: {done_json}
@@ -120,17 +120,17 @@ async def test_parse_mcp_sse_lines_streams_deltas():
 
 @pytest.mark.asyncio
 async def test_parse_mcp_sse_github_v2_stream():
-    """GitHub MCP v2: meta → delta (answer.text) → done envelope."""
+    """GitHub MCP: meta → answer_delta (text) → done envelope."""
     done_line = json.dumps(GITHUB_DONE_V2, separators=(",", ":"))
     sse_lines = [
         "event: meta",
         f'data: {json.dumps({"meta": GITHUB_DONE_V2["meta"]})}',
         "",
-        "event: delta",
-        'data: {"answer": {"text": "Repo "}}',
+        "event: answer_delta",
+        'data: {"text": "Repo "}',
         "",
-        "event: delta",
-        'data: {"answer": {"text": "overview"}}',
+        "event: answer_delta",
+        'data: {"text": "overview"}',
         "",
         "event: done",
         f"data: {done_line}",
@@ -177,7 +177,7 @@ async def test_github_search_latency_end_to_end():
     tool_latency = GITHUB_DONE_V2["latency_ms"]["tool_github_search"]
     done_line = json.dumps(GITHUB_DONE_V2, separators=(",", ":"))
     sse_lines = [
-        "event: delta",
+        "event: answer_delta",
         'data: {"answer": {"text": "chunk"}}',
         "",
         "event: done",

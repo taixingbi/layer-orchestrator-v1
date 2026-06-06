@@ -275,4 +275,4 @@ The orchestrator unwraps `latency_ms.tool_github_search` for tool metadata and p
 
 ## Streaming note
 
-MCP may emit **`event: meta`**, then **`event: delta`** (`answer.text` chunks), then **`event: done`**. The orchestrator forwards deltas as SSE **`answer_delta`** and maps the terminal payload into the client envelope on **`done`**. See [schema-request-response.md — SSE events](schema-request-response.md#post-v1orchestratoranswer--sse-events).
+MCP may emit **`event: meta`**, then **`event: answer_delta`** (`{"text":"..."}` chunks), then **`event: done`**. The orchestrator forwards chunks as **`answer_delta`** and maps the terminal payload into the client envelope on **`done`**. See [schema-request-response.md — SSE events](schema-request-response.md#post-v1orchestratoranswer--sse-events).

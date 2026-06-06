@@ -208,7 +208,7 @@ def _normalize_mcp_tool_payload(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _accumulate_github_sse(text: str) -> Dict[str, Any]:
-    """Parse GitHub MCP SSE (event: meta / delta / done)."""
+    """Parse GitHub MCP SSE (event: meta / answer_delta / done)."""
     text_chunks: List[str] = []
     done_payload: Dict[str, Any] = {}
     current_event: Optional[str] = None
@@ -231,7 +231,7 @@ def _accumulate_github_sse(text: str) -> Dict[str, Any]:
             continue
         if not isinstance(obj, dict):
             continue
-        if current_event == "delta":
+        if current_event in ("answer_delta", "delta"):
             chunk = _extract_sse_delta_text(obj)
             if chunk:
                 text_chunks.append(chunk)
@@ -355,7 +355,7 @@ async def _parse_mcp_sse_lines(
             inner = _parse_mcp_progress_message(msg) if isinstance(msg, str) else None
             if inner:
                 _emit_progress_event(inner, progress_events=progress_events, on_delta=on_delta)
-        elif current_event == "delta" and isinstance(obj, dict):
+        elif current_event in ("answer_delta", "delta") and isinstance(obj, dict):
             chunk = _extract_sse_delta_text(obj)
             if chunk:
                 github_deltas.append(chunk)

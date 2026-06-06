@@ -22,6 +22,16 @@ from .state import (
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
 
+def _format_sse_named_event(event_name: str, data: dict[str, Any]) -> str:
+    """Named SSE frame: ``event: <name>`` + ``data: <json>``."""
+    return f"event: {event_name}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _format_answer_delta_sse(text: str) -> str:
+    """Token chunk in the shared contract: ``event: answer_delta``, ``data.text``."""
+    return _format_sse_named_event("answer_delta", {"text": text})
+
+
 def _parse_iso_ts(value: Optional[str]) -> Optional[datetime]:
     if not value:
         return None
@@ -432,6 +442,11 @@ def sse_stream_answer_gen(
                 acc.apply(chunk)
                 if chunk.get("type") in ("done", "error"):
                     chunk = acc.enrich_terminal_event(chunk)
+                if chunk.get("type") == "answer_delta":
+                    text = chunk.get("text")
+                    if isinstance(text, str) and text:
+                        yield _format_answer_delta_sse(text)
+                    continue
                 yield f"data: {json.dumps(chunk)}\n\n"
 
     return _gen()
