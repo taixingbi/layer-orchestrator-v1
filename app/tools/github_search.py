@@ -39,5 +39,5 @@ async def run_github_search(
         conversation_id=conversation_id,
         is_new_conversation=is_new_conversation,
         on_delta=on_delta,
-        stream=None,
+        stream=True,
     )
