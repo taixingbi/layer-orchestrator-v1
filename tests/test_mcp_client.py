@@ -96,10 +96,10 @@ def test_accumulate_github_sse_v2_delta_and_done():
 data: {json.dumps({"meta": GITHUB_DONE_V2["meta"]})}
 
 event: answer_delta
-data: {"text": "##"}
+data: {{"text": "##"}}
 
 event: answer_delta
-data: {"text": " Intro"}
+data: {{"text": " Intro"}}
 
 event: done
 data: {done_json}

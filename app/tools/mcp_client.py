@@ -95,6 +95,7 @@ def _accumulate_progress_events(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     citations: Any = None
     follow_up_questions: Any = None
     usage: Any = None
+    rag: Any = None
     latency_ms: Dict[str, Any] = {}
     for ev in events:
         t = ev.get("type")
@@ -123,7 +124,7 @@ def _accumulate_progress_events(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         elif t == "rag":
             rag_block = {k: v for k, v in ev.items() if k != "type"}
             if rag_block:
-                out["rag"] = rag_block
+                rag = rag_block
         elif isinstance(ev.get("answer"), str):
             text_chunks.append(ev["answer"])
     out: Dict[str, Any] = {}
@@ -137,6 +138,8 @@ def _accumulate_progress_events(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         out["usage"] = usage
     if latency_ms:
         out["latency_ms"] = latency_ms
+    if rag is not None:
+        out["rag"] = rag
     return out
 
 
@@ -176,6 +179,19 @@ def _normalize_mcp_tool_payload(data: Dict[str, Any]) -> Dict[str, Any]:
         out["answer"] = ans.strip()
     elif isinstance(data.get("text"), str):
         out["answer"] = data["text"].strip()
+
+    if "answer_format" not in out:
+        answer_format = data.get("answer_format")
+        if isinstance(answer_format, str) and answer_format.strip():
+            out["answer_format"] = answer_format.strip()
+    if "answer_blocks" not in out:
+        blocks = data.get("answer_blocks")
+        if isinstance(blocks, list):
+            out["answer_blocks"] = blocks
+    if "answer_notes" not in out:
+        notes = data.get("answer_notes")
+        if isinstance(notes, list):
+            out["answer_notes"] = notes
 
     if data.get("citations") is not None and "citations" not in out:
         out["citations"] = data["citations"]
