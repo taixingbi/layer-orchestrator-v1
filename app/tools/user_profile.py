@@ -66,11 +66,13 @@ async def run_user_profile(
     api = (meta or {}).get("rag_api_response") or {}
     usage_raw = api.get("usage")
     usage = usage_raw if isinstance(usage_raw, dict) else None
+    rag_raw = api.get("rag")
     return ToolResult(
         answer=text,
         citations=sidecar.get("citations") or api.get("citations") or [],
         follow_up_questions=sidecar.get("follow_up_questions") or api.get("follow_up_questions") or [],
         usage=usage,
         latency_ms=meta.get("rag_latency_ms") if meta else None,
+        rag=rag_raw if isinstance(rag_raw, dict) else None,
         metadata={"transport": "http_rag"},
     )

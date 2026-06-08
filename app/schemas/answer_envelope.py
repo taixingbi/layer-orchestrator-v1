@@ -231,6 +231,7 @@ def build_answer_envelope(
     route_source: Optional[RouteSource] = None,
     error: Optional[str] = None,
     extra_meta: Optional[Dict[str, Any]] = None,
+    rag: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Full `/v1/orchestrator/answer` body (non-stream and stream terminal events)."""
     out: Dict[str, Any] = {
@@ -260,6 +261,8 @@ def build_answer_envelope(
     }
     if error:
         out["error"] = error
+    if isinstance(rag, dict) and rag:
+        out["rag"] = rag
     return out
 
 

@@ -97,6 +97,7 @@ async def _yield_request_complete_done(
     answer_blocks: Optional[List[Any]] = None,
     answer_notes: Optional[List[Any]] = None,
     answer_format: Optional[str] = None,
+    rag: Optional[Dict[str, Any]] = None,
     final_response_meta: Optional[Dict[str, Any]] = None,
 ) -> AsyncIterator[dict]:
     done_ts = utc_now_iso()
@@ -163,6 +164,8 @@ async def _yield_request_complete_done(
         done_event["answer_notes"] = list(answer_notes)
     if answer_format:
         done_event["answer_format"] = answer_format
+    if isinstance(rag, dict) and rag:
+        done_event["rag"] = rag
     yield done_event
 
 
@@ -200,7 +203,17 @@ async def _run_tool(
     conversation_id: str,
     is_new_conversation: bool,
     emit_delta,
-) -> Tuple[str, List[Any], List[Any], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+) -> Tuple[
+    str,
+    List[Any],
+    List[Any],
+    Optional[Dict[str, Any]],
+    Optional[Dict[str, Any]],
+    List[Any],
+    List[Any],
+    str,
+    Optional[Dict[str, Any]],
+]:
     from ..config import mcp_rag_enabled
 
     name = detail.name
@@ -241,6 +254,7 @@ async def _run_tool(
         result.answer_blocks,
         result.answer_notes,
         result.answer_format,
+        result.rag,
     )
 
 
@@ -440,6 +454,7 @@ async def stream_answer_query(
                 List[Any],
                 List[Any],
                 str,
+                Optional[Dict[str, Any]],
             ]:
                 sem = _get_downstream_semaphore()
                 try:
@@ -485,6 +500,7 @@ async def stream_answer_query(
                 answer_blocks,
                 answer_notes,
                 answer_format,
+                t_rag,
             ) = await task
 
             tool_usage = t_usage
@@ -530,6 +546,7 @@ async def stream_answer_query(
                 answer_blocks=answer_blocks,
                 answer_notes=answer_notes,
                 answer_format=answer_format,
+                rag=t_rag,
                 final_response_meta=build_final_response_log(
                     request_id=request_id,
                     session_id=session_id,

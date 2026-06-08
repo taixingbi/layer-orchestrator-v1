@@ -223,6 +223,8 @@ class AnswerResponseAccumulator:
                 self.body["answer_notes"] = event.get("answer_notes", [])
             if event.get("answer_format"):
                 self.body["answer_format"] = event.get("answer_format")
+            if isinstance(event.get("rag"), dict):
+                self.body["rag"] = event.get("rag")
 
     def _terminal_states(self) -> List[dict]:
         return [
@@ -263,6 +265,7 @@ class AnswerResponseAccumulator:
             state=state,
             code=code,
             error=error,
+            rag=self.body.get("rag"),
         )
 
     def enrich_terminal_event(self, event: dict) -> dict:

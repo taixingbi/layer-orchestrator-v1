@@ -120,6 +120,10 @@ def _accumulate_progress_events(events: List[Dict[str, Any]]) -> Dict[str, Any]:
             for key, val in ev.items():
                 if key != "type" and val is not None:
                     latency_ms[key] = val
+        elif t == "rag":
+            rag_block = {k: v for k, v in ev.items() if k != "type"}
+            if rag_block:
+                out["rag"] = rag_block
         elif isinstance(ev.get("answer"), str):
             text_chunks.append(ev["answer"])
     out: Dict[str, Any] = {}
@@ -194,6 +198,10 @@ def _normalize_mcp_tool_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(usage, dict):
         out["usage"] = usage
 
+    rag = data.get("rag")
+    if isinstance(rag, dict):
+        out["rag"] = rag
+
     meta: Dict[str, Any] = {}
     if isinstance(data.get("meta"), dict):
         meta["mcp_meta"] = data["meta"]
@@ -265,7 +273,7 @@ def _merge_mcp_stream_payload(
             payload["latency_ms"] = {**prog_lat, **existing}
         else:
             payload["latency_ms"] = prog_lat
-    for key in ("citations", "follow_up_questions", "usage"):
+    for key in ("citations", "follow_up_questions", "usage", "rag"):
         if key not in payload and merged.get(key) is not None:
             payload[key] = merged[key]
     return payload
@@ -298,6 +306,8 @@ def _payload_to_tool_result(data: Dict[str, Any]) -> ToolResult:
     blocks = normalized.get("answer_blocks")
     notes = normalized.get("answer_notes")
     answer_format = normalized.get("answer_format")
+    rag_raw = normalized.get("rag") if normalized.get("rag") is not None else data.get("rag")
+    rag = rag_raw if isinstance(rag_raw, dict) else None
     return ToolResult(
         answer=answer,
         answer_blocks=list(blocks) if isinstance(blocks, list) else [],
@@ -307,6 +317,7 @@ def _payload_to_tool_result(data: Dict[str, Any]) -> ToolResult:
         follow_up_questions=list(follow_ups) if follow_ups else [],
         usage=usage,
         latency_ms=latency,
+        rag=rag,
         metadata=meta,
     )
 

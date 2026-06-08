@@ -77,6 +77,19 @@ def test_accumulate_progress_rag_mcp_style():
     assert merged["usage"]["total"]["prompt_tokens"] == 1
 
 
+def test_accumulate_progress_rag_block_event():
+    events = [
+        {
+            "type": "rag",
+            "collection": "taixing_knowledge",
+            "retrieval": {"retrieved_chunks": 40, "reranked_chunks": 10, "context_chunks": 5},
+        }
+    ]
+    merged = _accumulate_progress_events(events)
+    assert merged["rag"]["collection"] == "taixing_knowledge"
+    assert merged["rag"]["retrieval"]["context_chunks"] == 5
+
+
 def test_accumulate_github_sse_v2_delta_and_done():
     done_json = json.dumps(GITHUB_DONE_V2, separators=(",", ":"))
     sse = f"""event: meta

@@ -43,4 +43,5 @@ class ToolResult(BaseModel):
     follow_up_questions: list = Field(default_factory=list)
     usage: Optional[Dict[str, Any]] = None
     latency_ms: Optional[Dict[str, Any]] = None
+    rag: Optional[Dict[str, Any]] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
