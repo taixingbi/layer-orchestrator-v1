@@ -95,6 +95,7 @@ def _accumulate_progress_events(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     citations: Any = None
     follow_up_questions: Any = None
     usage: Any = None
+    rag: Any = None
     latency_ms: Dict[str, Any] = {}
     for ev in events:
         t = ev.get("type")
@@ -120,6 +121,10 @@ def _accumulate_progress_events(events: List[Dict[str, Any]]) -> Dict[str, Any]:
             for key, val in ev.items():
                 if key != "type" and val is not None:
                     latency_ms[key] = val
+        elif t == "rag":
+            rag_block = {k: v for k, v in ev.items() if k != "type"}
+            if rag_block:
+                rag = rag_block
         elif isinstance(ev.get("answer"), str):
             text_chunks.append(ev["answer"])
     out: Dict[str, Any] = {}
@@ -133,6 +138,8 @@ def _accumulate_progress_events(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         out["usage"] = usage
     if latency_ms:
         out["latency_ms"] = latency_ms
+    if rag is not None:
+        out["rag"] = rag
     return out
 
 
@@ -159,10 +166,32 @@ def _normalize_mcp_tool_payload(data: Dict[str, Any]) -> Dict[str, Any]:
         cites = ans.get("citations")
         if cites is not None:
             out["citations"] = cites
+        blocks = ans.get("blocks")
+        if isinstance(blocks, list):
+            out["answer_blocks"] = blocks
+        notes = ans.get("notes")
+        if isinstance(notes, list):
+            out["answer_notes"] = notes
+        answer_format = ans.get("format")
+        if isinstance(answer_format, str) and answer_format.strip():
+            out["answer_format"] = answer_format.strip()
     elif isinstance(ans, str):
         out["answer"] = ans.strip()
     elif isinstance(data.get("text"), str):
         out["answer"] = data["text"].strip()
+
+    if "answer_format" not in out:
+        answer_format = data.get("answer_format")
+        if isinstance(answer_format, str) and answer_format.strip():
+            out["answer_format"] = answer_format.strip()
+    if "answer_blocks" not in out:
+        blocks = data.get("answer_blocks")
+        if isinstance(blocks, list):
+            out["answer_blocks"] = blocks
+    if "answer_notes" not in out:
+        notes = data.get("answer_notes")
+        if isinstance(notes, list):
+            out["answer_notes"] = notes
 
     if data.get("citations") is not None and "citations" not in out:
         out["citations"] = data["citations"]
@@ -185,6 +214,10 @@ def _normalize_mcp_tool_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(usage, dict):
         out["usage"] = usage
 
+    rag = data.get("rag")
+    if isinstance(rag, dict):
+        out["rag"] = rag
+
     meta: Dict[str, Any] = {}
     if isinstance(data.get("meta"), dict):
         meta["mcp_meta"] = data["meta"]
@@ -199,7 +232,7 @@ def _normalize_mcp_tool_payload(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _accumulate_github_sse(text: str) -> Dict[str, Any]:
-    """Parse GitHub MCP SSE (event: meta / delta / done)."""
+    """Parse GitHub MCP SSE (event: meta / answer_delta / done)."""
     text_chunks: List[str] = []
     done_payload: Dict[str, Any] = {}
     current_event: Optional[str] = None
@@ -222,7 +255,7 @@ def _accumulate_github_sse(text: str) -> Dict[str, Any]:
             continue
         if not isinstance(obj, dict):
             continue
-        if current_event == "delta":
+        if current_event in ("answer_delta", "delta"):
             chunk = _extract_sse_delta_text(obj)
             if chunk:
                 text_chunks.append(chunk)
@@ -256,7 +289,7 @@ def _merge_mcp_stream_payload(
             payload["latency_ms"] = {**prog_lat, **existing}
         else:
             payload["latency_ms"] = prog_lat
-    for key in ("citations", "follow_up_questions", "usage"):
+    for key in ("citations", "follow_up_questions", "usage", "rag"):
         if key not in payload and merged.get(key) is not None:
             payload[key] = merged[key]
     return payload
@@ -286,12 +319,21 @@ def _payload_to_tool_result(data: Dict[str, Any]) -> ToolResult:
     else:
         meta = dict(meta)
         meta.setdefault("source", "mcp")
+    blocks = normalized.get("answer_blocks")
+    notes = normalized.get("answer_notes")
+    answer_format = normalized.get("answer_format")
+    rag_raw = normalized.get("rag") if normalized.get("rag") is not None else data.get("rag")
+    rag = rag_raw if isinstance(rag_raw, dict) else None
     return ToolResult(
         answer=answer,
+        answer_blocks=list(blocks) if isinstance(blocks, list) else [],
+        answer_notes=list(notes) if isinstance(notes, list) else [],
+        answer_format=str(answer_format) if isinstance(answer_format, str) and answer_format else "text",
         citations=list(citations) if citations else [],
         follow_up_questions=list(follow_ups) if follow_ups else [],
         usage=usage,
         latency_ms=latency,
+        rag=rag,
         metadata=meta,
     )
 
@@ -340,7 +382,7 @@ async def _parse_mcp_sse_lines(
             inner = _parse_mcp_progress_message(msg) if isinstance(msg, str) else None
             if inner:
                 _emit_progress_event(inner, progress_events=progress_events, on_delta=on_delta)
-        elif current_event == "delta" and isinstance(obj, dict):
+        elif current_event in ("answer_delta", "delta") and isinstance(obj, dict):
             chunk = _extract_sse_delta_text(obj)
             if chunk:
                 github_deltas.append(chunk)
@@ -414,7 +456,7 @@ async def call_mcp_tool(
     rag_user: Optional[Dict[str, str]] = None,
     conversation_id: str = "",
     is_new_conversation: bool = False,
-    stream: bool = True,
+    stream: Optional[bool] = True,
     on_delta: Optional[Callable[[str], None]] = None,
 ) -> ToolResult:
     """POST /v1/mcp tools/call; stream SSE lines and invoke on_delta per answer_delta."""
@@ -423,11 +465,14 @@ async def call_mcp_tool(
         raise ValueError("MCP base URL is not set")
     url = f"{base}/v1/mcp"
     rpc_id = request_id or str(uuid.uuid4())
+    tool_args = dict(arguments)
+    if stream is not None:
+        tool_args["stream"] = stream
     payload = {
         "jsonrpc": "2.0",
         "id": rpc_id,
         "method": "tools/call",
-        "params": {"name": tool_name, "arguments": {**arguments, "stream": stream}},
+        "params": {"name": tool_name, "arguments": tool_args},
     }
     headers = _mcp_headers(
         request_id=request_id,
@@ -442,7 +487,11 @@ async def call_mcp_tool(
         "mcp_tool_call",
         extra={
             "event": "mcp_tool_call",
-            "gateway_meta": {"url": url, "tool": tool_name, "stream": stream},
+            "gateway_meta": {
+                "url": url,
+                "tool": tool_name,
+                "stream": stream if stream is not None else tool_args.get("stream", True),
+            },
         },
     )
     async with client.stream("POST", url, json=payload, headers=headers) as response:

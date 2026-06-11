@@ -103,7 +103,7 @@ def route_meta_from_detail(
         if source:
             route["source"] = source
         tool: Dict[str, Any] = {"name": orch_name, "type": tool_type, "version": "v1", "key": phase_key}
-        if detail.repo:
+        if detail.repo and orch_name != "github_search":
             tool["repo"] = detail.repo
         return route, tool
     if isinstance(detail, InternalIntentRoute):
@@ -166,11 +166,22 @@ def build_meta(
 def build_answer_block(
     text: Optional[str],
     citations: Optional[List[Any]] = None,
+    *,
+    blocks: Optional[List[Any]] = None,
+    notes: Optional[List[Any]] = None,
+    answer_format: Optional[str] = None,
 ) -> Dict[str, Any]:
-    return {
+    out: Dict[str, Any] = {
         "text": text if text is not None else "",
         "citations": list(citations) if citations else [],
     }
+    if blocks:
+        out["blocks"] = list(blocks)
+    if notes:
+        out["notes"] = list(notes)
+    if answer_format:
+        out["format"] = answer_format
+    return out
 
 
 def status_code_for_exception(exc: BaseException) -> str:
@@ -207,6 +218,9 @@ def build_answer_envelope(
     rewrite: Optional[str],
     answer_text: Optional[str],
     citations: Optional[List[Any]] = None,
+    answer_blocks: Optional[List[Any]] = None,
+    answer_notes: Optional[List[Any]] = None,
+    answer_format: Optional[str] = None,
     follow_up_questions: Optional[List[Any]] = None,
     latency_ms: Optional[Dict[str, Any]] = None,
     usage: Optional[Dict[str, Any]] = None,
@@ -217,6 +231,7 @@ def build_answer_envelope(
     route_source: Optional[RouteSource] = None,
     error: Optional[str] = None,
     extra_meta: Optional[Dict[str, Any]] = None,
+    rag: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Full `/v1/orchestrator/answer` body (non-stream and stream terminal events)."""
     out: Dict[str, Any] = {
@@ -232,7 +247,13 @@ def build_answer_envelope(
             rag_user=rag_user,
             extra_meta=extra_meta,
         ),
-        "answer": build_answer_block(answer_text, citations),
+        "answer": build_answer_block(
+            answer_text,
+            citations,
+            blocks=answer_blocks,
+            notes=answer_notes,
+            answer_format=answer_format,
+        ),
         "follow_up_questions": list(follow_up_questions) if follow_up_questions else [],
         "latency_ms": latency_ms if isinstance(latency_ms, dict) else {},
         "usage": usage if isinstance(usage, dict) else {},
@@ -240,6 +261,8 @@ def build_answer_envelope(
     }
     if error:
         out["error"] = error
+    if isinstance(rag, dict) and rag:
+        out["rag"] = rag
     return out
 
 

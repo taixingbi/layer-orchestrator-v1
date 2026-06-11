@@ -20,7 +20,17 @@ GITHUB_DONE_V2 = {
         "github": {"scope": "all", "repos": ["taixingbi/layer-orchestrator-v1"]},
     },
     "answer": {
+        "format": "blocks",
         "text": "## Introduction to huntAi Project\n\nThe huntAi project involves several repositories.",
+        "blocks": [
+            {"type": "heading", "text": "Introduction to huntAi Project", "cite_ids": []},
+            {
+                "type": "paragraph",
+                "text": "The huntAi project involves several repositories.",
+                "cite_ids": [1, 4],
+            },
+        ],
+        "notes": ["Routing detail not documented"],
         "citations": [
             {"cite_id": 1, "source": "layer-mcp-github-v1 README"},
             {"cite_id": 4, "source": "layer-orchestrator-v1 README"},
@@ -46,6 +56,9 @@ GITHUB_DONE_V2 = {
 def test_normalize_github_mcp_v2_payload():
     norm = _normalize_mcp_tool_payload(GITHUB_DONE_V2)
     assert "Introduction to huntAi" in norm["answer"]
+    assert norm["answer_format"] == "blocks"
+    assert norm["answer_blocks"][0]["type"] == "heading"
+    assert norm["answer_notes"] == ["Routing detail not documented"]
     assert len(norm["citations"]) == 2
     assert norm["latency_ms"]["retrieve_rerank"] == 3095
     assert norm["latency_ms"]["total"] == 8577
@@ -64,16 +77,29 @@ def test_accumulate_progress_rag_mcp_style():
     assert merged["usage"]["total"]["prompt_tokens"] == 1
 
 
+def test_accumulate_progress_rag_block_event():
+    events = [
+        {
+            "type": "rag",
+            "collection": "taixing_knowledge",
+            "retrieval": {"retrieved_chunks": 40, "reranked_chunks": 10, "context_chunks": 5},
+        }
+    ]
+    merged = _accumulate_progress_events(events)
+    assert merged["rag"]["collection"] == "taixing_knowledge"
+    assert merged["rag"]["retrieval"]["context_chunks"] == 5
+
+
 def test_accumulate_github_sse_v2_delta_and_done():
     done_json = json.dumps(GITHUB_DONE_V2, separators=(",", ":"))
     sse = f"""event: meta
 data: {json.dumps({"meta": GITHUB_DONE_V2["meta"]})}
 
-event: delta
-data: {{"answer": {{"text": "##"}}}}
+event: answer_delta
+data: {{"text": "##"}}
 
-event: delta
-data: {{"answer": {{"text": " Intro"}}}}
+event: answer_delta
+data: {{"text": " Intro"}}
 
 event: done
 data: {done_json}
@@ -107,17 +133,17 @@ async def test_parse_mcp_sse_lines_streams_deltas():
 
 @pytest.mark.asyncio
 async def test_parse_mcp_sse_github_v2_stream():
-    """GitHub MCP v2: meta → delta (answer.text) → done envelope."""
+    """GitHub MCP: meta → answer_delta (text) → done envelope."""
     done_line = json.dumps(GITHUB_DONE_V2, separators=(",", ":"))
     sse_lines = [
         "event: meta",
         f'data: {json.dumps({"meta": GITHUB_DONE_V2["meta"]})}',
         "",
-        "event: delta",
-        'data: {"answer": {"text": "Repo "}}',
+        "event: answer_delta",
+        'data: {"text": "Repo "}',
         "",
-        "event: delta",
-        'data: {"answer": {"text": "overview"}}',
+        "event: answer_delta",
+        'data: {"text": "overview"}',
         "",
         "event: done",
         f"data: {done_line}",
@@ -132,6 +158,8 @@ async def test_parse_mcp_sse_github_v2_stream():
     result = await _parse_mcp_sse_lines(_lines(), on_delta=deltas.append)
     assert deltas == ["Repo ", "overview"]
     assert result.answer.startswith("## Introduction")
+    assert result.answer_format == "blocks"
+    assert result.answer_blocks[0]["type"] == "heading"
     assert result.latency_ms == GITHUB_DONE_V2["latency_ms"]["tool_github_search"]
     assert result.usage["total"]["total_tokens"] == 451
     assert len(result.citations) == 2
@@ -162,7 +190,7 @@ async def test_github_search_latency_end_to_end():
     tool_latency = GITHUB_DONE_V2["latency_ms"]["tool_github_search"]
     done_line = json.dumps(GITHUB_DONE_V2, separators=(",", ":"))
     sse_lines = [
-        "event: delta",
+        "event: answer_delta",
         'data: {"answer": {"text": "chunk"}}',
         "",
         "event: done",

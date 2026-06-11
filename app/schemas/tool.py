@@ -36,8 +36,12 @@ class ToolResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     answer: str = ""
+    answer_blocks: list = Field(default_factory=list)
+    answer_notes: list = Field(default_factory=list)
+    answer_format: str = "text"
     citations: list = Field(default_factory=list)
     follow_up_questions: list = Field(default_factory=list)
     usage: Optional[Dict[str, Any]] = None
     latency_ms: Optional[Dict[str, Any]] = None
+    rag: Optional[Dict[str, Any]] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)

@@ -22,6 +22,16 @@ from .state import (
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
 
+def _format_sse_named_event(event_name: str, data: dict[str, Any]) -> str:
+    """Named SSE frame: ``event: <name>`` + ``data: <json>``."""
+    return f"event: {event_name}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _format_answer_delta_sse(text: str) -> str:
+    """Token chunk in the shared contract: ``event: answer_delta``, ``data.text``."""
+    return _format_sse_named_event("answer_delta", {"text": text})
+
+
 def _parse_iso_ts(value: Optional[str]) -> Optional[datetime]:
     if not value:
         return None
@@ -207,6 +217,14 @@ class AnswerResponseAccumulator:
                 self.body["citations"] = event.get("citations", [])
             if event.get("follow_up_questions") is not None:
                 self.body["follow_up_questions"] = event.get("follow_up_questions", [])
+            if event.get("answer_blocks"):
+                self.body["answer_blocks"] = event.get("answer_blocks", [])
+            if event.get("answer_notes"):
+                self.body["answer_notes"] = event.get("answer_notes", [])
+            if event.get("answer_format"):
+                self.body["answer_format"] = event.get("answer_format")
+            if isinstance(event.get("rag"), dict):
+                self.body["rag"] = event.get("rag")
 
     def _terminal_states(self) -> List[dict]:
         return [
@@ -236,6 +254,9 @@ class AnswerResponseAccumulator:
             route_source=self.body.get("route_source"),
             answer_text=self.body.get("answer_text"),
             citations=self.body.get("citations"),
+            answer_blocks=self.body.get("answer_blocks"),
+            answer_notes=self.body.get("answer_notes"),
+            answer_format=self.body.get("answer_format"),
             follow_up_questions=self.body.get("follow_up_questions"),
             latency_ms=latency,
             usage=usage,
@@ -244,6 +265,7 @@ class AnswerResponseAccumulator:
             state=state,
             code=code,
             error=error,
+            rag=self.body.get("rag"),
         )
 
     def enrich_terminal_event(self, event: dict) -> dict:
@@ -423,6 +445,11 @@ def sse_stream_answer_gen(
                 acc.apply(chunk)
                 if chunk.get("type") in ("done", "error"):
                     chunk = acc.enrich_terminal_event(chunk)
+                if chunk.get("type") == "answer_delta":
+                    text = chunk.get("text")
+                    if isinstance(text, str) and text:
+                        yield _format_answer_delta_sse(text)
+                    continue
                 yield f"data: {json.dumps(chunk)}\n\n"
 
     return _gen()

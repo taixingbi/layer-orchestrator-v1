@@ -53,7 +53,7 @@ app/
 - `app/intents/`  
   Deterministic internal intents (`identity`, `greeting`, `help`, `capabilities`).
 - `app/tools/`  
-  `rag_private_kb` (MCP `rag_query` or HTTP RAG), `github_search` (MCP `ask_repo`), `web_search` (Tavily).
+  `rag_private_kb` (MCP `rag_query` or HTTP RAG), `github_search` (MCP `github_search`), `web_search` (Tavily).
 - `app/clients/rag_http.py`  
   HTTP client for `POST {RAG_HTTP_BASE_URL}/v1/rag/query`.
 - `app/clients/ready.py`  
@@ -76,7 +76,7 @@ Clients may send user context in headers (`X-User-Id`, `X-User-Roles`, `X-User-G
    - **`internal_intent`** (`identity`, `greeting`, `help`, `capabilities`): static answer from `app/intents/`.
    - **`direct_reply` / `clarify` / `reject`**: legacy routes mapped to internal intents; emit `answer` from `direct_answer`.
    - **`tool:rag_private_kb`**: MCP `rag_query` or HTTP RAG; legacy flat `route` is `rag`.
-   - **`tool:github_search`**: MCP `ask_repo`; flat `route` is `tool`.
+   - **`tool:github_search`**: MCP `github_search`; flat `route` is `tool`.
    - **`tool:web_search`**: Tavily search; flat `route` is `tool`.
 5. Emit completion or error event; successful streams end with `{type:"done"}` (includes aggregated `latency_ms` and `usage`).
 

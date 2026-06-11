@@ -12,7 +12,7 @@ _REPO_SIGNAL_RE = re.compile(
     r"\b("
     r"gateway|orchestrator|layer-orchestrator|github|readme|"
     r"repo(?:sitory)?|architecture|codebase|code\s*layout|"
-    r"ask_repo|mcp|split\s+orchestrator|layer-orchestrator-v1"
+    r"github_search|mcp|split\s+orchestrator|layer-orchestrator-v1"
     r")\b",
     re.I,
 )
