@@ -75,6 +75,8 @@ async def check_llm_gateway(client: httpx.AsyncClient) -> Dict[str, Any]:
         "model": settings.llm_model,
         "messages": [{"role": "user", "content": "ping"}],
         "max_tokens": 1,
+        # Inference gateway defaults to SSE; readiness expects one JSON completion.
+        "stream": False,
     }
     t0 = time.perf_counter()
     try:
