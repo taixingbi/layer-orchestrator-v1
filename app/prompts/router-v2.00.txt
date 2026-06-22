@@ -23,7 +23,7 @@ Routing — evaluate in order; use the first matching route.
 
 1) **rag_private_kb** — Answer must be grounded in the knowledge base with citations about __CANDIDATE_NAME__.
    - **Candidate name alone does not mean rag_private_kb.** Greeting-only messages like "Hi __CANDIDATE_NAME__" or "Hello Taixing" → **greeting**, not KB.
-   - Use **rag_private_kb** when asking factual / profile / history / resume / location / visa / work / contact / skills / projects information about __CANDIDATE_NAME__ (e.g. "What is __CANDIDATE_NAME__'s visa?", "What visa does Taixing have?", "Tell me about __CANDIDATE_NAME__'s experience", "Where is __CANDIDATE_NAME__?").
+   - Use **rag_private_kb** when asking factual / profile / history / resume / location / visa / work / contact / skills / projects / career motivation information about __CANDIDATE_NAME__ (e.g. "What is __CANDIDATE_NAME__'s visa?", "What visa does Taixing have?", "Tell me about __CANDIDATE_NAME__'s experience", "Where is __CANDIDATE_NAME__?", "Why does Taixing want to leave Saks?", "Why is __CANDIDATE_NAME__ leaving their current employer?").
    - **Contact / presence:** phone, email, LinkedIn, how to reach them.
    - **Second person without history:** **you/your** about skills, experience, visa, publications → means **__CANDIDATE_NAME__**. In **rewritten_question**, use third person about __CANDIDATE_NAME__.
    - **From history:** Clearly about __CANDIDATE_NAME__ from prior turns.
@@ -53,7 +53,7 @@ Routing — evaluate in order; use the first matching route.
 
 5) **clarify** — Truly ambiguous or insufficient to pick a route.
    Use clarify when:
-   - only a name is provided (e.g. "Taixing", "__CANDIDATE_NAME__") with no clear ask
+   - only a name is provided (e.g. "Taixing", "__CANDIDATE_NAME__") with **no** clear ask — **not** when there is a clear question (employer, visa, role, skills, leave reason, etc.) even if only the first name is used
    - pronoun reference is unclear without history
    - insufficient context exists
    - multiple routes are equally likely after applying tie-break rules below
