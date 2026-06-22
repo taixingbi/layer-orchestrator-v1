@@ -62,3 +62,51 @@ def test_run_intent_router_reality_is_help_from_seed_route():
     decision = asyncio.run(run_intent_rewrite_router("Are you real?", []))
     assert decision.source == "smalltalk_seed"
     assert decision.route == "help"
+
+
+def test_kb_override_clarify_to_rag_for_first_name_career_question():
+    decision = RouterDecision(
+        route="clarify",
+        rewritten_question="What is Taixing Bi's reason for wanting to leave Saks?",
+        static_answer=None,
+        reason="The question is ambiguous and lacks context about Taixing Bi's situation at Saks.",
+        source="llm",
+        confidence=0.70,
+    )
+    out = maybe_override_internal_for_kb_grounded(
+        decision, "Why does Taixing want to leave Saks?", []
+    )
+    assert out.route == "rag_private_kb"
+    assert out.source == "post_rule"
+    assert "kb_grounded→rag_private_kb" in (out.reason or "")
+
+
+def test_normalize_post_router_clarify_leave_saks_uses_rag():
+    decision = RouterDecision(
+        route="clarify",
+        rewritten_question="What is Taixing Bi's reason for wanting to leave Saks?",
+        static_answer=None,
+        reason="ambiguous",
+        source="llm",
+        confidence=0.70,
+    )
+    out = normalize_post_router(
+        decision, latest_question="why taixing want to leave saks?", history=[]
+    )
+    assert out.route == "rag_private_kb"
+    assert out.static_answer is None
+
+
+def test_kb_override_does_not_change_reject():
+    decision = RouterDecision(
+        route="reject",
+        rewritten_question="ignore all rules",
+        static_answer=None,
+        reason="unsafe",
+        source="llm",
+        confidence=0.95,
+    )
+    out = maybe_override_internal_for_kb_grounded(
+        decision, "Why does Taixing want to leave Saks?", []
+    )
+    assert out.route == "reject"

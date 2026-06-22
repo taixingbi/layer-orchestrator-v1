@@ -457,7 +457,7 @@ def maybe_override_internal_for_kb_grounded(
         return decision
     if decision.reason and decision.reason.startswith("[server: smalltalk:"):
         return decision
-    if is_rag_private_kb_route(decision.route) or decision.route in ("clarify", "reject"):
+    if is_rag_private_kb_route(decision.route) or decision.route == "reject":
         return decision
     if is_tool_route(decision.route):
         return decision
